@@ -318,11 +318,14 @@ function formatDate(d: string) { return d ? new Date(d).toLocaleString('zh-CN') 
 async function doCreateWS() {
   if (!wsForm.name.trim()) return
   // 检测是否与已有工作空间重名
-  const dup = wsStore.list.find((w: any) =>
-    w.name === wsForm.name.trim() && (!wsForm.remark || w.remark === wsForm.remark))
-  if (dup && !wsForm.remark) {
+  const dupName = wsStore.list.find((w: any) => w.name === wsForm.name.trim())
+  if (dupName && !wsForm.remark) {
     showRemark.value = true
     ElMessage.warning('工作空间名称已存在，请添加备注以区分')
+    return
+  }
+  if (dupName && wsForm.remark && dupName.remark === wsForm.remark.trim()) {
+    ElMessage.warning('工作空间名称和备注与已有空间完全相同，请换一个备注')
     return
   }
   try {
