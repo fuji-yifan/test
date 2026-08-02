@@ -283,8 +283,8 @@ const permGroups = [
     { key: 'template:delete', label: '删除模板' },
   ]},
   { group: '流程', perms: [
-    { key: 'workflow:manage', label: '新建固有流程' }, { key: 'workflow:edit', label: '修改固有流程' },
-    { key: 'workflow:delete', label: '删除固有流程' },
+    { key: 'workflow:manage', label: '新建流程' }, { key: 'workflow:edit', label: '修改流程' },
+    { key: 'workflow:delete', label: '删除流程' },
   ]},
   { group: '任务', perms: [
     { key: 'task:approve', label: '通过审批' }, { key: 'task:reject', label: '驳回审批' },
