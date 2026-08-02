@@ -1,0 +1,164 @@
+/* =============================================================
+   field-shared.css — 控件渲染统一样式（全局，无 :deep()）
+   被 CanvasField / PreviewPanel / PublicFormView 共同引用
+   修改此处 → 三端同步生效
+   ============================================================= */
+
+/* ---- 外层容器（栅格子项） ---- */
+.ff-outer, .pv-outer, .canvas-field {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* ---- 内层容器 ---- */
+.ff-inner, .pv-inner, .field-inner {
+  position: relative;
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: #fafafa;
+  transition: border-color 0.2s;
+  overflow: visible;
+}
+
+/* ---- 标签位置：左/右 ---- */
+.ff-lp-left, .pv-lp-left, .label-left,
+.ff-lp-right, .pv-lp-right, .label-right {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+}
+.ff-lp-left, .pv-lp-left, .label-left { flex-direction: row; }
+.ff-lp-right, .pv-lp-right, .label-right { flex-direction: row-reverse; }
+
+.ff-lp-left .ff-label, .pv-lp-left .pv-label, .label-left .field-label { margin-right: 8px; }
+.ff-lp-right .ff-label, .pv-lp-right .pv-label, .label-right .field-label { margin-left: 8px; }
+
+.ff-label, .pv-label, .field-label {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: #303133;
+  white-space: nowrap;
+  width: auto;
+  max-width: 7em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ff-req, .field-required {
+  color: #f56c6c;
+  font-size: 11px;
+  vertical-align: super;
+  margin-left: 1px;
+}
+
+/* ---- 标签位置：顶部 ---- */
+.ff-lp-top, .pv-lp-top, .label-top {
+  display: block;
+  padding: 8px 12px;
+}
+.ff-lp-top .ff-label, .pv-lp-top .pv-label, .label-top .field-label {
+  display: block;
+  margin-bottom: 6px;
+}
+
+/* ---- 控件容器 ---- */
+.ff-control, .pv-control, .field-placeholder, .ff-ctrl, .pv-ctrl, .fc-ctrl {
+  flex: 1;
+  min-width: 0;
+  overflow: visible;
+}
+.ff-lp-top .ff-control, .pv-lp-top .pv-control, .label-top .field-placeholder {
+  width: 100%;
+}
+
+/* ---- 画布占位控件（半透明+禁止交互） ---- */
+.field-placeholder { pointer-events: none; opacity: 0.6; }
+
+/* ---- 控件内容宽度强制 100% ---- */
+.field-placeholder .el-input-number,
+.field-placeholder .el-input,
+.field-placeholder .el-select,
+.field-placeholder .el-cascader,
+.field-placeholder .el-upload,
+.ff-control.el-input-number, .ff-control.el-input, .ff-control.el-select, .ff-control.el-cascader, .ff-control.el-upload,
+.pv-control.el-input-number, .pv-control.el-input, .pv-control.el-select, .pv-control.el-cascader, .pv-control.el-upload,
+.pv-ctrl.el-input-number, .pv-ctrl.el-input, .pv-ctrl.el-select, .pv-ctrl.el-cascader, .pv-ctrl.el-upload,
+.fc-ctrl.el-input-number, .fc-ctrl.el-input, .fc-ctrl.el-select, .fc-ctrl.el-cascader, .fc-ctrl.el-upload { width: 100%; }
+
+/* ---- 滑块导轨两边留空 ---- */
+.field-placeholder .el-slider__runway,
+.ff-control .el-slider__runway,
+.pv-control .el-slider__runway,
+.fc-ctrl .el-slider__runway { margin: 0 10px; width: auto !important; }
+
+/* ---- 数字输入框文字左对齐 ---- */
+.pv-control.el-input-number .el-input__inner,
+.ff-control.el-input-number .el-input__inner,
+.fc-ctrl.el-input-number .el-input__inner { text-align: left; }
+
+/* ---- 单选/多选框组：标签+选项统一均匀分布 ---- */
+.fc-ctrl.el-radio-group,
+.fc-ctrl.el-checkbox-group,
+.ff-control .el-radio-group,
+.ff-control .el-checkbox-group,
+.pv-control .el-radio-group,
+.pv-control .el-checkbox-group,
+.field-placeholder .el-radio-group,
+.field-placeholder .el-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  justify-content: space-evenly;
+  gap: 8px;
+}
+
+/* 上传控件拖拽区撑满宽度 */
+.el-upload-dragger { width: 100% !important; }
+
+/* 开关控件文案不换行 */
+.fc-ctrl.el-switch .el-switch__label,
+.ff-control .el-switch .el-switch__label,
+.pv-control .el-switch .el-switch__label,
+.field-placeholder .el-switch .el-switch__label {
+  white-space: nowrap;
+}
+
+/* ---- 提示文本 ---- */
+.fc-tip, .fr-tip {
+  line-height: 1.6;
+  word-break: break-word;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.fc-tip-icon, .fr-tip-icon {
+  flex-shrink: 0;
+  font-size: 16px;
+}
+
+/* ---- 富文本编辑器 ---- */
+.fc-richtext {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  overflow: hidden;
+  width: 100%;
+}
+.fc-richtext-toolbar {
+  flex-shrink: 0;
+  border-bottom: 1px solid #dcdfe6;
+  background: #fafafa;
+}
+.fc-richtext-editor {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.fc-richtext-editor .w-e-text-container {
+  background: #fff;
+}
+
+/* ---- 尺寸变体 ---- */
+.ff-sz-small, .pv-sz-small, .size-small { padding: 2px 8px; font-size: 12px; }
+.ff-sz-large, .pv-sz-large, .size-large { padding: 10px 16px; font-size: 15px; }

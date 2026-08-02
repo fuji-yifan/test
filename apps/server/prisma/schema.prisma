@@ -1,0 +1,341 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== 工作空间 ====================
+model Workspace {
+  id         String    @id @default(uuid()) @db.VarChar(36)
+  name       String    @db.VarChar(100)
+  slug       String    @unique @db.VarChar(50)
+  logoUrl    String?   @map("logo_url") @db.VarChar(500)
+  settings   Json      @default("{}")
+  plan       String    @default("free") @db.VarChar(20)
+  maxForms   Int       @default(50) @map("max_forms")
+  maxMembers Int       @default(10) @map("max_members")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  forms     Form[]
+  members   WorkspaceMember[]
+  roles     Role[]
+  auditLogs AuditLog[]
+
+  @@map("workspaces")
+}
+
+// ==================== 用户 ====================
+model User {
+  id           String    @id @default(uuid()) @db.VarChar(36)
+  email        String    @unique @db.VarChar(255)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  nickname     String?   @db.VarChar(100)
+  avatarUrl    String?   @map("avatar_url") @db.VarChar(500)
+  status       String    @default("active") @db.VarChar(20)
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  memberships  WorkspaceMember[]
+  roles        UserRole[]
+  createdForms Form[]           @relation("FormCreator")
+  updatedForms Form[]           @relation("FormUpdater")
+  submissions  FormSubmission[]
+
+  @@map("users")
+}
+
+// ==================== 工作空间成员 ====================
+model WorkspaceMember {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  workspaceId String   @map("workspace_id") @db.VarChar(36)
+  userId      String   @map("user_id") @db.VarChar(36)
+  role        String   @default("member") @db.VarChar(30)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("workspace_members")
+}
+
+// ==================== 角色 & 权限 ====================
+model Role {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  workspaceId String   @map("workspace_id") @db.VarChar(36)
+  name        String   @db.VarChar(50)
+  permissions Json     @default("[]")
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  users     UserRole[]
+
+  @@unique([workspaceId, name])
+  @@map("roles")
+}
+
+model UserRole {
+  userId String @map("user_id") @db.VarChar(36)
+  roleId String @map("role_id") @db.VarChar(36)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+// ==================== 表单模板（核心） ====================
+model Form {
+  id               String    @id @default(uuid()) @db.VarChar(36)
+  workspaceId      String    @map("workspace_id") @db.VarChar(36)
+  name             String    @db.VarChar(200)
+  description      String?   @db.Text
+  schema           Json      @default("{}")
+  category         String?   @db.VarChar(50)
+  tags             Json      @default("[]")
+  status           String    @default("draft") @db.VarChar(20)
+  publishedAt      DateTime? @map("published_at")
+  publishedVersion Int       @default(0) @map("published_version")
+  maxSubmissions   Int       @default(0) @map("max_submissions")
+  enableCaptcha    Boolean   @default(false) @map("enable_captcha")
+  redirectUrl      String?   @map("redirect_url") @db.VarChar(500)
+  settings         Json      @default("{}")
+  createdBy        String?   @map("created_by") @db.VarChar(36)
+  updatedBy        String?   @map("updated_by") @db.VarChar(36)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator     User?            @relation("FormCreator", fields: [createdBy], references: [id])
+  updater     User?            @relation("FormUpdater", fields: [updatedBy], references: [id])
+  versions    FormVersion[]
+  submissions FormSubmission[]
+  webhooks    Webhook[]
+
+  @@index([workspaceId, status])
+  @@map("forms")
+}
+
+// ==================== 表单版本快照 ====================
+model FormVersion {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  formId    String   @map("form_id") @db.VarChar(36)
+  version   Int
+  schema    Json
+  changeLog String?  @map("change_log") @db.Text
+  createdBy String?  @map("created_by") @db.VarChar(36)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, version])
+  @@map("form_versions")
+}
+
+// ==================== 表单提交数据（核心） ====================
+model FormSubmission {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  formId      String   @map("form_id") @db.VarChar(36)
+  formVersion Int      @map("form_version")
+  data        Json
+  meta        Json     @default("{}")
+  submitterId String?  @map("submitter_id") @db.VarChar(36)
+  status      String   @default("submitted") @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  form      Form  @relation(fields: [formId], references: [id], onDelete: Cascade)
+  submitter User? @relation(fields: [submitterId], references: [id])
+
+  @@index([formId, createdAt(sort: Desc)])
+  @@map("form_submissions")
+}
+
+// ==================== 模板市场 ====================
+model Template {
+  id           String   @id @default(uuid()) @db.VarChar(36)
+  name         String   @db.VarChar(200)
+  description  String?  @db.Text
+  thumbnailUrl String?  @map("thumbnail_url") @db.VarChar(500)
+  schema       Json
+  category     String?  @db.VarChar(50)
+  tags         Json     @default("[]")
+  status       String   @default("pending") @db.VarChar(20)
+  usageCount   Int      @default(0) @map("usage_count")
+  authorId     String?  @map("author_id") @db.VarChar(36)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("templates")
+}
+
+// ==================== 审计日志 ====================
+model AuditLog {
+  id           String   @id @default(uuid()) @db.VarChar(36)
+  workspaceId  String   @map("workspace_id") @db.VarChar(36)
+  userId       String?  @map("user_id") @db.VarChar(36)
+  action       String   @db.VarChar(50)
+  resourceType String?  @map("resource_type") @db.VarChar(50)
+  resourceId   String?  @map("resource_id") @db.VarChar(36)
+  details      Json     @default("{}")
+  ip           String?  @db.VarChar(45)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
+
+// ==================== 自定义组件注册 ====================
+model CustomComponent {
+  id           String   @id @default(uuid()) @db.VarChar(36)
+  workspaceId  String   @map("workspace_id") @db.VarChar(36)
+  name         String   @db.VarChar(100)
+  displayName  String?  @map("display_name") @db.VarChar(200)
+  icon         String?  @db.VarChar(100)
+  packageName  String?  @map("package_name") @db.VarChar(200)
+  defaultProps Json     @default("{}") @map("default_props")
+  configSchema Json     @default("{}") @map("config_schema")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([workspaceId, name])
+  @@map("custom_components")
+}
+
+// ==================== Webhook 配置 ====================
+model Webhook {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  formId     String   @map("form_id") @db.VarChar(36)
+  url        String   @db.VarChar(1000)
+  events     Json     @default("[]")
+  secret     String?  @db.VarChar(200)
+  isActive   Boolean  @default(true) @map("is_active")
+  retryCount Int      @default(3) @map("retry_count")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  form      Form               @relation(fields: [formId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  webhookId  String   @map("webhook_id") @db.VarChar(36)
+  event      String   @db.VarChar(50)
+  status     Int
+  duration   Int      @default(0)
+  error      String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId, createdAt(sort: Desc)])
+  @@map("webhook_deliveries")
+}
+
+// ==================== 文件记录（MinIO 上传） ====================
+model FileRecord {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  workspaceId String   @map("workspace_id") @db.VarChar(36)
+  userId      String   @map("user_id") @db.VarChar(36)
+  fileName    String   @map("file_name") @db.VarChar(255)
+  fileSize    Int      @map("file_size")
+  mimeType    String   @map("mime_type") @db.VarChar(100)
+  minioKey    String   @map("minio_key") @db.VarChar(500)
+  url         String   @db.VarChar(1000)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@map("file_records")
+}
+
+// ==================== 消息通知 ====================
+model Notification {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  userId      String   @map("user_id") @db.VarChar(36)
+  workspaceId String?  @map("workspace_id") @db.VarChar(36)
+  type        String   @db.VarChar(30)
+  title       String   @db.VarChar(200)
+  content     String   @db.Text
+  isRead      Boolean  @default(false) @map("is_read")
+  relatedType String?  @map("related_type") @db.VarChar(30)
+  relatedId   String?  @map("related_id") @db.VarChar(36)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([userId, isRead, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+// ==================== 流程定义 ====================
+model ProcessDefinition {
+  id          String    @id @default(uuid()) @db.VarChar(36)
+  workspaceId String    @map("workspace_id") @db.VarChar(36)
+  name        String    @db.VarChar(200)
+  description String?   @db.Text
+  version     Int       @default(1)
+  status      String    @default("draft") @db.VarChar(20)
+  nodes       Json      @default("[]")
+  edges       Json      @default("[]")
+  settings    Json      @default("{}")
+  createdBy   String?   @map("created_by") @db.VarChar(36)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+  publishedAt DateTime? @map("published_at")
+
+  instances ProcessInstance[]
+
+  @@index([workspaceId, status])
+  @@map("process_definitions")
+}
+
+// ==================== 流程实例 ====================
+model ProcessInstance {
+  id               String    @id @default(uuid()) @db.VarChar(36)
+  definitionId     String    @map("definition_id") @db.VarChar(36)
+  definitionVersion Int      @map("definition_version")
+  formId           String?   @map("form_id") @db.VarChar(36)
+  submissionId     String?   @map("submission_id") @db.VarChar(36)
+  initiatorId      String    @map("initiator_id") @db.VarChar(36)
+  currentState     String    @default("draft") @map("current_state") @db.VarChar(20)
+  currentNodeIds   Json      @default("[]") @map("current_node_ids")
+  context          Json      @default("{}")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
+  completedAt      DateTime? @map("completed_at")
+
+  definition ProcessDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  tasks      TaskInstance[]
+
+  @@index([initiatorId, currentState])
+  @@map("process_instances")
+}
+
+// ==================== 任务实例 ====================
+model TaskInstance {
+  id              String    @id @default(uuid()) @db.VarChar(36)
+  instanceId      String    @map("instance_id") @db.VarChar(36)
+  nodeId          String    @map("node_id") @db.VarChar(36)
+  assigneeId      String    @map("assignee_id") @db.VarChar(36)
+  status          String    @default("pending") @db.VarChar(20)
+  comment         String?   @db.Text
+  transferredFrom String?   @map("transferred_from") @db.VarChar(36)
+  addedBySign     Boolean   @default(false) @map("added_by_sign")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  processedAt     DateTime? @map("processed_at")
+
+  instance ProcessInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([assigneeId, status])
+  @@index([instanceId])
+  @@map("task_instances")
+}

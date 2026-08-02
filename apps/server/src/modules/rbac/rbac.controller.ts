@@ -1,0 +1,64 @@
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards } from '@nestjs/common'
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger'
+import { RbacService } from './rbac.service'
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
+import { PermissionGuard, RequiredPermission } from '../../common/guards/permission.guard'
+import { CurrentUser } from '../../common/decorators/current-user.decorator'
+
+@ApiTags('RBAC')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
+@Controller('workspaces/:wsId/roles')
+export class RbacController {
+  constructor(private rbacService: RbacService) {}
+
+  @Get()
+  listRoles(@Param('wsId') wsId: string) {
+    return this.rbacService.listRoles(wsId)
+  }
+
+  @UseGuards(PermissionGuard)
+  @RequiredPermission('role:create')
+  @Post()
+  createRole(@Param('wsId') wsId: string, @Body() dto: { name: string; permissions: string[] }) {
+    return this.rbacService.createRole(wsId, dto)
+  }
+
+  @UseGuards(PermissionGuard)
+  @RequiredPermission('role:edit')
+  @Patch(':id')
+  updateRole(@Param('id') id: string, @Body() dto: { name?: string; permissions?: string[] }, @CurrentUser('userId') userId: string) {
+    return this.rbacService.updateRole(id, dto, userId)
+  }
+
+  @UseGuards(PermissionGuard)
+  @RequiredPermission('role:delete')
+  @Delete(':id')
+  deleteRole(@Param('id') id: string, @CurrentUser('userId') userId: string) {
+    return this.rbacService.deleteRole(id, userId)
+  }
+
+  @UseGuards(PermissionGuard)
+  @RequiredPermission('member:role')
+  @Post('assign')
+  assignRole(@Body() dto: { userId: string; roleId: string }) {
+    return this.rbacService.assignRole(dto.userId, dto.roleId)
+  }
+
+  @UseGuards(PermissionGuard)
+  @RequiredPermission('member:role')
+  @Post('revoke')
+  revokeRole(@Body() dto: { userId: string; roleId: string }) {
+    return this.rbacService.revokeRole(dto.userId, dto.roleId)
+  }
+
+  @Get('matrix')
+  getPermissionMatrix(@Param('wsId') wsId: string) {
+    return this.rbacService.getPermissionMatrix(wsId)
+  }
+
+  @Get('defaults')
+  getDefaultRoles() {
+    return this.rbacService.getDefaultRoles()
+  }
+}
