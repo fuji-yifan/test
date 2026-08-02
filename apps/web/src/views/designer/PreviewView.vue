@@ -2,11 +2,19 @@
   <div class="preview-page">
     <div class="preview-header">
       <span>预览模式</span>
-      <el-button @click="closePreview">关闭预览</el-button>
+      <el-button @click="closePreview">
+        关闭预览
+      </el-button>
     </div>
     <div class="preview-body">
-      <FormRenderer v-if="schema" :schema="schema" />
-      <el-empty v-else description="暂无表单数据" />
+      <FormRenderer
+        v-if="schema"
+        :schema="schema"
+      />
+      <el-empty
+        v-else
+        description="暂无表单数据"
+      />
     </div>
   </div>
 </template>

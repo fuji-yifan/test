@@ -2,36 +2,91 @@
   <div class="process-designer">
     <!-- ====== 顶部工具栏 ====== -->
     <header class="designer-header">
-      <el-button text @click="goBack"><el-icon><ArrowLeft /></el-icon> 返回列表</el-button>
-      <h2 v-if="definition">{{ definition.name }} — 流程设计</h2>
+      <el-button
+        text
+        @click="goBack"
+      >
+        <el-icon><ArrowLeft /></el-icon> 返回列表
+      </el-button>
+      <h2 v-if="definition">
+        {{ definition.name }} — 流程设计
+      </h2>
       <div class="header-actions">
-        <el-button @click="saveDefinition" :loading="saving">保存</el-button>
-        <el-button type="success" @click="publishDef" :loading="publishing" v-if="definition?.status === 'draft'">发布</el-button>
+        <el-button
+          :loading="saving"
+          @click="saveDefinition"
+        >
+          保存
+        </el-button>
+        <el-button
+          v-if="definition?.status === 'draft'"
+          type="success"
+          :loading="publishing"
+          @click="publishDef"
+        >
+          发布
+        </el-button>
       </div>
     </header>
 
     <!-- ====== 三列主体 ====== -->
-    <div class="designer-body" v-if="definition">
+    <div
+      v-if="definition"
+      class="designer-body"
+    >
       <!-- 第一列：节点面板 -->
       <aside class="palette-panel">
         <h4>审批节点</h4>
         <div class="palette-list">
-          <div v-for="nt in approvalNodeTypes" :key="nt.type" class="palette-item" draggable="true" @dragstart="onDragStart($event, nt.type)">
-            <el-icon :size="18" :color="nt.color"><component :is="nt.icon" /></el-icon>
+          <div
+            v-for="nt in approvalNodeTypes"
+            :key="nt.type"
+            class="palette-item"
+            draggable="true"
+            @dragstart="onDragStart($event, nt.type)"
+          >
+            <el-icon
+              :size="18"
+              :color="nt.color"
+            >
+              <component :is="nt.icon" />
+            </el-icon>
             <span>{{ nt.label }}</span>
           </div>
         </div>
         <h4>处理节点</h4>
         <div class="palette-list">
-          <div v-for="nt in actionNodeTypes" :key="nt.type" class="palette-item" draggable="true" @dragstart="onDragStart($event, nt.type)">
-            <el-icon :size="18" :color="nt.color"><component :is="nt.icon" /></el-icon>
+          <div
+            v-for="nt in actionNodeTypes"
+            :key="nt.type"
+            class="palette-item"
+            draggable="true"
+            @dragstart="onDragStart($event, nt.type)"
+          >
+            <el-icon
+              :size="18"
+              :color="nt.color"
+            >
+              <component :is="nt.icon" />
+            </el-icon>
             <span>{{ nt.label }}</span>
           </div>
         </div>
         <h4>路由控制</h4>
         <div class="palette-list">
-          <div v-for="nt in gatewayNodeTypes" :key="nt.type" class="palette-item" draggable="true" @dragstart="onDragStart($event, nt.type)">
-            <el-icon :size="18" :color="nt.color"><component :is="nt.icon" /></el-icon>
+          <div
+            v-for="nt in gatewayNodeTypes"
+            :key="nt.type"
+            class="palette-item"
+            draggable="true"
+            @dragstart="onDragStart($event, nt.type)"
+          >
+            <el-icon
+              :size="18"
+              :color="nt.color"
+            >
+              <component :is="nt.icon" />
+            </el-icon>
             <span>{{ nt.label }}</span>
           </div>
         </div>
@@ -39,8 +94,8 @@
 
       <!-- 第二列：可视化画布 -->
       <main
-        class="canvas-area"
         ref="canvasRef"
+        class="canvas-area"
         :style="canvasBgStyle"
         :class="{ 'drag-over': dragOverCanvas }"
         @mousedown="onCanvasMouseDown"
@@ -59,11 +114,33 @@
           :height="canvasHeight"
         >
           <defs>
-            <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
-              <polygon points="0 0, 10 3.5, 0 7" fill="#909399" />
+            <marker
+              id="arrowhead"
+              markerWidth="10"
+              markerHeight="7"
+              refX="10"
+              refY="3.5"
+              orient="auto"
+              markerUnits="userSpaceOnUse"
+            >
+              <polygon
+                points="0 0, 10 3.5, 0 7"
+                fill="#909399"
+              />
             </marker>
-            <marker id="arrowhead-blue" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
-              <polygon points="0 0, 10 3.5, 0 7" fill="#409eff" />
+            <marker
+              id="arrowhead-blue"
+              markerWidth="10"
+              markerHeight="7"
+              refX="10"
+              refY="3.5"
+              orient="auto"
+              markerUnits="userSpaceOnUse"
+            >
+              <polygon
+                points="0 0, 10 3.5, 0 7"
+                fill="#409eff"
+              />
             </marker>
           </defs>
           <path
@@ -78,7 +155,10 @@
             :class="{ 'edge-selected': isEdgeSelected(ep) }"
           />
           <!-- 连线标签 -->
-          <g v-for="ep in edgePaths.filter(e => e.label)" :key="'tg' + ep.id">
+          <g
+            v-for="ep in edgePaths.filter(e => e.label)"
+            :key="'tg' + ep.id"
+          >
             <rect
               :x="ep.labelX - ep.labelW / 2 - 4"
               :y="ep.labelY - 9"
@@ -114,7 +194,10 @@
         </svg>
 
         <!-- 节点层 -->
-        <div class="nodes-layer" :style="{ width: canvasWidth + 'px', height: canvasHeight + 'px' }">
+        <div
+          class="nodes-layer"
+          :style="{ width: canvasWidth + 'px', height: canvasHeight + 'px' }"
+        >
           <div
             v-for="node in nodes"
             :key="node.id"
@@ -129,11 +212,19 @@
               class="port port-in"
               @mousedown.stop
               @click.stop="onPortClick(node)"
-            ></div>
+            />
 
-            <div class="node-content" :class="{ 'content-rotated': isGateway(node.type) }">
-              <el-icon :size="nodeIconSize(node.type)"><component :is="nodeTypeIcon(node.type)" /></el-icon>
-              <span v-if="!isCircle(node.type)" class="node-name">{{ node.name }}</span>
+            <div
+              class="node-content"
+              :class="{ 'content-rotated': isGateway(node.type) }"
+            >
+              <el-icon :size="nodeIconSize(node.type)">
+                <component :is="nodeTypeIcon(node.type)" />
+              </el-icon>
+              <span
+                v-if="!isCircle(node.type)"
+                class="node-name"
+              >{{ node.name }}</span>
             </div>
 
             <!-- 删除按钮 -->
@@ -150,7 +241,7 @@
               :class="{ active: connecting && connectSourceId === node.id }"
               @mousedown.stop
               @click.stop="onPortClick(node)"
-            ></div>
+            />
           </div>
         </div>
       </main>
@@ -158,78 +249,169 @@
       <!-- 第三列：属性面板 -->
       <aside class="property-panel">
         <div class="panel-nav">
-          <span :class="['nav-item', { active: panelMode === 'canvas' }]" @click="panelMode = 'canvas'">画布设置</span>
-          <span :class="['nav-item', { active: panelMode === 'node' }]" @click="switchToNode">节点属性</span>
+          <span
+            :class="['nav-item', { active: panelMode === 'canvas' }]"
+            @click="panelMode = 'canvas'"
+          >画布设置</span>
+          <span
+            :class="['nav-item', { active: panelMode === 'node' }]"
+            @click="switchToNode"
+          >节点属性</span>
         </div>
 
         <!-- ====== 画布设置 ====== -->
         <template v-if="panelMode === 'canvas'">
-          <el-form label-position="top" size="small">
-            <h5 class="section-title">流程信息</h5>
+          <el-form
+            label-position="top"
+            size="small"
+          >
+            <h5 class="section-title">
+              流程信息
+            </h5>
             <el-form-item label="流程名称">
-              <el-input v-model="definition.name" @input="markDirty" />
+              <el-input
+                v-model="definition.name"
+                @input="markDirty"
+              />
             </el-form-item>
             <el-form-item label="描述">
-              <el-input v-model="definition.description" type="textarea" :rows="2" @input="markDirty" />
+              <el-input
+                v-model="definition.description"
+                type="textarea"
+                :rows="2"
+                @input="markDirty"
+              />
             </el-form-item>
             <el-form-item label="允许撤回">
-              <el-switch v-model="definition.settings.allowWithdraw" @change="markDirty" />
+              <el-switch
+                v-model="definition.settings.allowWithdraw"
+                @change="markDirty"
+              />
             </el-form-item>
             <el-form-item label="允许催办">
-              <el-switch v-model="definition.settings.allowUrge" @change="markDirty" />
+              <el-switch
+                v-model="definition.settings.allowUrge"
+                @change="markDirty"
+              />
             </el-form-item>
             <el-form-item label="催办时限 (小时)">
-              <el-input-number v-model="definition.settings.urgeTimeout" :min="1" :max="720" @change="markDirty" />
+              <el-input-number
+                v-model="definition.settings.urgeTimeout"
+                :min="1"
+                :max="720"
+                @change="markDirty"
+              />
             </el-form-item>
 
-            <h5 class="section-title">画布</h5>
+            <h5 class="section-title">
+              画布
+            </h5>
             <el-form-item label="画布宽度">
-              <el-input-number v-model="canvasWidth" :min="800" :max="4000" :step="100" />
+              <el-input-number
+                v-model="canvasWidth"
+                :min="800"
+                :max="4000"
+                :step="100"
+              />
             </el-form-item>
             <el-form-item label="画布高度">
-              <el-input-number v-model="canvasHeight" :min="400" :max="4000" :step="100" />
+              <el-input-number
+                v-model="canvasHeight"
+                :min="400"
+                :max="4000"
+                :step="100"
+              />
             </el-form-item>
             <el-form-item label="背景样式">
               <el-radio-group v-model="gridType">
-                <el-radio value="none">空白</el-radio>
-                <el-radio value="dot">点格</el-radio>
-                <el-radio value="line">网格</el-radio>
+                <el-radio value="none">
+                  空白
+                </el-radio>
+                <el-radio value="dot">
+                  点格
+                </el-radio>
+                <el-radio value="line">
+                  网格
+                </el-radio>
               </el-radio-group>
             </el-form-item>
 
             <div class="canvas-stats">
-              <div class="stat-row"><span>节点数</span><b>{{ nodes.length }}</b></div>
-              <div class="stat-row"><span>连线数</span><b>{{ edges.length }}</b></div>
+              <div class="stat-row">
+                <span>节点数</span><b>{{ nodes.length }}</b>
+              </div>
+              <div class="stat-row">
+                <span>连线数</span><b>{{ edges.length }}</b>
+              </div>
             </div>
 
-            <el-button type="danger" size="small" plain style="width:100%; margin-top:12px" @click="clearAll">清空画布</el-button>
+            <el-button
+              type="danger"
+              size="small"
+              plain
+              style="width:100%; margin-top:12px"
+              @click="clearAll"
+            >
+              清空画布
+            </el-button>
           </el-form>
         </template>
 
         <!-- ====== 节点属性 ====== -->
         <template v-if="panelMode === 'node' && selectedNode">
-          <h4 class="panel-title">{{ nodeTypeLabel(selectedNode.type) }}</h4>
-          <el-form label-position="top" size="small" class="prop-form">
+          <h4 class="panel-title">
+            {{ nodeTypeLabel(selectedNode.type) }}
+          </h4>
+          <el-form
+            label-position="top"
+            size="small"
+            class="prop-form"
+          >
             <el-form-item label="名称">
-              <el-input :model-value="selectedNode.name" @input="onNodeNameInput">
+              <el-input
+                :model-value="selectedNode.name"
+                @input="onNodeNameInput"
+              >
                 <template #suffix>
-                  <span v-if="(selectedNode.name || '').length > 6" class="name-overflow">-{{ (selectedNode.name || '').length - 6 }}</span>
+                  <span
+                    v-if="(selectedNode.name || '').length > 6"
+                    class="name-overflow"
+                  >-{{ (selectedNode.name || '').length - 6 }}</span>
                 </template>
               </el-input>
-              <div v-if="!selectedNode.name?.trim()" class="field-warning">名称不可为空</div>
-              <div v-else-if="(selectedNode.name || '').length > 6" class="field-warning">名称过长可能会造成部分文字缺失</div>
+              <div
+                v-if="!selectedNode.name?.trim()"
+                class="field-warning"
+              >
+                名称不可为空
+              </div>
+              <div
+                v-else-if="(selectedNode.name || '').length > 6"
+                class="field-warning"
+              >
+                名称过长可能会造成部分文字缺失
+              </div>
             </el-form-item>
             <el-form-item label="说明">
-              <el-input v-model="selectedNode.config.description" type="textarea" :rows="3" placeholder="给节点添加备注说明（可选）" @input="markDirty" />
+              <el-input
+                v-model="selectedNode.config.description"
+                type="textarea"
+                :rows="3"
+                placeholder="给节点添加备注说明（可选）"
+                @input="markDirty"
+              />
             </el-form-item>
 
             <!-- ====== 开始节点：表单绑定 & 流程变量 ====== -->
             <template v-if="selectedNode.type === 'start'">
-              <h5 class="section-title">表单绑定</h5>
+              <h5 class="section-title">
+                表单绑定
+              </h5>
               <el-form-item label="关联表单">
                 <el-select
                   v-model="selectedNode.config.formId"
-                  filterable clearable
+                  filterable
+                  clearable
                   placeholder="选择表单"
                   @change="onFormBind"
                 >
@@ -242,44 +424,88 @@
                 </el-select>
               </el-form-item>
               <template v-if="selectedNode.config.formId && formFields.length > 0">
-                <h5 class="section-title">流程变量</h5>
-                <p class="form-tip">勾选字段将作为流程的条件变量使用</p>
+                <h5 class="section-title">
+                  流程变量
+                </h5>
+                <p class="form-tip">
+                  勾选字段将作为流程的条件变量使用
+                </p>
                 <el-form-item>
-                  <el-checkbox-group v-model="selectedNode.config.variables" @change="markDirty">
-                    <div v-for="field in formFields" :key="field.key" style="margin-bottom: 4px">
-                      <el-checkbox :value="field.key" :label="field.key">
+                  <el-checkbox-group
+                    v-model="selectedNode.config.variables"
+                    @change="markDirty"
+                  >
+                    <div
+                      v-for="field in formFields"
+                      :key="field.key"
+                      style="margin-bottom: 4px"
+                    >
+                      <el-checkbox
+                        :value="field.key"
+                        :label="field.key"
+                      >
                         <span class="field-label">{{ field.name || field.key }}</span>
                       </el-checkbox>
                     </div>
                   </el-checkbox-group>
                 </el-form-item>
               </template>
-              <div v-else-if="selectedNode.config.formId && formFields.length === 0" class="form-tip" style="color:#909399">
+              <div
+                v-else-if="selectedNode.config.formId && formFields.length === 0"
+                class="form-tip"
+                style="color:#909399"
+              >
                 该表单暂无字段
               </div>
             </template>
 
             <!-- ====== 审批节点属性 ====== -->
             <template v-if="isApprovalType(selectedNode.type)">
-              <h5 class="section-title">审批配置</h5>
-              <el-form-item v-if="selectedNode.type !== 'direct-approval' && selectedNode.type !== 'countersign' && selectedNode.type !== 'or-sign'" label="审批模式">
-                <el-select v-model="selectedNode.config.type" @change="markDirty">
-                  <el-option label="单人审批" value="single" />
-                  <el-option label="多人审批" value="multi" />
+              <h5 class="section-title">
+                审批配置
+              </h5>
+              <el-form-item
+                v-if="selectedNode.type !== 'direct-approval' && selectedNode.type !== 'countersign' && selectedNode.type !== 'or-sign'"
+                label="审批模式"
+              >
+                <el-select
+                  v-model="selectedNode.config.type"
+                  @change="markDirty"
+                >
+                  <el-option
+                    label="单人审批"
+                    value="single"
+                  />
+                  <el-option
+                    label="多人审批"
+                    value="multi"
+                  />
                 </el-select>
               </el-form-item>
               <!-- 角色审批多人模式：审批选择 -->
               <template v-if="isRoleApproval(selectedNode.type) && selectedNode.config.type === 'multi'">
                 <el-form-item label="审批选择">
-                  <el-radio-group v-model="selectedNode.config.approvalMode" @change="onApprovalModeChange">
-                    <el-radio value="assignee">审批人</el-radio>
-                    <el-radio value="role">审批角色</el-radio>
+                  <el-radio-group
+                    v-model="selectedNode.config.approvalMode"
+                    @change="onApprovalModeChange"
+                  >
+                    <el-radio value="assignee">
+                      审批人
+                    </el-radio>
+                    <el-radio value="role">
+                      审批角色
+                    </el-radio>
                   </el-radio-group>
                 </el-form-item>
-                <el-form-item v-if="selectedNode.config.approvalMode === 'assignee'" label="审批人">
+                <el-form-item
+                  v-if="selectedNode.config.approvalMode === 'assignee'"
+                  label="审批人"
+                >
                   <el-select
                     v-model="selectedNode.config.assignees"
-                    multiple filterable clearable
+                    multiple
+                    filterable
+                    clearable
                     placeholder="选择审批人（可多选）"
                     @change="onAssigneesChange"
                   >
@@ -291,10 +517,15 @@
                     />
                   </el-select>
                 </el-form-item>
-                <el-form-item v-if="selectedNode.config.approvalMode === 'role'" label="审批角色">
+                <el-form-item
+                  v-if="selectedNode.config.approvalMode === 'role'"
+                  label="审批角色"
+                >
                   <el-select
                     v-model="selectedNode.config.roleList"
-                    multiple filterable clearable
+                    multiple
+                    filterable
+                    clearable
                     placeholder="选择审批角色（可多选）"
                     @change="markDirty"
                   >
@@ -307,15 +538,39 @@
                   </el-select>
                 </el-form-item>
                 <el-form-item label="通过策略">
-                  <el-select v-model="selectedNode.config.strategy.type" @change="markDirty">
-                    <el-option label="会签（全员通过）" value="all" />
-                    <el-option label="或签（任一通过）" value="any" />
-                    <el-option label="比例通过" value="ratio" />
-                    <el-option label="一票否决" value="veto" />
+                  <el-select
+                    v-model="selectedNode.config.strategy.type"
+                    @change="markDirty"
+                  >
+                    <el-option
+                      label="会签（全员通过）"
+                      value="all"
+                    />
+                    <el-option
+                      label="或签（任一通过）"
+                      value="any"
+                    />
+                    <el-option
+                      label="比例通过"
+                      value="ratio"
+                    />
+                    <el-option
+                      label="一票否决"
+                      value="veto"
+                    />
                   </el-select>
                 </el-form-item>
-                <el-form-item label="通过比例" v-if="selectedNode.config.strategy?.type === 'ratio'">
-                  <el-input-number v-model="selectedNode.config.strategy.ratio" :min="0" :max="1" :step="0.1" @change="markDirty" />
+                <el-form-item
+                  v-if="selectedNode.config.strategy?.type === 'ratio'"
+                  label="通过比例"
+                >
+                  <el-input-number
+                    v-model="selectedNode.config.strategy.ratio"
+                    :min="0"
+                    :max="1"
+                    :step="0.1"
+                    @change="markDirty"
+                  />
                 </el-form-item>
               </template>
 
@@ -324,7 +579,8 @@
                 <el-form-item label="审批人">
                   <el-select
                     :model-value="assigneeSelectValue"
-                    filterable clearable
+                    filterable
+                    clearable
                     placeholder="选择审批人"
                     @update:model-value="onAssigneesChange"
                   >
@@ -337,7 +593,11 @@
                   </el-select>
                 </el-form-item>
                 <el-form-item label="审批角色">
-                  <el-input v-model="selectedNode.config.role" placeholder="选中审批人后确定" @input="markDirty" />
+                  <el-input
+                    v-model="selectedNode.config.role"
+                    placeholder="选中审批人后确定"
+                    @input="markDirty"
+                  />
                 </el-form-item>
               </template>
 
@@ -347,7 +607,8 @@
                   <el-select
                     :model-value="assigneeSelectValue"
                     :multiple="isMultiAssign(selectedNode)"
-                    filterable clearable
+                    filterable
+                    clearable
                     :placeholder="isMultiAssign(selectedNode) ? '选择审批人（可多选）' : '选择审批人'"
                     @update:model-value="onAssigneesChange"
                   >
@@ -362,54 +623,121 @@
                 <template v-if="selectedNode.config.type === 'multi'">
                   <el-form-item label="通过策略">
                     <template v-if="selectedNode.type === 'countersign'">
-                      <el-tag type="primary">会签（全员通过）</el-tag>
+                      <el-tag type="primary">
+                        会签（全员通过）
+                      </el-tag>
                     </template>
                     <template v-else-if="selectedNode.type === 'or-sign'">
-                      <el-tag type="success">或签（任一通过）</el-tag>
+                      <el-tag type="success">
+                        或签（任一通过）
+                      </el-tag>
                     </template>
                     <template v-else>
-                      <el-select v-model="selectedNode.config.strategy.type" @change="markDirty">
-                        <el-option label="会签（全员通过）" value="all" />
-                        <el-option label="或签（任一通过）" value="any" />
-                        <el-option label="比例通过" value="ratio" />
-                        <el-option label="一票否决" value="veto" />
+                      <el-select
+                        v-model="selectedNode.config.strategy.type"
+                        @change="markDirty"
+                      >
+                        <el-option
+                          label="会签（全员通过）"
+                          value="all"
+                        />
+                        <el-option
+                          label="或签（任一通过）"
+                          value="any"
+                        />
+                        <el-option
+                          label="比例通过"
+                          value="ratio"
+                        />
+                        <el-option
+                          label="一票否决"
+                          value="veto"
+                        />
                       </el-select>
                     </template>
                   </el-form-item>
-                  <el-form-item label="通过比例" v-if="selectedNode.config.strategy?.type === 'ratio'">
-                    <el-input-number v-model="selectedNode.config.strategy.ratio" :min="0" :max="1" :step="0.1" @change="markDirty" />
+                  <el-form-item
+                    v-if="selectedNode.config.strategy?.type === 'ratio'"
+                    label="通过比例"
+                  >
+                    <el-input-number
+                      v-model="selectedNode.config.strategy.ratio"
+                      :min="0"
+                      :max="1"
+                      :step="0.1"
+                      @change="markDirty"
+                    />
                   </el-form-item>
                 </template>
               </template>
 
               <el-form-item label="允许转交">
-                <el-switch v-model="selectedNode.config.allowTransfer" @change="markDirty" />
+                <el-switch
+                  v-model="selectedNode.config.allowTransfer"
+                  @change="markDirty"
+                />
               </el-form-item>
               <el-form-item label="允许加签">
-                <el-switch v-model="selectedNode.config.allowAddSign" @change="markDirty" />
+                <el-switch
+                  v-model="selectedNode.config.allowAddSign"
+                  @change="markDirty"
+                />
               </el-form-item>
 
-              <h5 class="section-title">服务等级协议</h5>
+              <h5 class="section-title">
+                服务等级协议
+              </h5>
               <el-form-item label="超时时限 (小时，0=不限)">
-                <el-input-number v-model="selectedNode.config.timeout" :min="0" :max="720" @change="markDirty" />
+                <el-input-number
+                  v-model="selectedNode.config.timeout"
+                  :min="0"
+                  :max="720"
+                  @change="markDirty"
+                />
               </el-form-item>
-              <el-form-item label="预警时间 (小时)" v-if="selectedNode.config.timeout > 0">
-                <el-input-number v-model="selectedNode.config.warnAt" :min="0" :max="selectedNode.config.timeout" @change="markDirty" />
+              <el-form-item
+                v-if="selectedNode.config.timeout > 0"
+                label="预警时间 (小时)"
+              >
+                <el-input-number
+                  v-model="selectedNode.config.warnAt"
+                  :min="0"
+                  :max="selectedNode.config.timeout"
+                  @change="markDirty"
+                />
               </el-form-item>
-              <el-form-item label="超时升级" v-if="selectedNode.config.timeout > 0">
-                <el-select v-model="selectedNode.config.escalateTo" filterable clearable placeholder="超时后转交给" @change="markDirty">
-                  <el-option v-for="m in workspaceMembers" :key="m.user.id" :label="m.user.nickname || m.user.email" :value="m.user.id" />
+              <el-form-item
+                v-if="selectedNode.config.timeout > 0"
+                label="超时升级"
+              >
+                <el-select
+                  v-model="selectedNode.config.escalateTo"
+                  filterable
+                  clearable
+                  placeholder="超时后转交给"
+                  @change="markDirty"
+                >
+                  <el-option
+                    v-for="m in workspaceMembers"
+                    :key="m.user.id"
+                    :label="m.user.nickname || m.user.email"
+                    :value="m.user.id"
+                  />
                 </el-select>
               </el-form-item>
             </template>
 
             <!-- ====== 抄送节点 ====== -->
             <template v-if="selectedNode.type === 'cc'">
-              <h5 class="section-title">抄送配置</h5>
+              <h5 class="section-title">
+                抄送配置
+              </h5>
               <el-form-item label="抄送人">
                 <el-select
                   v-model="ccSelected"
-                  multiple filterable clearable
+                  multiple
+                  filterable
+                  clearable
                   placeholder="选择抄送人（可多选）"
                   @change="updateCC"
                 >
@@ -422,49 +750,114 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="通知方式">
-                <el-checkbox-group v-model="selectedNode.config.notifyChannels" @change="markDirty">
-                  <el-checkbox label="inApp" value="inApp">站内</el-checkbox>
-                  <el-checkbox label="email" value="email">邮件</el-checkbox>
+                <el-checkbox-group
+                  v-model="selectedNode.config.notifyChannels"
+                  @change="markDirty"
+                >
+                  <el-checkbox
+                    label="inApp"
+                    value="inApp"
+                  >
+                    站内
+                  </el-checkbox>
+                  <el-checkbox
+                    label="email"
+                    value="email"
+                  >
+                    邮件
+                  </el-checkbox>
                 </el-checkbox-group>
               </el-form-item>
             </template>
 
             <!-- ====== 自动处理节点 ====== -->
             <template v-if="selectedNode.type === 'auto-task'">
-              <h5 class="section-title">自动处理配置</h5>
+              <h5 class="section-title">
+                自动处理配置
+              </h5>
               <el-form-item label="动作类型">
-                <el-select v-model="selectedNode.config.actionType" @change="onAutoActionTypeChange">
-                  <el-option label="发送通知" value="notify" />
-                  <el-option label="调用接口" value="webhook" />
-                  <el-option label="更新数据" value="update" />
+                <el-select
+                  v-model="selectedNode.config.actionType"
+                  @change="onAutoActionTypeChange"
+                >
+                  <el-option
+                    label="发送通知"
+                    value="notify"
+                  />
+                  <el-option
+                    label="调用接口"
+                    value="webhook"
+                  />
+                  <el-option
+                    label="更新数据"
+                    value="update"
+                  />
                 </el-select>
               </el-form-item>
 
               <!-- 发送通知 -->
               <template v-if="selectedNode.config.actionType === 'notify'">
                 <el-form-item label="通知人">
-                  <el-select v-model="selectedNode.config.actionConfig.userIds" multiple filterable clearable placeholder="选择通知对象" @change="markDirty">
-                    <el-option v-for="m in workspaceMembers" :key="m.user.id" :label="m.user.nickname || m.user.email" :value="m.user.id" />
+                  <el-select
+                    v-model="selectedNode.config.actionConfig.userIds"
+                    multiple
+                    filterable
+                    clearable
+                    placeholder="选择通知对象"
+                    @change="markDirty"
+                  >
+                    <el-option
+                      v-for="m in workspaceMembers"
+                      :key="m.user.id"
+                      :label="m.user.nickname || m.user.email"
+                      :value="m.user.id"
+                    />
                   </el-select>
                 </el-form-item>
                 <el-form-item label="通知标题">
-                  <el-input v-model="selectedNode.config.actionConfig.title" placeholder="自动通知标题" @input="markDirty" />
+                  <el-input
+                    v-model="selectedNode.config.actionConfig.title"
+                    placeholder="自动通知标题"
+                    @input="markDirty"
+                  />
                 </el-form-item>
                 <el-form-item label="通知内容">
-                  <el-input v-model="selectedNode.config.actionConfig.content" type="textarea" :rows="2" placeholder="自动通知内容" @input="markDirty" />
+                  <el-input
+                    v-model="selectedNode.config.actionConfig.content"
+                    type="textarea"
+                    :rows="2"
+                    placeholder="自动通知内容"
+                    @input="markDirty"
+                  />
                 </el-form-item>
               </template>
 
               <!-- 调用接口 -->
               <template v-if="selectedNode.config.actionType === 'webhook'">
                 <el-form-item label="请求地址">
-                  <el-input v-model="selectedNode.config.actionConfig.url" placeholder="https://..." @input="markDirty" />
+                  <el-input
+                    v-model="selectedNode.config.actionConfig.url"
+                    placeholder="https://..."
+                    @input="markDirty"
+                  />
                 </el-form-item>
                 <el-form-item label="请求方式">
-                  <el-select v-model="selectedNode.config.actionConfig.method" @change="markDirty">
-                    <el-option label="POST" value="POST" />
-                    <el-option label="GET" value="GET" />
-                    <el-option label="PUT" value="PUT" />
+                  <el-select
+                    v-model="selectedNode.config.actionConfig.method"
+                    @change="markDirty"
+                  >
+                    <el-option
+                      label="POST"
+                      value="POST"
+                    />
+                    <el-option
+                      label="GET"
+                      value="GET"
+                    />
+                    <el-option
+                      label="PUT"
+                      value="PUT"
+                    />
                   </el-select>
                 </el-form-item>
               </template>
@@ -472,22 +865,43 @@
               <!-- 更新数据 -->
               <template v-if="selectedNode.config.actionType === 'update'">
                 <el-form-item label="字段名">
-                  <el-input v-model="selectedNode.config.actionConfig.field" placeholder="如：status" @input="markDirty" />
+                  <el-input
+                    v-model="selectedNode.config.actionConfig.field"
+                    placeholder="如：status"
+                    @input="markDirty"
+                  />
                 </el-form-item>
                 <el-form-item label="更新为">
-                  <el-input v-model="selectedNode.config.actionConfig.value" placeholder="如：approved" @input="markDirty" />
+                  <el-input
+                    v-model="selectedNode.config.actionConfig.value"
+                    placeholder="如：approved"
+                    @input="markDirty"
+                  />
                 </el-form-item>
               </template>
             </template>
 
             <!-- ====== 条件分支 ====== -->
             <template v-if="selectedNode.type === 'condition'">
-              <h5 class="section-title">已有分支</h5>
-              <div v-if="processVariables.length === 0" class="form-tip" style="color:#e6a23c;margin-bottom:12px">
+              <h5 class="section-title">
+                已有分支
+              </h5>
+              <div
+                v-if="processVariables.length === 0"
+                class="form-tip"
+                style="color:#e6a23c;margin-bottom:12px"
+              >
                 请在开始节点中绑定表单并勾选流程变量
               </div>
-              <div v-if="nodeOutEdges.length > 0" class="condition-branch-list">
-                <div v-for="e in nodeOutEdges" :key="e.id" class="condition-branch">
+              <div
+                v-if="nodeOutEdges.length > 0"
+                class="condition-branch-list"
+              >
+                <div
+                  v-for="e in nodeOutEdges"
+                  :key="e.id"
+                  class="condition-branch"
+                >
                   <div class="branch-header">
                     <span>{{ getNodeName(e.targetNodeId) }}</span>
                     <div class="branch-header-right">
@@ -495,51 +909,147 @@
                         :model-value="!!e._isDefault"
                         size="small"
                         @change="(v: boolean) => setDefaultBranch(e, v)"
-                      >默认分支</el-checkbox>
-                      <el-button size="small" text type="danger" @click="removeEdge(e.targetNodeId)"><el-icon><Close /></el-icon></el-button>
+                      >
+                        默认分支
+                      </el-checkbox>
+                      <el-button
+                        size="small"
+                        text
+                        type="danger"
+                        @click="removeEdge(e.targetNodeId)"
+                      >
+                        <el-icon><Close /></el-icon>
+                      </el-button>
                     </div>
                   </div>
-                  <el-input v-model="e.label" placeholder="分支名（如：金额超5000）" size="small" class="branch-label" @input="markDirty" />
+                  <el-input
+                    v-model="e.label"
+                    placeholder="分支名（如：金额超5000）"
+                    size="small"
+                    class="branch-label"
+                    @input="markDirty"
+                  />
                   <!-- 默认分支不需要条件 -->
                   <template v-if="!e._isDefault">
                     <div class="condition-row">
-                      <el-select v-model="e._condField" placeholder="字段" size="small" class="cond-field" @change="(v: string) => buildCondition(e, v, e._condOp, e._condVal)">
-                        <el-option v-for="pv in processVariables" :key="pv.key" :label="pv.name" :value="pv.key" />
+                      <el-select
+                        v-model="e._condField"
+                        placeholder="字段"
+                        size="small"
+                        class="cond-field"
+                        @change="(v: string) => buildCondition(e, v, e._condOp, e._condVal)"
+                      >
+                        <el-option
+                          v-for="pv in processVariables"
+                          :key="pv.key"
+                          :label="pv.name"
+                          :value="pv.key"
+                        />
                       </el-select>
-                      <el-select v-model="e._condOp" placeholder="运算符" size="small" class="cond-op" @change="(v: string) => buildCondition(e, e._condField, v, e._condVal)">
-                        <el-option v-for="op in COND_OPERATORS" :key="op.value" :label="op.label" :value="op.value" />
+                      <el-select
+                        v-model="e._condOp"
+                        placeholder="运算符"
+                        size="small"
+                        class="cond-op"
+                        @change="(v: string) => buildCondition(e, e._condField, v, e._condVal)"
+                      >
+                        <el-option
+                          v-for="op in COND_OPERATORS"
+                          :key="op.value"
+                          :label="op.label"
+                          :value="op.value"
+                        />
                       </el-select>
-                      <el-input v-model="e._condVal" placeholder="值" size="small" class="cond-val" @input="(v: string) => buildCondition(e, e._condField, e._condOp, v)" />
+                      <el-input
+                        v-model="e._condVal"
+                        placeholder="值"
+                        size="small"
+                        class="cond-val"
+                        @input="(v: string) => buildCondition(e, e._condField, e._condOp, v)"
+                      />
                     </div>
-                    <div v-if="e.condition" class="condition-preview">表达式：<code>{{ e.condition }}</code></div>
-                    <div v-else class="form-tip" style="margin:4px 0;color:#e6a23c">请设置条件，或勾选"默认"作为兜底分支</div>
+                    <div
+                      v-if="e.condition"
+                      class="condition-preview"
+                    >
+                      表达式：<code>{{ e.condition }}</code>
+                    </div>
+                    <div
+                      v-else
+                      class="form-tip"
+                      style="margin:4px 0;color:#e6a23c"
+                    >
+                      请设置条件，或勾选"默认"作为兜底分支
+                    </div>
                   </template>
-                  <div v-else class="form-tip" style="margin:4px 0">不满足以上条件时走此分支</div>
+                  <div
+                    v-else
+                    class="form-tip"
+                    style="margin:4px 0"
+                  >
+                    不满足以上条件时走此分支
+                  </div>
                 </div>
               </div>
-              <div v-else class="form-tip" style="color:#c0c4cc; margin-bottom: 12px">暂无分支，请先连线</div>
+              <div
+                v-else
+                class="form-tip"
+                style="color:#c0c4cc; margin-bottom: 12px"
+              >
+                暂无分支，请先连线
+              </div>
               <el-divider />
               <el-form-item label="添加分支">
                 <div class="edge-config">
-                  <el-select v-model="edgeTarget" placeholder="目标节点" @change="setEdge" size="small">
-                    <el-option v-for="n in availableTargets" :key="n.id" :label="n.name" :value="n.id" />
+                  <el-select
+                    v-model="edgeTarget"
+                    placeholder="目标节点"
+                    size="small"
+                    @change="setEdge"
+                  >
+                    <el-option
+                      v-for="n in availableTargets"
+                      :key="n.id"
+                      :label="n.name"
+                      :value="n.id"
+                    />
                   </el-select>
-                  <el-input v-model="edgeLabel" placeholder="分支名" size="small" style="width:80px" />
+                  <el-input
+                    v-model="edgeLabel"
+                    placeholder="分支名"
+                    size="small"
+                    style="width:80px"
+                  />
                 </div>
               </el-form-item>
             </template>
 
             <!-- ====== 并行 / 汇合 ====== -->
             <template v-if="selectedNode.type === 'parallel'">
-              <h5 class="section-title">并行配置</h5>
-              <p class="form-tip">所有出线将同时触发，每条线对应一个并行分支</p>
+              <h5 class="section-title">
+                并行配置
+              </h5>
+              <p class="form-tip">
+                所有出线将同时触发，每条线对应一个并行分支
+              </p>
             </template>
             <template v-if="selectedNode.type === 'join'">
-              <h5 class="section-title">汇合配置</h5>
+              <h5 class="section-title">
+                汇合配置
+              </h5>
               <el-form-item label="汇合方式">
-                <el-select v-model="selectedNode.config.type" @change="markDirty">
-                  <el-option label="等待全部" value="all" />
-                  <el-option label="任一到达" value="any" />
+                <el-select
+                  v-model="selectedNode.config.type"
+                  @change="markDirty"
+                >
+                  <el-option
+                    label="等待全部"
+                    value="all"
+                  />
+                  <el-option
+                    label="任一到达"
+                    value="any"
+                  />
                 </el-select>
               </el-form-item>
             </template>
@@ -547,11 +1057,23 @@
             <!-- ====== 通用连线区（条件节点已在上方分支条件中管理） ====== -->
             <template v-if="selectedNode.type !== 'condition'">
               <el-divider />
-              <el-form-item label="已有连线" v-if="nodeOutEdges.length > 0">
+              <el-form-item
+                v-if="nodeOutEdges.length > 0"
+                label="已有连线"
+              >
                 <div class="edge-list">
-                  <div v-for="e in nodeOutEdges" :key="e.id" class="edge-item">
+                  <div
+                    v-for="e in nodeOutEdges"
+                    :key="e.id"
+                    class="edge-item"
+                  >
                     <span>{{ getNodeName(e.targetNodeId) }}</span>
-                    <el-button size="small" text type="danger" @click="removeEdge(e.targetNodeId)">
+                    <el-button
+                      size="small"
+                      text
+                      type="danger"
+                      @click="removeEdge(e.targetNodeId)"
+                    >
                       <el-icon><Close /></el-icon>
                     </el-button>
                   </div>
@@ -559,8 +1081,18 @@
               </el-form-item>
               <el-form-item label="添加连线">
                 <div class="edge-config">
-                  <el-select v-model="edgeTarget" placeholder="选择下一节点" @change="setEdge" size="small">
-                    <el-option v-for="n in availableTargets" :key="n.id" :label="n.name" :value="n.id" />
+                  <el-select
+                    v-model="edgeTarget"
+                    placeholder="选择下一节点"
+                    size="small"
+                    @change="setEdge"
+                  >
+                    <el-option
+                      v-for="n in availableTargets"
+                      :key="n.id"
+                      :label="n.name"
+                      :value="n.id"
+                    />
                   </el-select>
                 </div>
               </el-form-item>
@@ -568,13 +1100,21 @@
 
             <el-button
               v-if="selectedNode.type !== 'start' && selectedNode.type !== 'end'"
-              type="danger" size="small" plain class="delete-btn"
+              type="danger"
+              size="small"
+              plain
+              class="delete-btn"
               @click="removeNode(selectedNode.id)"
-            >删除节点</el-button>
+            >
+              删除节点
+            </el-button>
           </el-form>
         </template>
 
-        <div v-if="panelMode === 'node' && !selectedNode" class="empty-hint">
+        <div
+          v-if="panelMode === 'node' && !selectedNode"
+          class="empty-hint"
+        >
           <p>请选中节点后再查看属性列表</p>
         </div>
       </aside>

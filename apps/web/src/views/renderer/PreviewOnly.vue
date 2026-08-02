@@ -1,15 +1,30 @@
 <template>
   <div class="preview-page">
-    <div v-if="schema" class="preview-content">
+    <div
+      v-if="schema"
+      class="preview-content"
+    >
       <div class="preview-toolbar">
-        <el-tag type="warning">预览模式 — 未保存</el-tag>
+        <el-tag type="warning">
+          预览模式 — 未保存
+        </el-tag>
         <span class="toolbar-title">表单预览</span>
-        <el-button size="small" @click="window.close()">关闭</el-button>
+        <el-button
+          size="small"
+          @click="window.close()"
+        >
+          关闭
+        </el-button>
       </div>
 
       <!-- 画布式预览：24列栅格 -->
       <div class="preview-canvas">
-        <div v-if="schema.settings.formTitle" class="preview-title">{{ schema.settings.formTitle }}</div>
+        <div
+          v-if="schema.settings.formTitle"
+          class="preview-title"
+        >
+          {{ schema.settings.formTitle }}
+        </div>
         <div class="preview-fields">
           <div
             v-for="field in schema.fields"
@@ -17,7 +32,10 @@
             class="preview-field"
             :style="getFieldStyle(field)"
           >
-            <el-form-item :label="field.name" :size="fieldSize(field)">
+            <el-form-item
+              :label="field.name"
+              :size="fieldSize(field)"
+            >
               <el-upload
                 v-if="field.type === 'upload'"
                 class="pv-ctrl"
@@ -27,12 +45,19 @@
                 :auto-upload="false"
                 drag
               >
-                <div class="el-upload__text">拖拽文件到此处 或 <em>点击选择文件</em></div>
-              <div class="el-upload__tip" v-if="uploadHint(field)"><span v-html="uploadHint(field)"></span></div>
+                <div class="el-upload__text">
+                  拖拽文件到此处 或 <em>点击选择文件</em>
+                </div>
+                <div
+                  v-if="uploadHint(field)"
+                  class="el-upload__tip"
+                >
+                  <span v-html="uploadHint(field)" />
+                </div>
               </el-upload>
               <component
-                v-else
                 :is="resolveControl(field.type)"
+                v-else
                 v-model="formData[field.key]"
                 v-bind="field.props"
               />
@@ -42,10 +67,18 @@
       </div>
 
       <div class="preview-actions">
-        <el-button type="primary" @click="onSubmit">提交（预览）</el-button>
+        <el-button
+          type="primary"
+          @click="onSubmit"
+        >
+          提交（预览）
+        </el-button>
       </div>
     </div>
-    <div v-else class="no-schema">
+    <div
+      v-else
+      class="no-schema"
+    >
       <el-empty description="没有可预览的表单" />
     </div>
   </div>

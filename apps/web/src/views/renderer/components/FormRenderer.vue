@@ -1,6 +1,11 @@
 <template>
   <div class="form-renderer-wrapper">
-    <h2 v-if="title" class="form-title">{{ title }}</h2>
+    <h2
+      v-if="title"
+      class="form-title"
+    >
+      {{ title }}
+    </h2>
 
     <!-- 兼容性警告 -->
     <el-alert
@@ -34,10 +39,17 @@
     </el-form>
 
     <div class="form-actions">
-      <el-button v-if="engineRef.schema.settings.resetText" @click="resetForm">
+      <el-button
+        v-if="engineRef.schema.settings.resetText"
+        @click="resetForm"
+      >
         {{ engineRef.schema.settings.resetText }}
       </el-button>
-      <el-button type="primary" :loading="submitting" @click="handleSubmit">
+      <el-button
+        type="primary"
+        :loading="submitting"
+        @click="handleSubmit"
+      >
         {{ engineRef.schema.settings.submitText }}
       </el-button>
     </div>

@@ -2,13 +2,33 @@
   <div class="success-page">
     <div class="success-card">
       <div class="success-icon">
-        <el-icon :size="64" color="#22c55e"><CircleCheckFilled /></el-icon>
+        <el-icon
+          :size="64"
+          color="#22c55e"
+        >
+          <CircleCheckFilled />
+        </el-icon>
       </div>
       <h2>提交成功</h2>
-      <p class="sub">您的信息已成功提交</p>
-      <el-button type="primary" size="large" @click="$router.push(`/f/${formId}`)" class="action-btn">继续填写</el-button>
+      <p class="sub">
+        您的信息已成功提交
+      </p>
+      <el-button
+        type="primary"
+        size="large"
+        class="action-btn"
+        @click="$router.push(`/f/${formId}`)"
+      >
+        继续填写
+      </el-button>
       <div class="back-link">
-        <el-button text size="small" @click="$router.push('/home')">返回首页</el-button>
+        <el-button
+          text
+          size="small"
+          @click="$router.push('/home')"
+        >
+          返回首页
+        </el-button>
       </div>
     </div>
   </div>

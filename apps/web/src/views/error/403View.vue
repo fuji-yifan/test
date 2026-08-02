@@ -1,9 +1,16 @@
 <template>
   <div class="error-page">
-    <div class="error-code">403</div>
+    <div class="error-code">
+      403
+    </div>
     <h2>访问受限</h2>
     <p>抱歉，您没有权限访问此页面</p>
-    <el-button size="large" @click="$router.push('/home')">返回首页</el-button>
+    <el-button
+      size="large"
+      @click="$router.push('/home')"
+    >
+      返回首页
+    </el-button>
   </div>
 </template>
 

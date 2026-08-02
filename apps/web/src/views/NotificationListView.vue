@@ -3,38 +3,110 @@
     <div class="page-header">
       <h2>消息通知</h2>
       <div class="header-actions">
-        <el-button size="small" @click="markAllRead" :loading="markingAll">全部已读</el-button>
-        <el-button size="small" type="danger" plain @click="clearAll">清除所有</el-button>
+        <el-button
+          size="small"
+          :loading="markingAll"
+          @click="markAllRead"
+        >
+          全部已读
+        </el-button>
+        <el-button
+          size="small"
+          type="danger"
+          plain
+          @click="clearAll"
+        >
+          清除所有
+        </el-button>
       </div>
     </div>
 
     <div class="table-wrapper">
-      <el-table :data="list" stripe v-loading="loading" :height="tableHeight">
-        <el-table-column width="44" align="center">
+      <el-table
+        v-loading="loading"
+        :data="list"
+        stripe
+        :height="tableHeight"
+      >
+        <el-table-column
+          width="44"
+          align="center"
+        >
           <template #default="{ row }">
-            <span v-if="!row.isRead" class="unread-dot"></span>
+            <span
+              v-if="!row.isRead"
+              class="unread-dot"
+            />
           </template>
         </el-table-column>
-        <el-table-column label="类型" width="80" align="center">
+        <el-table-column
+          label="类型"
+          width="80"
+          align="center"
+        >
           <template #default="{ row }">
-            <el-tag :type="typeTag(row.type)" size="small">{{ typeLabel(row.type) }}</el-tag>
+            <el-tag
+              :type="typeTag(row.type)"
+              size="small"
+            >
+              {{ typeLabel(row.type) }}
+            </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="title" label="标题" min-width="120" align="center" show-overflow-tooltip />
-        <el-table-column prop="content" label="内容" min-width="140" align="center" show-overflow-tooltip />
-        <el-table-column label="时间" width="170" align="center">
-          <template #default="{ row }">{{ fmt(row.createdAt) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="140" align="center" fixed="right">
+        <el-table-column
+          prop="title"
+          label="标题"
+          min-width="120"
+          align="center"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="content"
+          label="内容"
+          min-width="140"
+          align="center"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          label="时间"
+          width="170"
+          align="center"
+        >
           <template #default="{ row }">
-            <el-button v-if="!row.isRead" size="small" type="primary" @click="markRead(row.id)">标为已读</el-button>
-            <el-button size="small" type="danger" @click="del(row.id)">删除</el-button>
+            {{ fmt(row.createdAt) }}
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="操作"
+          width="140"
+          align="center"
+          fixed="right"
+        >
+          <template #default="{ row }">
+            <el-button
+              v-if="!row.isRead"
+              size="small"
+              type="primary"
+              @click="markRead(row.id)"
+            >
+              标为已读
+            </el-button>
+            <el-button
+              size="small"
+              type="danger"
+              @click="del(row.id)"
+            >
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
     </div>
 
-    <el-empty v-if="!loading && list.length === 0" description="暂无通知" />
+    <el-empty
+      v-if="!loading && list.length === 0"
+      description="暂无通知"
+    />
     <el-pagination
       v-if="total > pageSize"
       v-model:current-page="page"

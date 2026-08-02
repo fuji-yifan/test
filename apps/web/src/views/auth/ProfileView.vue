@@ -5,10 +5,23 @@
     <div class="profile-body">
       <!-- 头像 + 身份 -->
       <div class="identity-block">
-        <el-avatar :size="88" :src="user?.avatarUrl" icon="UserFilled" class="avatar" />
-        <h2 class="display-name">{{ user?.nickname }}</h2>
-        <p class="display-email">{{ user?.email }}</p>
-        <el-button text size="small" @click="toggleEdit">
+        <el-avatar
+          :size="88"
+          :src="user?.avatarUrl"
+          icon="UserFilled"
+          class="avatar"
+        />
+        <h2 class="display-name">
+          {{ user?.nickname }}
+        </h2>
+        <p class="display-email">
+          {{ user?.email }}
+        </p>
+        <el-button
+          text
+          size="small"
+          @click="toggleEdit"
+        >
           {{ editing ? '取消' : '编辑资料' }}
         </el-button>
       </div>
@@ -17,11 +30,17 @@
       <div class="stats-row">
         <div class="stat-card">
           <div class="stat-icon status-icon">
-            <el-icon :size="20"><CircleCheckFilled /></el-icon>
+            <el-icon :size="20">
+              <CircleCheckFilled />
+            </el-icon>
           </div>
           <div class="stat-body">
             <span class="stat-value">
-              <el-tag :type="user?.status === 'active' ? 'success' : 'warning'" size="small" effect="dark">
+              <el-tag
+                :type="user?.status === 'active' ? 'success' : 'warning'"
+                size="small"
+                effect="dark"
+              >
                 {{ user?.status === 'active' ? '正常' : user?.status || '-' }}
               </el-tag>
             </span>
@@ -30,7 +49,9 @@
         </div>
         <div class="stat-card">
           <div class="stat-icon login-icon">
-            <el-icon :size="20"><Clock /></el-icon>
+            <el-icon :size="20">
+              <Clock />
+            </el-icon>
           </div>
           <div class="stat-body">
             <span class="stat-value">{{ loginTime }}</span>
@@ -39,7 +60,9 @@
         </div>
         <div class="stat-card">
           <div class="stat-icon reg-icon">
-            <el-icon :size="20"><Calendar /></el-icon>
+            <el-icon :size="20">
+              <Calendar />
+            </el-icon>
           </div>
           <div class="stat-body">
             <span class="stat-value">{{ registerDate }}</span>
@@ -50,9 +73,14 @@
 
       <!-- 账号信息 / 编辑 -->
       <div class="section-card">
-        <h4 class="section-title">{{ editing ? '编辑资料' : '账号信息' }}</h4>
+        <h4 class="section-title">
+          {{ editing ? '编辑资料' : '账号信息' }}
+        </h4>
 
-        <div v-if="!editing" class="info-grid">
+        <div
+          v-if="!editing"
+          class="info-grid"
+        >
           <div class="info-item">
             <span class="info-label">昵称</span>
             <span class="info-value">{{ user?.nickname }}</span>
@@ -67,14 +95,27 @@
           </div>
         </div>
 
-        <el-form v-else label-position="top" @submit.prevent="saveProfile">
+        <el-form
+          v-else
+          label-position="top"
+          @submit.prevent="saveProfile"
+        >
           <!-- 头像 -->
           <el-form-item label="头像">
             <div class="avatar-edit-row">
-              <div class="avatar-upload" @click="triggerUpload">
-                <el-avatar :size="56" :src="editAvatar" icon="UserFilled" />
+              <div
+                class="avatar-upload"
+                @click="triggerUpload"
+              >
+                <el-avatar
+                  :size="56"
+                  :src="editAvatar"
+                  icon="UserFilled"
+                />
                 <div class="upload-overlay">
-                  <el-icon :size="18"><Upload /></el-icon>
+                  <el-icon :size="18">
+                    <Upload />
+                  </el-icon>
                 </div>
               </div>
               <input
@@ -83,9 +124,13 @@
                 accept="image/png,image/jpeg,image/gif,image/webp"
                 hidden
                 @change="onFileChange"
-              />
+              >
               <div class="avatar-actions">
-                <el-button size="small" :loading="uploading" @click="triggerUpload">
+                <el-button
+                  size="small"
+                  :loading="uploading"
+                  @click="triggerUpload"
+                >
                   {{ uploading ? '上传中...' : '上传图片' }}
                 </el-button>
                 <el-input
@@ -99,16 +144,29 @@
           </el-form-item>
 
           <el-form-item label="昵称">
-            <el-input v-model="editNickname" maxlength="100" placeholder="输入新昵称" />
+            <el-input
+              v-model="editNickname"
+              maxlength="100"
+              placeholder="输入新昵称"
+            />
           </el-form-item>
 
           <el-form-item label="邮箱">
-            <el-input :model-value="user?.email" disabled />
+            <el-input
+              :model-value="user?.email"
+              disabled
+            />
             <span class="field-note">邮箱暂不支持修改</span>
           </el-form-item>
 
           <div class="edit-actions">
-            <el-button type="primary" :loading="saving" @click="saveProfile">保存</el-button>
+            <el-button
+              type="primary"
+              :loading="saving"
+              @click="saveProfile"
+            >
+              保存
+            </el-button>
           </div>
 
           <el-divider />
@@ -120,27 +178,51 @@
               class="pwd-toggle"
               @click="showPwd = !showPwd"
             >
-              <el-icon :size="14"><Lock /></el-icon>
+              <el-icon :size="14">
+                <Lock />
+              </el-icon>
               {{ showPwd ? '取消修改' : '修改密码' }}
             </el-button>
             <template v-if="showPwd">
               <el-form-item label="原密码">
-                <el-input v-model="pwdForm.oldPassword" type="password" show-password placeholder="输入当前密码" />
+                <el-input
+                  v-model="pwdForm.oldPassword"
+                  type="password"
+                  show-password
+                  placeholder="输入当前密码"
+                />
               </el-form-item>
               <el-form-item label="新密码">
-                <el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="至少6位" />
+                <el-input
+                  v-model="pwdForm.newPassword"
+                  type="password"
+                  show-password
+                  placeholder="至少6位"
+                />
               </el-form-item>
               <el-form-item label="确认新密码">
-                <el-input v-model="pwdForm.confirmPwd" type="password" show-password placeholder="再次输入新密码" @keyup.enter="changePassword" />
+                <el-input
+                  v-model="pwdForm.confirmPwd"
+                  type="password"
+                  show-password
+                  placeholder="再次输入新密码"
+                  @keyup.enter="changePassword"
+                />
               </el-form-item>
               <div class="pwd-actions">
-                <el-button type="primary" size="small" :loading="changingPwd" @click="changePassword">确认修改</el-button>
+                <el-button
+                  type="primary"
+                  size="small"
+                  :loading="changingPwd"
+                  @click="changePassword"
+                >
+                  确认修改
+                </el-button>
               </div>
             </template>
           </div>
         </el-form>
       </div>
-
     </div>
   </div>
 </template>

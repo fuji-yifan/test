@@ -2,32 +2,87 @@
   <div class="my-processes">
     <h2>我的流程</h2>
 
-    <el-table :data="list" stripe v-loading="loading">
-      <el-table-column label="流程名称" min-width="120" align="center" show-overflow-tooltip>
-        <template #default="{ row }">{{ row.definition?.name || '-' }}</template>
-      </el-table-column>
-      <el-table-column label="当前状态" min-width="80" align="center">
+    <el-table
+      v-loading="loading"
+      :data="list"
+      stripe
+    >
+      <el-table-column
+        label="流程名称"
+        min-width="120"
+        align="center"
+        show-overflow-tooltip
+      >
         <template #default="{ row }">
-          <el-tag :type="stateType(row.currentState)" size="small">{{ stateName(row.currentState) }}</el-tag>
+          {{ row.definition?.name || '-' }}
         </template>
       </el-table-column>
-      <el-table-column label="发起时间" min-width="180" align="center">
-        <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
+      <el-table-column
+        label="当前状态"
+        min-width="80"
+        align="center"
+      >
+        <template #default="{ row }">
+          <el-tag
+            :type="stateType(row.currentState)"
+            size="small"
+          >
+            {{ stateName(row.currentState) }}
+          </el-tag>
+        </template>
       </el-table-column>
-      <el-table-column label="完成时间" min-width="180" align="center">
-        <template #default="{ row }">{{ formatDate(row.completedAt) }}</template>
+      <el-table-column
+        label="发起时间"
+        min-width="180"
+        align="center"
+      >
+        <template #default="{ row }">
+          {{ formatDate(row.createdAt) }}
+        </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="200" align="center" fixed="right">
+      <el-table-column
+        label="完成时间"
+        min-width="180"
+        align="center"
+      >
+        <template #default="{ row }">
+          {{ formatDate(row.completedAt) }}
+        </template>
+      </el-table-column>
+      <el-table-column
+        label="操作"
+        min-width="200"
+        align="center"
+        fixed="right"
+      >
         <template #default="{ row }">
           <el-button
             v-if="row.currentState === 'approving' && row.definition?.settings?.allowWithdraw !== false"
             size="small"
             type="warning"
             @click="withdraw(row)"
-          >撤回</el-button>
-          <el-button size="small" @click="viewProgress(row)">进度</el-button>
-          <el-button size="small" @click="viewDetail(row)">详情</el-button>
-          <el-button size="small" type="danger" @click="confirmDelete(row)">删除</el-button>
+          >
+            撤回
+          </el-button>
+          <el-button
+            size="small"
+            @click="viewProgress(row)"
+          >
+            进度
+          </el-button>
+          <el-button
+            size="small"
+            @click="viewDetail(row)"
+          >
+            详情
+          </el-button>
+          <el-button
+            size="small"
+            type="danger"
+            @click="confirmDelete(row)"
+          >
+            删除
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -44,15 +99,33 @@
     />
 
     <!-- 详情对话框 -->
-    <el-dialog v-model="showDetail" title="流程详情" width="600px">
+    <el-dialog
+      v-model="showDetail"
+      title="流程详情"
+      width="600px"
+    >
       <div v-if="detailInstance">
-        <el-descriptions :column="2" border size="small">
-          <el-descriptions-item label="流程名称">{{ detailInstance.definition?.name }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{ stateName(detailInstance.currentState) }}</el-descriptions-item>
-          <el-descriptions-item label="发起时间">{{ formatDate(detailInstance.createdAt) }}</el-descriptions-item>
-          <el-descriptions-item label="完成时间">{{ formatDate(detailInstance.completedAt) }}</el-descriptions-item>
+        <el-descriptions
+          :column="2"
+          border
+          size="small"
+        >
+          <el-descriptions-item label="流程名称">
+            {{ detailInstance.definition?.name }}
+          </el-descriptions-item>
+          <el-descriptions-item label="状态">
+            {{ stateName(detailInstance.currentState) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="发起时间">
+            {{ formatDate(detailInstance.createdAt) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="完成时间">
+            {{ formatDate(detailInstance.completedAt) }}
+          </el-descriptions-item>
         </el-descriptions>
-        <h4 style="margin-top:16px">审批记录</h4>
+        <h4 style="margin-top:16px">
+          审批记录
+        </h4>
         <el-timeline>
           <el-timeline-item
             v-for="task in detailInstance.tasks"

@@ -1,8 +1,19 @@
 <template>
   <div class="component-palette">
-    <el-input v-model="searchText" placeholder="搜索控件..." size="small" clearable class="search-input" />
-    <template v-for="group in groupedComponents" :key="group.category">
-      <div class="category-title">{{ group.label }}</div>
+    <el-input
+      v-model="searchText"
+      placeholder="搜索控件..."
+      size="small"
+      clearable
+      class="search-input"
+    />
+    <template
+      v-for="group in groupedComponents"
+      :key="group.category"
+    >
+      <div class="category-title">
+        {{ group.label }}
+      </div>
       <div class="component-list">
         <div
           v-for="comp in group.items"
@@ -12,7 +23,9 @@
           @dragstart="onDragStart($event, comp)"
           @dragend="onDragEnd"
         >
-          <el-icon class="comp-icon"><component :is="getIcon(comp.type)" /></el-icon>
+          <el-icon class="comp-icon">
+            <component :is="getIcon(comp.type)" />
+          </el-icon>
           <span>{{ comp.display }}</span>
         </div>
       </div>

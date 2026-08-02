@@ -47,20 +47,38 @@
             <el-icon><Setting /></el-icon>
             <span>管理</span>
           </template>
-          <el-menu-item :index="`/workspace/${defaultWsId}/members`">成员管理</el-menu-item>
-          <el-menu-item :index="`/workspace/${defaultWsId}/roles`">角色权限</el-menu-item>
-          <el-menu-item :index="`/workspace/${defaultWsId}/audit-logs`">审计日志</el-menu-item>
+          <el-menu-item :index="`/workspace/${defaultWsId}/members`">
+            成员管理
+          </el-menu-item>
+          <el-menu-item :index="`/workspace/${defaultWsId}/roles`">
+            角色权限
+          </el-menu-item>
+          <el-menu-item :index="`/workspace/${defaultWsId}/audit-logs`">
+            审计日志
+          </el-menu-item>
         </el-sub-menu>
       </el-menu>
 
       <!-- 主题切换 -->
       <div class="sidebar-footer">
-        <el-tooltip :content="app.isDark ? '深色模式' : '浅色模式'" placement="right" :disabled="!app.sidebarCollapsed">
-          <button class="theme-toggle" @click="app.toggleDark()">
-            <el-icon :size="18"><Moon v-if="app.isDark" /><Sunny v-else /></el-icon>
+        <el-tooltip
+          :content="app.isDark ? '深色模式' : '浅色模式'"
+          placement="right"
+          :disabled="!app.sidebarCollapsed"
+        >
+          <button
+            class="theme-toggle"
+            @click="app.toggleDark()"
+          >
+            <el-icon :size="18">
+              <Moon v-if="app.isDark" /><Sunny v-else />
+            </el-icon>
           </button>
         </el-tooltip>
-        <span v-if="!app.sidebarCollapsed" class="theme-label">{{ app.isDark ? '深色模式' : '浅色模式' }}</span>
+        <span
+          v-if="!app.sidebarCollapsed"
+          class="theme-label"
+        >{{ app.isDark ? '深色模式' : '浅色模式' }}</span>
       </div>
     </aside>
 
@@ -69,11 +87,20 @@
       <!-- 顶部栏 -->
       <header class="topbar">
         <div class="topbar-left">
-          <el-button text @click="app.toggleSidebar()">
-            <el-icon :size="18"><DArrowLeft v-if="!app.sidebarCollapsed" /><DArrowRight v-else /></el-icon>
+          <el-button
+            text
+            @click="app.toggleSidebar()"
+          >
+            <el-icon :size="18">
+              <DArrowLeft v-if="!app.sidebarCollapsed" /><DArrowRight v-else />
+            </el-icon>
           </el-button>
           <el-breadcrumb separator="/">
-            <el-breadcrumb-item v-for="(item, i) in breadcrumbs" :key="i" :to="item.to">
+            <el-breadcrumb-item
+              v-for="(item, i) in breadcrumbs"
+              :key="i"
+              :to="item.to"
+            >
               {{ item.title }}
             </el-breadcrumb-item>
           </el-breadcrumb>
@@ -101,14 +128,24 @@
           <!-- 用户 -->
           <el-dropdown trigger="click">
             <span class="user-info">
-              <el-avatar :size="32" icon="UserFilled" />
+              <el-avatar
+                :size="32"
+                icon="UserFilled"
+              />
               <span class="user-name">{{ auth.currentUser?.nickname || auth.currentUser?.email }}</span>
               <el-icon><ArrowDown /></el-icon>
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="goProfile">个人信息</el-dropdown-item>
-                <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
+                <el-dropdown-item @click="goProfile">
+                  个人信息
+                </el-dropdown-item>
+                <el-dropdown-item
+                  divided
+                  @click="handleLogout"
+                >
+                  退出登录
+                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>

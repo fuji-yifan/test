@@ -273,7 +273,7 @@ class Parser {
 
   // comparison → additive ( ('>' | '>=' | '<' | '<=' | '==' | '!=' | '===' | '!==') additive )?
   private comparison(ctx: Record<string, any>): any {
-    let left = this.additive(ctx)
+    const left = this.additive(ctx)
     const compOps: TokenType[] = ['gt', 'gte', 'lt', 'lte', 'eq', 'notEq', 'strictEq', 'strictNotEq']
     if (compOps.some((op) => this.match(op))) {
       const op = this.currentToken()!.type

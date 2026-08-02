@@ -3,35 +3,87 @@
     <div class="page-header">
       <h2>提交数据</h2>
       <div class="header-actions">
-        <el-button @click="exportCSV">导出 CSV</el-button>
-        <el-button @click="exportExcel">导出 Excel</el-button>
+        <el-button @click="exportCSV">
+          导出 CSV
+        </el-button>
+        <el-button @click="exportExcel">
+          导出 Excel
+        </el-button>
       </div>
     </div>
 
-    <el-table :data="list" stripe v-loading="loading">
-      <el-table-column type="index" label="#" width="55" align="center" />
-<el-table-column label="提交人" min-width="120" align="center" show-overflow-tooltip>
+    <el-table
+      v-loading="loading"
+      :data="list"
+      stripe
+    >
+      <el-table-column
+        type="index"
+        label="#"
+        width="55"
+        align="center"
+      />
+      <el-table-column
+        label="提交人"
+        min-width="120"
+        align="center"
+        show-overflow-tooltip
+      >
         <template #default="{ row }">
-          <el-tooltip v-if="row.submitter" :content="'用户ID：' + row.submitterId" placement="top" effect="light">
+          <el-tooltip
+            v-if="row.submitter"
+            :content="'用户ID：' + row.submitterId"
+            placement="top"
+            effect="light"
+          >
             <span class="user-link">{{ row.submitter.nickname || row.submitter.email }}</span>
           </el-tooltip>
           <span v-else>匿名</span>
         </template>
       </el-table-column>
-      <el-table-column label="提交时间" min-width="150" align="center">
-        <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
-      </el-table-column>
-      <el-table-column label="状态" min-width="120" align="center">
+      <el-table-column
+        label="提交时间"
+        min-width="150"
+        align="center"
+      >
         <template #default="{ row }">
-          <el-tag :type="row.status==='submitted'?'info':row.status==='reviewed'?'success':'warning'" size="small">
+          {{ formatDate(row.createdAt) }}
+        </template>
+      </el-table-column>
+      <el-table-column
+        label="状态"
+        min-width="120"
+        align="center"
+      >
+        <template #default="{ row }">
+          <el-tag
+            :type="row.status==='submitted'?'info':row.status==='reviewed'?'success':'warning'"
+            size="small"
+          >
             {{ row.status }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="150" align="center" fixed="right">
+      <el-table-column
+        label="操作"
+        min-width="150"
+        align="center"
+        fixed="right"
+      >
         <template #default="{ row }">
-          <el-button size="small" @click="viewDetail(row)">详情</el-button>
-          <el-button size="small" type="danger" @click="deleteItem(row)">删除</el-button>
+          <el-button
+            size="small"
+            @click="viewDetail(row)"
+          >
+            详情
+          </el-button>
+          <el-button
+            size="small"
+            type="danger"
+            @click="deleteItem(row)"
+          >
+            删除
+          </el-button>
         </template>
       </el-table-column>
     </el-table>

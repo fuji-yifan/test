@@ -7,16 +7,39 @@
     @close="reset"
   >
     <div class="publish-body">
-      <el-alert title="发布成功" type="success" :closable="false" show-icon style="margin-bottom:16px" />
-      <p class="tip">将以下链接分享给填写人，无需登录即可填写：</p>
+      <el-alert
+        title="发布成功"
+        type="success"
+        :closable="false"
+        show-icon
+        style="margin-bottom:16px"
+      />
+      <p class="tip">
+        将以下链接分享给填写人，无需登录即可填写：
+      </p>
       <div class="link-row">
-        <el-input :model-value="formLink" readonly />
-        <el-button type="primary" @click="copyLink">复制</el-button>
+        <el-input
+          :model-value="formLink"
+          readonly
+        />
+        <el-button
+          type="primary"
+          @click="copyLink"
+        >
+          复制
+        </el-button>
       </div>
-      <p v-if="copied" class="copy-ok">已复制到剪贴板</p>
+      <p
+        v-if="copied"
+        class="copy-ok"
+      >
+        已复制到剪贴板
+      </p>
     </div>
     <template #footer>
-      <el-button @click="close">关闭</el-button>
+      <el-button @click="close">
+        关闭
+      </el-button>
     </template>
   </el-dialog>
 </template>

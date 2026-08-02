@@ -3,31 +3,90 @@
     <div class="page-header">
       <h2>表单管理</h2>
       <div class="header-actions">
-        <el-button type="primary" @click="createForm">新建表单</el-button>
-        <el-input v-model="search" placeholder="搜索表单..." clearable class="search-input" />
-        <el-select v-model="statusFilter" placeholder="状态" clearable style="width:120px">
-          <el-option label="全部" value="" />
-          <el-option label="草稿" value="draft" />
-          <el-option label="已发布" value="published" />
-          <el-option label="已归档" value="archived" />
+        <el-button
+          type="primary"
+          @click="createForm"
+        >
+          新建表单
+        </el-button>
+        <el-input
+          v-model="search"
+          placeholder="搜索表单..."
+          clearable
+          class="search-input"
+        />
+        <el-select
+          v-model="statusFilter"
+          placeholder="状态"
+          clearable
+          style="width:120px"
+        >
+          <el-option
+            label="全部"
+            value=""
+          />
+          <el-option
+            label="草稿"
+            value="draft"
+          />
+          <el-option
+            label="已发布"
+            value="published"
+          />
+          <el-option
+            label="已归档"
+            value="archived"
+          />
         </el-select>
-        <el-select v-model="workflowFilter" placeholder="流程" clearable style="width:120px">
-          <el-option label="全部" value="" />
-          <el-option label="已绑定" value="bound" />
-          <el-option label="未绑定" value="unbound" />
+        <el-select
+          v-model="workflowFilter"
+          placeholder="流程"
+          clearable
+          style="width:120px"
+        >
+          <el-option
+            label="全部"
+            value=""
+          />
+          <el-option
+            label="已绑定"
+            value="bound"
+          />
+          <el-option
+            label="未绑定"
+            value="unbound"
+          />
         </el-select>
       </div>
     </div>
 
     <!-- 分类标签页（样式仿模板市场） -->
-    <el-tabs v-model="activeCategory" @tab-change="onCategoryChange">
-      <el-tab-pane label="全部" name="" />
-      <el-tab-pane v-for="c in FORM_CATEGORIES" :key="c" :label="c" :name="c" />
+    <el-tabs
+      v-model="activeCategory"
+      @tab-change="onCategoryChange"
+    >
+      <el-tab-pane
+        label="全部"
+        name=""
+      />
+      <el-tab-pane
+        v-for="c in FORM_CATEGORIES"
+        :key="c"
+        :label="c"
+        :name="c"
+      />
     </el-tabs>
 
     <!-- 卡片视图 -->
-    <div v-if="filteredList.length" class="form-grid">
-      <div v-for="f in filteredList" :key="f.id" class="form-card">
+    <div
+      v-if="filteredList.length"
+      class="form-grid"
+    >
+      <div
+        v-for="f in filteredList"
+        :key="f.id"
+        class="form-card"
+      >
         <div class="card-body">
           <div class="card-title-row">
             <h4>{{ f.name }}</h4>
@@ -38,7 +97,12 @@
               trigger="click"
             >
               <template #reference>
-                <el-tag type="warning" size="small" class="workflow-badge" @click.stop>
+                <el-tag
+                  type="warning"
+                  size="small"
+                  class="workflow-badge"
+                  @click.stop
+                >
                   已绑定流程
                 </el-tag>
               </template>
@@ -50,42 +114,100 @@
                   @click="goWorkflowDesigner(wf.id)"
                 >
                   <span class="wf-name">{{ wf.name }}</span>
-                  <el-tag :type="wf.status === 'published' ? 'success' : 'info'" size="small">
+                  <el-tag
+                    :type="wf.status === 'published' ? 'success' : 'info'"
+                    size="small"
+                  >
                     {{ wf.status === 'published' ? '已发布' : '草稿' }}
                   </el-tag>
                 </div>
               </div>
             </el-popover>
           </div>
-          <p v-if="f.description" class="desc">{{ f.description }}</p>
+          <p
+            v-if="f.description"
+            class="desc"
+          >
+            {{ f.description }}
+          </p>
           <div class="meta">
-            <el-tag size="small" v-if="f.category">{{ f.category }}</el-tag>
-            <el-tag :type="f.status==='published'?'success':f.status==='archived'?'warning':'info'" size="small">
+            <el-tag
+              v-if="f.category"
+              size="small"
+            >
+              {{ f.category }}
+            </el-tag>
+            <el-tag
+              :type="f.status==='published'?'success':f.status==='archived'?'warning':'info'"
+              size="small"
+            >
               {{ statusLabel(f.status) }}
             </el-tag>
             <span class="time">{{ formatDate(f.updatedAt) }}</span>
           </div>
         </div>
         <div class="card-actions">
-          <el-button size="small" @click="openDesigner(f)">设计</el-button>
-          <el-button size="small" @click="viewData(f)">数据</el-button>
-          <el-button size="small" @click="goSettings(f)">设置</el-button>
+          <el-button
+            size="small"
+            @click="openDesigner(f)"
+          >
+            设计
+          </el-button>
+          <el-button
+            size="small"
+            @click="viewData(f)"
+          >
+            数据
+          </el-button>
+          <el-button
+            size="small"
+            @click="goSettings(f)"
+          >
+            设置
+          </el-button>
           <el-dropdown trigger="click">
-            <el-button size="small">更多 <el-icon><ArrowDown /></el-icon></el-button>
+            <el-button size="small">
+              更多 <el-icon><ArrowDown /></el-icon>
+            </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="copyForm(f)">复制</el-dropdown-item>
-                <el-dropdown-item v-if="f.status==='draft' || f.status==='archived'" @click="publishForm(f)">发布</el-dropdown-item>
-                <el-dropdown-item v-if="f.status==='published'" @click="showPublishLink(f)">链接</el-dropdown-item>
-                <el-dropdown-item v-if="f.status==='published'" @click="archiveForm(f)">归档</el-dropdown-item>
-                <el-dropdown-item divided @click="deleteForm(f)">删除</el-dropdown-item>
+                <el-dropdown-item @click="copyForm(f)">
+                  复制
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="f.status==='draft' || f.status==='archived'"
+                  @click="publishForm(f)"
+                >
+                  发布
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="f.status==='published'"
+                  @click="showPublishLink(f)"
+                >
+                  链接
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-if="f.status==='published'"
+                  @click="archiveForm(f)"
+                >
+                  归档
+                </el-dropdown-item>
+                <el-dropdown-item
+                  divided
+                  @click="deleteForm(f)"
+                >
+                  删除
+                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
         </div>
       </div>
     </div>
-    <el-empty v-if="!filteredList.length" description="暂无表单" />
+    <el-empty
+      v-if="!filteredList.length"
+      description="暂无表单"
+    />
 
     <el-pagination
       v-if="total > pageSize"
@@ -97,28 +219,64 @@
     />
 
     <!-- 新建表单弹窗 -->
-    <el-dialog v-model="showCreate" title="新建表单" width="420px">
-      <el-form :model="createFormData" @submit.prevent="doCreate">
+    <el-dialog
+      v-model="showCreate"
+      title="新建表单"
+      width="420px"
+    >
+      <el-form
+        :model="createFormData"
+        @submit.prevent="doCreate"
+      >
         <el-form-item label="表单名称">
-          <el-input v-model="createFormData.name" placeholder="请输入表单名称" @keyup.enter="doCreate" />
+          <el-input
+            v-model="createFormData.name"
+            placeholder="请输入表单名称"
+            @keyup.enter="doCreate"
+          />
         </el-form-item>
         <el-form-item label="描述">
-          <el-input v-model="createFormData.description" type="textarea" :rows="2" placeholder="可选" />
+          <el-input
+            v-model="createFormData.description"
+            type="textarea"
+            :rows="2"
+            placeholder="可选"
+          />
         </el-form-item>
         <el-form-item label="分类">
-          <el-select v-model="createFormData.category" placeholder="选择表单分类" clearable>
-            <el-option v-for="c in FORM_CATEGORIES" :key="c" :label="c" :value="c" />
+          <el-select
+            v-model="createFormData.category"
+            placeholder="选择表单分类"
+            clearable
+          >
+            <el-option
+              v-for="c in FORM_CATEGORIES"
+              :key="c"
+              :label="c"
+              :value="c"
+            />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showCreate = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="doCreate">创建</el-button>
+        <el-button @click="showCreate = false">
+          取消
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="creating"
+          @click="doCreate"
+        >
+          创建
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 发布成功链接弹窗 -->
-    <PublishLinkDialog v-model:visible="showLink" :form-id="linkFormId" />
+    <PublishLinkDialog
+      v-model:visible="showLink"
+      :form-id="linkFormId"
+    />
   </div>
 </template>
 
@@ -171,7 +329,7 @@ async function fetchList() {
     list.value = data?.list || []
     total.value = data?.pagination?.total || 0
   } catch (e: any) {
-    console.error('获取表单列表失败:', e)
+    ElMessage.error(e.response?.data?.message || '获取表单列表失败')
   }
 }
 
@@ -216,11 +374,11 @@ async function doCreate() {
   }
 }
 
-function openDesigner(f: any) { router.push(`/workspace/${wsId}/forms/${f.id}/designer`) }
-function viewData(f: any) { router.push(`/workspace/${wsId}/forms/${f.id}/data`) }
-function goSettings(f: any) { router.push(`/workspace/${wsId}/forms/${f.id}/settings`) }
-function goWorkflowDesigner(wfId: string) { router.push(`/workspace/${wsId}/workflows/${wfId}/designer`) }
-async function copyForm(f: any) { await http.post(`/workspaces/${wsId}/forms/${f.id}/fork`); fetchList() }
+function openDesigner(f: any) { router.push(`/workspace/${wsId.value}/forms/${f.id}/designer`) }
+function viewData(f: any) { router.push(`/workspace/${wsId.value}/forms/${f.id}/data`) }
+function goSettings(f: any) { router.push(`/workspace/${wsId.value}/forms/${f.id}/settings`) }
+function goWorkflowDesigner(wfId: string) { router.push(`/workspace/${wsId.value}/workflows/${wfId}/designer`) }
+async function copyForm(f: any) { await http.post(`/workspaces/${wsId.value}/forms/${f.id}/fork`); fetchList() }
 async function publishForm(f: any) {
   await http.post(`/forms/${f.id}/publish`)
   fetchList()

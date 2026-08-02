@@ -4,7 +4,10 @@
 
     <!-- 筛选栏 -->
     <el-card class="filter-bar">
-      <el-form :inline="true" size="default">
+      <el-form
+        :inline="true"
+        size="default"
+      >
         <el-form-item label="操作筛选">
           <el-cascader
             v-model="opCascade"
@@ -29,18 +32,39 @@
           />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="resetPage">查询</el-button>
-          <el-button @click="clearFilters">重置</el-button>
-          <el-button type="success" @click="exportCsv">导出 CSV</el-button>
-          <el-dropdown @command="doCleanup" style="margin-left: 8px">
+          <el-button
+            type="primary"
+            @click="resetPage"
+          >
+            查询
+          </el-button>
+          <el-button @click="clearFilters">
+            重置
+          </el-button>
+          <el-button
+            type="success"
+            @click="exportCsv"
+          >
+            导出 CSV
+          </el-button>
+          <el-dropdown
+            style="margin-left: 8px"
+            @command="doCleanup"
+          >
             <el-button type="warning">
               清理日志 <el-icon><ArrowDown /></el-icon>
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="1">保留1天内记录</el-dropdown-item>
-                <el-dropdown-item command="7">保留7天内记录</el-dropdown-item>
-                <el-dropdown-item command="30">保留30天内记录</el-dropdown-item>
+                <el-dropdown-item command="1">
+                  保留1天内记录
+                </el-dropdown-item>
+                <el-dropdown-item command="7">
+                  保留7天内记录
+                </el-dropdown-item>
+                <el-dropdown-item command="30">
+                  保留30天内记录
+                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -49,22 +73,51 @@
     </el-card>
 
     <!-- 表格 -->
-    <el-table :data="logs" stripe v-loading="loading">
-      <el-table-column prop="action" label="操作类型" min-width="80" align="center" show-overflow-tooltip />
-      <el-table-column label="用户" min-width="120" align="center" show-overflow-tooltip>
+    <el-table
+      v-loading="loading"
+      :data="logs"
+      stripe
+    >
+      <el-table-column
+        prop="action"
+        label="操作类型"
+        min-width="80"
+        align="center"
+        show-overflow-tooltip
+      />
+      <el-table-column
+        label="用户"
+        min-width="120"
+        align="center"
+        show-overflow-tooltip
+      >
         <template #default="{ row }">
-          <el-tooltip v-if="row.user" :content="'用户ID：' + row.userId" placement="top" effect="light">
+          <el-tooltip
+            v-if="row.user"
+            :content="'用户ID：' + row.userId"
+            placement="top"
+            effect="light"
+          >
             <span class="user-link">{{ row.user.nickname || row.user.email }}</span>
           </el-tooltip>
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column label="时间" min-width="120" align="center">
-        <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
+      <el-table-column
+        label="时间"
+        min-width="120"
+        align="center"
+      >
+        <template #default="{ row }">
+          {{ formatDate(row.createdAt) }}
+        </template>
       </el-table-column>
     </el-table>
 
-    <el-empty v-if="!loading && logs.length === 0" description="暂无审计日志" />
+    <el-empty
+      v-if="!loading && logs.length === 0"
+      description="暂无审计日志"
+    />
 
     <el-pagination
       v-if="total > pageSize"

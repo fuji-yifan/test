@@ -3,14 +3,27 @@
     class="ff-outer"
     :style="{ gridColumn: `span ${spanCol}` }"
   >
-    <div class="ff-inner" :class="[`ff-lp-${labelPos}`, `ff-sz-${sizeVal}`]">
-      <label v-if="!isContainer && field.type !== 'tip-text'" class="ff-label">
-        {{ field.name.length > 6 ? field.name.slice(0, 6) : field.name }}<span v-if="required" class="ff-req">*</span>
+    <div
+      class="ff-inner"
+      :class="[`ff-lp-${labelPos}`, `ff-sz-${sizeVal}`]"
+    >
+      <label
+        v-if="!isContainer && field.type !== 'tip-text'"
+        class="ff-label"
+      >
+        {{ field.name.length > 6 ? field.name.slice(0, 6) : field.name }}<span
+          v-if="required"
+          class="ff-req"
+        >*</span>
       </label>
 
       <!-- 布局容器：递归 -->
       <template v-if="isContainer">
-        <div v-if="field.children?.length" class="ff-children" :style="childrenStyle">
+        <div
+          v-if="field.children?.length"
+          class="ff-children"
+          :style="childrenStyle"
+        >
           <FormField
             v-for="child in field.children"
             :key="child.id"
@@ -21,11 +34,22 @@
             @update:model-value="(v) => emit('update:modelValue', v)"
           />
         </div>
-        <div v-else class="ff-empty">空容器</div>
+        <div
+          v-else
+          class="ff-empty"
+        >
+          空容器
+        </div>
       </template>
 
       <!-- 普通控件 -->
-      <slot v-else name="control" :field="field" :size="sizeVal" :value="modelValue">
+      <slot
+        v-else
+        name="control"
+        :field="field"
+        :size="sizeVal"
+        :value="modelValue"
+      >
         <FieldControl
           :field="field"
           :model-value="modelValue"

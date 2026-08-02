@@ -2,14 +2,24 @@
   <div class="json-preview">
     <div class="toolbar">
       <span>JSON Schema 预览</span>
-      <el-button size="small" @click="applyJson">应用修改</el-button>
+      <el-button
+        size="small"
+        @click="applyJson"
+      >
+        应用修改
+      </el-button>
     </div>
     <textarea
       v-model="jsonText"
       class="json-editor"
       spellcheck="false"
     />
-    <div v-if="errorMsg" class="json-error">{{ errorMsg }}</div>
+    <div
+      v-if="errorMsg"
+      class="json-error"
+    >
+      {{ errorMsg }}
+    </div>
   </div>
 </template>
 

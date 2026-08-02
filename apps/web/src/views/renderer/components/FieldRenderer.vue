@@ -1,8 +1,14 @@
 <template>
   <template v-if="isLayoutField(field.type)">
     <!-- 布局控件：递归渲染子字段 -->
-    <div v-if="field.type === 'card'" class="field-card">
-      <el-card :header="field.props.header || ''" :shadow="field.props.shadow || 'always'">
+    <div
+      v-if="field.type === 'card'"
+      class="field-card"
+    >
+      <el-card
+        :header="field.props.header || ''"
+        :shadow="field.props.shadow || 'always'"
+      >
         <template v-if="field.children">
           <FieldRenderer
             v-for="child in field.children"
@@ -16,12 +22,20 @@
       </el-card>
     </div>
 
-    <div v-else-if="field.type === 'divider'" class="field-divider">
+    <div
+      v-else-if="field.type === 'divider'"
+      class="field-divider"
+    >
       <el-divider :direction="field.props.direction || 'horizontal'" />
     </div>
 
-    <div v-else-if="field.type === 'group'" class="field-group">
-      <h4 class="group-title">{{ field.props.title || field.name }}</h4>
+    <div
+      v-else-if="field.type === 'group'"
+      class="field-group"
+    >
+      <h4 class="group-title">
+        {{ field.props.title || field.name }}
+      </h4>
       <template v-if="field.children">
         <FieldRenderer
           v-for="child in field.children"
@@ -34,7 +48,10 @@
       </template>
     </div>
 
-    <div v-else-if="field.type === 'collapse'" class="field-collapse">
+    <div
+      v-else-if="field.type === 'collapse'"
+      class="field-collapse"
+    >
       <el-collapse :accordion="field.props.accordion">
         <el-collapse-item :title="field.name">
           <template v-if="field.children">
@@ -51,9 +68,21 @@
       </el-collapse>
     </div>
 
-    <div v-else class="layout-wrapper" :class="'layout-' + field.type">
-      <h4 v-if="field.name" class="layout-title">{{ field.name }}</h4>
-      <div class="layout-children" :style="getLayoutStyle(field)">
+    <div
+      v-else
+      class="layout-wrapper"
+      :class="'layout-' + field.type"
+    >
+      <h4
+        v-if="field.name"
+        class="layout-title"
+      >
+        {{ field.name }}
+      </h4>
+      <div
+        class="layout-children"
+        :style="getLayoutStyle(field)"
+      >
         <template v-if="field.children">
           <FieldRenderer
             v-for="child in field.children"
@@ -162,14 +191,24 @@
           :on-exceed="onUploadExceed"
           drag
         >
-          <div class="el-upload__text">拖拽文件到此处 或 <em>点击选择文件</em></div>
-              <div class="el-upload__tip" v-if="uploadHintText(field)"><span v-html="uploadHintText(field)"></span></div>
+          <div class="el-upload__text">
+            拖拽文件到此处 或 <em>点击选择文件</em>
+          </div>
+          <div
+            v-if="uploadHintText(field)"
+            class="el-upload__tip"
+          >
+            <span v-html="uploadHintText(field)" />
+          </div>
         </el-upload>
       </template>
 
       <!-- Rich Text 富文本 -->
       <template v-else-if="field.type === 'rich-text'">
-        <div class="fr-richtext" :style="{ height: (field.props?.height || 400) + 'px' }">
+        <div
+          class="fr-richtext"
+          :style="{ height: (field.props?.height || 400) + 'px' }"
+        >
           <Toolbar
             v-if="richTextEditorRef"
             :editor="richTextEditorRef"
@@ -178,9 +217,9 @@
             class="fr-richtext-toolbar"
           />
           <Editor
+            :key="frRichEditorKey"
             v-model="frRichTextHtml"
             :default-config="frRichEditorConfig"
-            :key="frRichEditorKey"
             mode="default"
             class="fr-richtext-editor"
             @on-created="onFrRichCreated"
@@ -194,7 +233,10 @@
           class="fr-tip"
           :style="{ color: field.props?.color || '#909399', fontSize: (field.props?.fontSize || 14) + 'px', justifyContent: tipJustifyMap[field.props?.textAlign || 'left'], padding: '8px 0' }"
         >
-          <span v-if="field.props?.tipType" class="fr-tip-icon">{{ tipIconChars[field.props.tipType] }}</span>
+          <span
+            v-if="field.props?.tipType"
+            class="fr-tip-icon"
+          >{{ tipIconChars[field.props.tipType] }}</span>
           <span>{{ field.props?.text }}</span>
         </div>
       </template>
@@ -265,13 +307,13 @@ function onUploadChange(field: FieldSchema, file: UploadFile, files: UploadFiles
   }
   uploadFiles.value[field.key] = [...files]
   const names = files.map((f: UploadFile) => f.name)
-  emit('update', key, names)
+  emit('update', field.key, names)
 }
 
 function onUploadRemove(key: string, _file: UploadFile, files: UploadFiles) {
   uploadFiles.value[key] = [...files]
   const names = files.map((f: UploadFile) => f.name)
-  emit('update', key, names)
+  emit('update', field.key, names)
 }
 
 function onUploadExceed() {

@@ -2,13 +2,28 @@
   <div>
     <h2>工作空间</h2>
     <div class="ws-grid">
-      <div v-for="ws in list" :key="ws.id" class="ws-card" @click="$router.push(`/workspace/${ws.id}/forms`)">
-        <el-avatar :size="48" icon="OfficeBuilding" />
-        <div class="ws-name">{{ ws.name }}</div>
-        <div class="ws-slug">{{ ws.slug }}</div>
+      <div
+        v-for="ws in list"
+        :key="ws.id"
+        class="ws-card"
+        @click="$router.push(`/workspace/${ws.id}/forms`)"
+      >
+        <el-avatar
+          :size="48"
+          icon="OfficeBuilding"
+        />
+        <div class="ws-name">
+          {{ ws.name }}
+        </div>
+        <div class="ws-slug">
+          {{ ws.slug }}
+        </div>
       </div>
     </div>
-    <el-empty v-if="!list.length" description="暂无工作空间" />
+    <el-empty
+      v-if="!list.length"
+      description="暂无工作空间"
+    />
   </div>
 </template>
 

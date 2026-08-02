@@ -1,83 +1,175 @@
 <template>
   <div class="instance-viewer">
     <header class="viewer-header">
-      <el-button text @click="goBack"><el-icon><ArrowLeft /></el-icon> 返回</el-button>
+      <el-button
+        text
+        @click="goBack"
+      >
+        <el-icon><ArrowLeft /></el-icon> 返回
+      </el-button>
       <h2>{{ instance?.definition?.name || '流程实例' }} — 进度查看</h2>
-      <el-tag :type="stateTagType" size="large">{{ stateLabel }}</el-tag>
+      <el-tag
+        :type="stateTagType"
+        size="large"
+      >
+        {{ stateLabel }}
+      </el-tag>
     </header>
 
-    <div class="viewer-body" v-if="instance && nodes.length">
-      <div class="canvas-area" ref="canvasRef">
-        <div class="canvas-inner" :style="{ width: canvasW + 'px', height: canvasH + 'px' }">
-        <svg class="edges-layer" :view-box="'0 0 ' + canvasW + ' ' + canvasH" :width="canvasW" :height="canvasH">
-          <defs>
-            <marker id="arrow-gray" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
-              <polygon points="0 0, 10 3.5, 0 7" fill="#c0c4cc" />
-            </marker>
-            <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
-              <polygon points="0 0, 10 3.5, 0 7" fill="#67c23a" />
-            </marker>
-            <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
-              <polygon points="0 0, 10 3.5, 0 7" fill="#409eff" />
-            </marker>
-          </defs>
-          <path
-            v-for="ep in edgePaths"
-            :key="ep.id"
-            :d="ep.d"
-            fill="none"
-            :stroke="ep.edgeColor"
-            :stroke-width="ep.edgeColor === '#67c23a' ? 2.5 : 2"
-            :stroke-dasharray="ep.edgeColor === '#409eff' ? '8 4' : 'none'"
-            :marker-end="'url(#' + ep.marker + ')'"
-            :class="{ 'edge-active': ep.edgeColor === '#409eff' }"
-          />
-          <text
-            v-for="ep in edgePaths.filter(e => e.label)"
-            :key="'t' + ep.id"
-            :x="ep.labelX"
-            :y="ep.labelY"
-            :fill="ep.edgeColor"
-            font-size="11"
-            text-anchor="middle"
-          >{{ ep.label }}</text>
-        </svg>
-
-        <div class="nodes-layer" :style="{ width: canvasW + 'px', height: canvasH + 'px' }">
-          <div
-            v-for="node in nodes"
-            :key="node.id"
-            class="canvas-node"
-            :class="['node-' + node.type, 'node-state-' + getNodeState(node.id)]"
-            :style="nodeStyle(node)"
+    <div
+      v-if="instance && nodes.length"
+      class="viewer-body"
+    >
+      <div
+        ref="canvasRef"
+        class="canvas-area"
+      >
+        <div
+          class="canvas-inner"
+          :style="{ width: canvasW + 'px', height: canvasH + 'px' }"
+        >
+          <svg
+            class="edges-layer"
+            :view-box="'0 0 ' + canvasW + ' ' + canvasH"
+            :width="canvasW"
+            :height="canvasH"
           >
-            <div class="state-badge" v-if="getNodeState(node.id) === 'active'">
-              <span class="pulse-dot"></span>
-            </div>
-            <div class="node-content">
-              <el-icon :size="nodeIconSize(node.type)">
-                <component :is="nodeIcon(node.type)" />
-              </el-icon>
-              <span v-if="!isCircle(node.type)">{{ node.name }}</span>
-            </div>
-            <div v-if="getNodeTooltip(node.id)" class="node-tooltip">
-              {{ getNodeTooltip(node.id) }}
+            <defs>
+              <marker
+                id="arrow-gray"
+                markerWidth="10"
+                markerHeight="7"
+                refX="10"
+                refY="3.5"
+                orient="auto"
+                markerUnits="userSpaceOnUse"
+              >
+                <polygon
+                  points="0 0, 10 3.5, 0 7"
+                  fill="#c0c4cc"
+                />
+              </marker>
+              <marker
+                id="arrow-green"
+                markerWidth="10"
+                markerHeight="7"
+                refX="10"
+                refY="3.5"
+                orient="auto"
+                markerUnits="userSpaceOnUse"
+              >
+                <polygon
+                  points="0 0, 10 3.5, 0 7"
+                  fill="#67c23a"
+                />
+              </marker>
+              <marker
+                id="arrow-blue"
+                markerWidth="10"
+                markerHeight="7"
+                refX="10"
+                refY="3.5"
+                orient="auto"
+                markerUnits="userSpaceOnUse"
+              >
+                <polygon
+                  points="0 0, 10 3.5, 0 7"
+                  fill="#409eff"
+                />
+              </marker>
+            </defs>
+            <path
+              v-for="ep in edgePaths"
+              :key="ep.id"
+              :d="ep.d"
+              fill="none"
+              :stroke="ep.edgeColor"
+              :stroke-width="ep.edgeColor === '#67c23a' ? 2.5 : 2"
+              :stroke-dasharray="ep.edgeColor === '#409eff' ? '8 4' : 'none'"
+              :marker-end="'url(#' + ep.marker + ')'"
+              :class="{ 'edge-active': ep.edgeColor === '#409eff' }"
+            />
+            <text
+              v-for="ep in edgePaths.filter(e => e.label)"
+              :key="'t' + ep.id"
+              :x="ep.labelX"
+              :y="ep.labelY"
+              :fill="ep.edgeColor"
+              font-size="11"
+              text-anchor="middle"
+            >{{ ep.label }}</text>
+          </svg>
+
+          <div
+            class="nodes-layer"
+            :style="{ width: canvasW + 'px', height: canvasH + 'px' }"
+          >
+            <div
+              v-for="node in nodes"
+              :key="node.id"
+              class="canvas-node"
+              :class="['node-' + node.type, 'node-state-' + getNodeState(node.id)]"
+              :style="nodeStyle(node)"
+            >
+              <div
+                v-if="getNodeState(node.id) === 'active'"
+                class="state-badge"
+              >
+                <span class="pulse-dot" />
+              </div>
+              <div class="node-content">
+                <el-icon :size="nodeIconSize(node.type)">
+                  <component :is="nodeIcon(node.type)" />
+                </el-icon>
+                <span v-if="!isCircle(node.type)">{{ node.name }}</span>
+              </div>
+              <div
+                v-if="getNodeTooltip(node.id)"
+                class="node-tooltip"
+              >
+                {{ getNodeTooltip(node.id) }}
+              </div>
             </div>
           </div>
-        </div>
         </div>
       </div>
 
       <!-- 图例 -->
       <div class="legend">
-        <div class="legend-item"><span class="dot" style="background:#67c23a"></span>已完成</div>
-        <div class="legend-item"><span class="dot pulse" style="background:#409eff"></span>进行中</div>
-        <div class="legend-item"><span class="dot" style="background:#dcdfe6"></span>未到达</div>
-        <div class="legend-item"><span class="dot" style="background:#f56c6c"></span>已驳回</div>
+        <div class="legend-item">
+          <span
+            class="dot"
+            style="background:#67c23a"
+          />已完成
+        </div>
+        <div class="legend-item">
+          <span
+            class="dot pulse"
+            style="background:#409eff"
+          />进行中
+        </div>
+        <div class="legend-item">
+          <span
+            class="dot"
+            style="background:#dcdfe6"
+          />未到达
+        </div>
+        <div class="legend-item">
+          <span
+            class="dot"
+            style="background:#f56c6c"
+          />已驳回
+        </div>
       </div>
     </div>
 
-    <div v-else-if="!instance" class="loading-hint" v-loading="true">加载中...</div>
+    <div
+      v-else-if="!instance"
+      v-loading="true"
+      class="loading-hint"
+    >
+      加载中...
+    </div>
   </div>
 </template>
 

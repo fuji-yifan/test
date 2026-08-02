@@ -33,7 +33,12 @@
     class="fc-ctrl"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <el-option v-for="opt in (field.props?.options || [])" :key="opt.value" :label="opt.label" :value="opt.value" />
+    <el-option
+      v-for="opt in (field.props?.options || [])"
+      :key="opt.value"
+      :label="opt.label"
+      :value="opt.value"
+    />
   </el-select>
   <el-radio-group
     v-else-if="field.type === 'radio'"
@@ -42,7 +47,13 @@
     class="fc-ctrl"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <el-radio v-for="opt in (field.props?.options || [])" :key="String(opt.value)" :value="opt.value">{{ opt.label }}</el-radio>
+    <el-radio
+      v-for="opt in (field.props?.options || [])"
+      :key="String(opt.value)"
+      :value="opt.value"
+    >
+      {{ opt.label }}
+    </el-radio>
   </el-radio-group>
   <el-checkbox-group
     v-else-if="field.type === 'checkbox'"
@@ -51,7 +62,13 @@
     class="fc-ctrl"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <el-checkbox v-for="opt in (field.props?.options || [])" :key="String(opt.value)" :value="opt.value">{{ opt.label }}</el-checkbox>
+    <el-checkbox
+      v-for="opt in (field.props?.options || [])"
+      :key="String(opt.value)"
+      :value="opt.value"
+    >
+      {{ opt.label }}
+    </el-checkbox>
   </el-checkbox-group>
   <el-date-picker
     v-else-if="field.type === 'date-picker'"
@@ -94,11 +111,21 @@
     class="fc-ctrl"
     drag
   >
-    <div class="el-upload__text">拖拽文件到此处 或 <em>点击选择文件</em></div>
-    <div class="el-upload__tip" v-if="uploadHint" v-html="uploadHint"></div>
+    <div class="el-upload__text">
+      拖拽文件到此处 或 <em>点击选择文件</em>
+    </div>
+    <div
+      v-if="uploadHint"
+      class="el-upload__tip"
+      v-html="uploadHint"
+    />
   </el-upload>
   <!-- 富文本 -->
-  <div v-else-if="field.type === 'rich-text'" class="fc-richtext" :style="{ height: (field.props?.height || 400) + 'px' }">
+  <div
+    v-else-if="field.type === 'rich-text'"
+    class="fc-richtext"
+    :style="{ height: (field.props?.height || 400) + 'px' }"
+  >
     <Toolbar
       v-if="richTextEditorRef"
       :editor="richTextEditorRef"
@@ -107,9 +134,9 @@
       class="fc-richtext-toolbar"
     />
     <Editor
+      :key="richTextEditorKey"
       v-model="richTextValue"
       :default-config="richEditorConfig"
-      :key="richTextEditorKey"
       mode="default"
       class="fc-richtext-editor"
       @on-created="onRichTextCreated"
@@ -124,7 +151,10 @@
       justifyContent: tipJustifyMap[field.props?.textAlign || 'left'],
     }"
   >
-    <span v-if="field.props?.tipType" class="fc-tip-icon">{{ tipIconChars[field.props.tipType] }}</span>
+    <span
+      v-if="field.props?.tipType"
+      class="fc-tip-icon"
+    >{{ tipIconChars[field.props.tipType] }}</span>
     <span>{{ field.props?.text }}</span>
   </div>
   <el-cascader

@@ -40,7 +40,7 @@ export interface ComponentAdapter {
    * 输入：引擎的 setValue 方法
    * 输出：UI 组件的事件绑定对象
    */
-  mapEvents?: (emit: (value: any) => void) => Record<string, Function>
+  mapEvents?: (emit: (value: any) => void) => Record<string, (...args: any[]) => any>
 
   /** 是否为布局控件 */
   isLayout?: boolean

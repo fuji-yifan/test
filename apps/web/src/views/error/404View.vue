@@ -1,9 +1,16 @@
 <template>
   <div class="error-page">
-    <div class="error-code">404</div>
+    <div class="error-code">
+      404
+    </div>
     <h2>页面不存在</h2>
     <p>请检查链接是否正确，或返回首页</p>
-    <el-button size="large" @click="$router.push('/home')">返回首页</el-button>
+    <el-button
+      size="large"
+      @click="$router.push('/home')"
+    >
+      返回首页
+    </el-button>
   </div>
 </template>
 

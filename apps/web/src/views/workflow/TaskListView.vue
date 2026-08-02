@@ -2,42 +2,125 @@
   <div class="task-list-page">
     <div class="page-header">
       <h2>我的待办</h2>
-      <el-tabs v-model="activeTab" @tab-change="fetchList">
-        <el-tab-pane label="待处理" name="pending" />
-        <el-tab-pane label="已处理" name="approved" />
-        <el-tab-pane label="全部" name="" />
+      <el-tabs
+        v-model="activeTab"
+        @tab-change="fetchList"
+      >
+        <el-tab-pane
+          label="待处理"
+          name="pending"
+        />
+        <el-tab-pane
+          label="已处理"
+          name="approved"
+        />
+        <el-tab-pane
+          label="全部"
+          name=""
+        />
       </el-tabs>
     </div>
 
-    <el-table :data="list" stripe v-loading="loading">
-      <el-table-column label="流程名称" min-width="120" align="center" show-overflow-tooltip>
-        <template #default="{ row }">{{ row.instance?.definition?.name || '-' }}</template>
-      </el-table-column>
-      <el-table-column label="发起人" min-width="120" align="center">
+    <el-table
+      v-loading="loading"
+      :data="list"
+      stripe
+    >
+      <el-table-column
+        label="流程名称"
+        min-width="120"
+        align="center"
+        show-overflow-tooltip
+      >
         <template #default="{ row }">
-          <el-tooltip v-if="row.instance?.initiator" :content="'用户ID：' + row.instance.initiatorId" placement="top" effect="light">
+          {{ row.instance?.definition?.name || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column
+        label="发起人"
+        min-width="120"
+        align="center"
+      >
+        <template #default="{ row }">
+          <el-tooltip
+            v-if="row.instance?.initiator"
+            :content="'用户ID：' + row.instance.initiatorId"
+            placement="top"
+            effect="light"
+          >
             <span class="user-link">{{ row.instance.initiator.nickname || row.instance.initiator.email }}</span>
           </el-tooltip>
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column label="状态" min-width="80" align="center">
+      <el-table-column
+        label="状态"
+        min-width="80"
+        align="center"
+      >
         <template #default="{ row }">
-          <el-tag :type="statusType(row.status)" size="small">{{ statusName(row.status) }}</el-tag>
+          <el-tag
+            :type="statusType(row.status)"
+            size="small"
+          >
+            {{ statusName(row.status) }}
+          </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="评论" align="center" show-overflow-tooltip>
-        <template #default="{ row }">{{ row.comment || '-' }}</template>
-      </el-table-column>
-      <el-table-column label="创建时间" min-width="150" align="center">
-        <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
-      </el-table-column>
-      <el-table-column label="操作" width="250" align="center" fixed="right" v-if="activeTab === 'pending'">
+      <el-table-column
+        label="评论"
+        align="center"
+        show-overflow-tooltip
+      >
         <template #default="{ row }">
-          <el-button size="small" type="success" @click="handleApprove(row)">通过</el-button>
-          <el-button size="small" type="danger" @click="showReject(row)">驳回</el-button>
-          <el-button v-if="canAddSign(row)" size="small" @click="openAddSign(row)">加签</el-button>
-          <el-button v-if="canTransfer(row)" size="small" @click="openTransfer(row)">转交</el-button>
+          {{ row.comment || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column
+        label="创建时间"
+        min-width="150"
+        align="center"
+      >
+        <template #default="{ row }">
+          {{ formatDate(row.createdAt) }}
+        </template>
+      </el-table-column>
+      <el-table-column
+        v-if="activeTab === 'pending'"
+        label="操作"
+        width="250"
+        align="center"
+        fixed="right"
+      >
+        <template #default="{ row }">
+          <el-button
+            size="small"
+            type="success"
+            @click="handleApprove(row)"
+          >
+            通过
+          </el-button>
+          <el-button
+            size="small"
+            type="danger"
+            @click="showReject(row)"
+          >
+            驳回
+          </el-button>
+          <el-button
+            v-if="canAddSign(row)"
+            size="small"
+            @click="openAddSign(row)"
+          >
+            加签
+          </el-button>
+          <el-button
+            v-if="canTransfer(row)"
+            size="small"
+            @click="openTransfer(row)"
+          >
+            转交
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -54,16 +137,35 @@
     />
 
     <!-- 驳回对话框 -->
-    <el-dialog v-model="showRejectDialog" title="驳回" width="400px">
-      <el-input v-model="rejectComment" type="textarea" placeholder="驳回原因（可选）" />
+    <el-dialog
+      v-model="showRejectDialog"
+      title="驳回"
+      width="400px"
+    >
+      <el-input
+        v-model="rejectComment"
+        type="textarea"
+        placeholder="驳回原因（可选）"
+      />
       <template #footer>
-        <el-button @click="showRejectDialog = false">取消</el-button>
-        <el-button type="danger" @click="doReject">确认驳回</el-button>
+        <el-button @click="showRejectDialog = false">
+          取消
+        </el-button>
+        <el-button
+          type="danger"
+          @click="doReject"
+        >
+          确认驳回
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 转交对话框 -->
-    <el-dialog v-model="showTransferDialog" title="转交" width="400px">
+    <el-dialog
+      v-model="showTransferDialog"
+      title="转交"
+      width="400px"
+    >
       <el-select
         v-model="transferUserId"
         filterable
@@ -75,16 +177,32 @@
         clearable
         style="width:100%"
       >
-        <el-option v-for="u in userOptions" :key="u.id" :label="`${u.nickname || u.email} (${u.email})`" :value="u.id" />
+        <el-option
+          v-for="u in userOptions"
+          :key="u.id"
+          :label="`${u.nickname || u.email} (${u.email})`"
+          :value="u.id"
+        />
       </el-select>
       <template #footer>
-        <el-button @click="showTransferDialog = false">取消</el-button>
-        <el-button type="primary" @click="doTransfer">确认转交</el-button>
+        <el-button @click="showTransferDialog = false">
+          取消
+        </el-button>
+        <el-button
+          type="primary"
+          @click="doTransfer"
+        >
+          确认转交
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 加签对话框 -->
-    <el-dialog v-model="showAddSignDialog" title="加签" width="400px">
+    <el-dialog
+      v-model="showAddSignDialog"
+      title="加签"
+      width="400px"
+    >
       <el-select
         v-model="addSignUserId"
         filterable
@@ -96,11 +214,23 @@
         clearable
         style="width:100%"
       >
-        <el-option v-for="u in userOptions" :key="u.id" :label="`${u.nickname || u.email} (${u.email})`" :value="u.id" />
+        <el-option
+          v-for="u in userOptions"
+          :key="u.id"
+          :label="`${u.nickname || u.email} (${u.email})`"
+          :value="u.id"
+        />
       </el-select>
       <template #footer>
-        <el-button @click="showAddSignDialog = false">取消</el-button>
-        <el-button type="primary" @click="doAddSign">确认加签</el-button>
+        <el-button @click="showAddSignDialog = false">
+          取消
+        </el-button>
+        <el-button
+          type="primary"
+          @click="doAddSign"
+        >
+          确认加签
+        </el-button>
       </template>
     </el-dialog>
   </div>

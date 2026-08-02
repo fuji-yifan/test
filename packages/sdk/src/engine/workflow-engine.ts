@@ -72,9 +72,10 @@ export class CountersignEvaluator {
         return approved === total ? 'approved' : 'pending'
       case 'any':
         return approved > 0 ? 'approved' : 'pending'
-      case 'ratio':
+      case 'ratio': {
         const ratio = strategy.ratio ?? 0.5
         return approved / total >= ratio ? 'approved' : 'pending'
+      }
       default:
         return 'pending'
     }
@@ -114,7 +115,6 @@ export class WorkflowEngine {
     const nextEdges = definition.edges.filter((e) => e.sourceNodeId === startNode.id)
     if (nextEdges.length === 0) throw new Error('Start node has no outgoing edges')
 
-    const firstNodeId = nextEdges[0].targetNodeId
     const firstNodeId = nextEdges[0].targetNodeId
     let currentNodeIds = this.expandParallelBranches(definition, [firstNodeId])
     const completedGateways: string[] = []
@@ -224,6 +224,7 @@ export class WorkflowEngine {
     let current = startNodeIds
     const visited = new Set<string>()
 
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       if (current.length === 0) return []
       if (current.every((id) => {

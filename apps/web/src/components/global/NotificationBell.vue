@@ -1,12 +1,34 @@
 <template>
-  <el-popover placement="bottom-end" :width="360" trigger="click" @show="fetchList">
+  <el-popover
+    placement="bottom-end"
+    :width="360"
+    trigger="click"
+    @show="fetchList"
+  >
     <template #reference>
-      <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99" class="bell-badge">
-        <el-button circle><el-icon :size="18"><ChatDotRound /></el-icon></el-button>
+      <el-badge
+        :value="unreadCount"
+        :hidden="unreadCount === 0"
+        :max="99"
+        class="bell-badge"
+      >
+        <el-button circle>
+          <el-icon :size="18">
+            <ChatDotRound />
+          </el-icon>
+        </el-button>
       </el-badge>
     </template>
-    <div v-if="notifications.length === 0" style="text-align:center;padding:20px;color:#999">暂无新通知</div>
-    <div v-else class="notif-popover">
+    <div
+      v-if="notifications.length === 0"
+      style="text-align:center;padding:20px;color:#999"
+    >
+      暂无新通知
+    </div>
+    <div
+      v-else
+      class="notif-popover"
+    >
       <div
         v-for="n in notifications.slice(0, 8)"
         :key="n.id"
@@ -14,19 +36,43 @@
         :class="{ unread: !n.isRead }"
         @click="markRead(n)"
       >
-        <span v-if="!n.isRead" class="unread-dot"></span>
+        <span
+          v-if="!n.isRead"
+          class="unread-dot"
+        />
         <div class="notif-body">
           <div class="notif-header">
-            <el-tag :type="typeTag(n.type)" size="small">{{ typeLabel(n.type) }}</el-tag>
+            <el-tag
+              :type="typeTag(n.type)"
+              size="small"
+            >
+              {{ typeLabel(n.type) }}
+            </el-tag>
             <span class="notif-time">{{ fmt(n.createdAt) }}</span>
           </div>
-          <div class="notif-title">{{ n.title }}</div>
-          <div class="notif-content">{{ n.content }}</div>
+          <div class="notif-title">
+            {{ n.title }}
+          </div>
+          <div class="notif-content">
+            {{ n.content }}
+          </div>
         </div>
       </div>
       <div class="notif-footer">
-        <el-button text size="small" @click="markAllRead">全部已读</el-button>
-        <el-button text size="small" @click="goToList">查看全部</el-button>
+        <el-button
+          text
+          size="small"
+          @click="markAllRead"
+        >
+          全部已读
+        </el-button>
+        <el-button
+          text
+          size="small"
+          @click="goToList"
+        >
+          查看全部
+        </el-button>
       </div>
     </div>
   </el-popover>

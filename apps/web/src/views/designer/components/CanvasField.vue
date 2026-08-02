@@ -12,12 +12,28 @@
     @dragstart.stop="onFieldDragStart"
     @dragend="onFieldDragEnd"
   >
-    <div class="field-inner" :class="[`label-${labelPos}`, `size-${formSize}`]">
-      <div v-if="field.type !== 'tip-text'" class="field-label">{{ field.name.length > 6 ? field.name.slice(0, 6) : field.name }}<span v-if="isRequired" class="field-required">*</span></div>
+    <div
+      class="field-inner"
+      :class="[`label-${labelPos}`, `size-${formSize}`]"
+    >
+      <div
+        v-if="field.type !== 'tip-text'"
+        class="field-label"
+      >
+        {{ field.name.length > 6 ? field.name.slice(0, 6) : field.name }}<span
+          v-if="isRequired"
+          class="field-required"
+        >*</span>
+      </div>
 
       <!-- 布局容器：递归渲染子字段 -->
       <template v-if="isLayout">
-        <div v-if="field.children?.length" class="field-children" :class="`layout-${field.type}`" :style="childrenStyle">
+        <div
+          v-if="field.children?.length"
+          class="field-children"
+          :class="`layout-${field.type}`"
+          :style="childrenStyle"
+        >
           <CanvasField
             v-for="(child, idx) in field.children"
             :key="child.id"
@@ -39,12 +55,22 @@
       <!-- 普通控件：占位渲染 -->
       <template v-else>
         <div class="field-placeholder">
-          <FieldControl :field="field" :model-value="''" :size="formSize" />
+          <FieldControl
+            :field="field"
+            :model-value="''"
+            :size="formSize"
+          />
         </div>
       </template>
     </div>
 
-    <div v-if="isSelected" class="field-delete" @click.stop="removeField">&times;</div>
+    <div
+      v-if="isSelected"
+      class="field-delete"
+      @click.stop="removeField"
+    >
+      &times;
+    </div>
   </div>
 </template>
 
@@ -110,6 +136,7 @@ function onChildDrop(e: DragEvent) {
   const raw = e.dataTransfer!.getData('application/furm-component')
   if (!raw) return
   const { type } = JSON.parse(raw)
+  // eslint-disable-next-line vue/no-mutating-props
   if (!props.field.children) props.field.children = []
   store.addField(props.field.id, props.field.children!.length, type)
 }

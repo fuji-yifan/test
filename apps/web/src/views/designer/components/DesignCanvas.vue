@@ -9,12 +9,34 @@
       @dragleave="onDragLeave"
       @drop.prevent="onDrop"
     >
-      <div v-if="store.schema.settings.formTitle" class="canvas-title">{{ store.schema.settings.formTitle }}</div>
-      <div v-if="store.schema.fields.length === 0 && !isDragging" class="canvas-empty" @dragover.prevent @drop.prevent>
-        <el-empty description="从左侧拖入控件开始搭建表单" :image-size="120" />
+      <div
+        v-if="store.schema.settings.formTitle"
+        class="canvas-title"
+      >
+        {{ store.schema.settings.formTitle }}
       </div>
-      <div v-else class="canvas-fields" :style="gridStyle" @dragover.prevent @drop.prevent>
-        <template v-for="item in displayList" :key="item._key">
+      <div
+        v-if="store.schema.fields.length === 0 && !isDragging"
+        class="canvas-empty"
+        @dragover.prevent
+        @drop.prevent
+      >
+        <el-empty
+          description="从左侧拖入控件开始搭建表单"
+          :image-size="120"
+        />
+      </div>
+      <div
+        v-else
+        class="canvas-fields"
+        :style="gridStyle"
+        @dragover.prevent
+        @drop.prevent
+      >
+        <template
+          v-for="item in displayList"
+          :key="item._key"
+        >
           <div
             v-if="item._indicator"
             class="drop-placeholder"

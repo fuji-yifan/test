@@ -4,24 +4,42 @@
     <div class="login-brand">
       <div class="brand-content">
         <div class="brand-logo">
-          <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-            <rect width="40" height="40" rx="10" fill="#1a1a2e"/>
-            <path d="M12 14h16v4H12zM12 22h12v4H12z" fill="#fff" opacity="0.9"/>
+          <svg
+            width="40"
+            height="40"
+            viewBox="0 0 40 40"
+            fill="none"
+          >
+            <rect
+              width="40"
+              height="40"
+              rx="10"
+              fill="#1a1a2e"
+            />
+            <path
+              d="M12 14h16v4H12zM12 22h12v4H12z"
+              fill="#fff"
+              opacity="0.9"
+            />
           </svg>
         </div>
-        <h1 class="brand-name">FurmX</h1>
-        <p class="brand-desc">轻量化低代码表单平台</p>
+        <h1 class="brand-name">
+          FurmX
+        </h1>
+        <p class="brand-desc">
+          轻量化低代码表单平台
+        </p>
         <div class="brand-features">
           <div class="feature-item">
-            <span class="feature-dot"></span>
+            <span class="feature-dot" />
             可视化拖拽搭建
           </div>
           <div class="feature-item">
-            <span class="feature-dot"></span>
+            <span class="feature-dot" />
             灵活的流程审批
           </div>
           <div class="feature-item">
-            <span class="feature-dot"></span>
+            <span class="feature-dot" />
             数据统计与分析
           </div>
         </div>
@@ -31,8 +49,12 @@
     <!-- 右侧表单区 -->
     <div class="login-form-area">
       <div class="form-wrapper">
-        <h2 class="form-title">欢迎回来</h2>
-        <p class="form-subtitle">登录你的账号以继续</p>
+        <h2 class="form-title">
+          欢迎回来
+        </h2>
+        <p class="form-subtitle">
+          登录你的账号以继续
+        </p>
 
         <el-form
           ref="formRef"
@@ -75,10 +97,17 @@
         </el-form>
 
         <p class="register-link">
-          还没有账号？<router-link to="/register">创建账号</router-link>
+          还没有账号？<router-link to="/register">
+            创建账号
+          </router-link>
         </p>
 
-        <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
+        <p
+          v-if="errorMsg"
+          class="error-msg"
+        >
+          {{ errorMsg }}
+        </p>
       </div>
     </div>
   </div>

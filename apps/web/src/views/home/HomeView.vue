@@ -2,35 +2,84 @@
   <div class="home">
     <h2>工作台</h2>
     <div class="stat-cards">
-      <div class="stat-card"><div class="num">{{ stats.formCount }}</div><div class="label">我的表单</div></div>
-      <div class="stat-card"><div class="num">{{ stats.submissionCount }}</div><div class="label">本月提交</div></div>
-      <div class="stat-card"><div class="num">{{ stats.pendingCount }}</div><div class="label">待办任务</div></div>
+      <div class="stat-card">
+        <div class="num">
+          {{ stats.formCount }}
+        </div><div class="label">
+          我的表单
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="num">
+          {{ stats.submissionCount }}
+        </div><div class="label">
+          本月提交
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="num">
+          {{ stats.pendingCount }}
+        </div><div class="label">
+          待办任务
+        </div>
+      </div>
     </div>
 
     <el-card class="section">
       <template #header>
         <div class="ws-header">
           <span>我的工作空间</span>
-          <el-button type="primary" size="small" @click="createWorkspace">创建</el-button>
+          <el-button
+            type="primary"
+            size="small"
+            @click="createWorkspace"
+          >
+            创建
+          </el-button>
         </div>
       </template>
-      <div v-if="ownedWorkspaces.length === 0" class="empty-hint">暂无</div>
-      <div v-else class="ws-grid">
+      <div
+        v-if="ownedWorkspaces.length === 0"
+        class="empty-hint"
+      >
+        暂无
+      </div>
+      <div
+        v-else
+        class="ws-grid"
+      >
         <div
           v-for="ws in ownedWorkspaces"
           :key="ws.id"
           class="ws-card"
           @click="enterWorkspace(ws.id)"
         >
-          <el-avatar :size="40" icon="OfficeBuilding" />
-          <div class="ws-name">{{ ws.name }}</div>
-          <el-button size="small" type="danger" class="ws-action" @click.stop="deleteWorkspace(ws)">删除</el-button>
+          <el-avatar
+            :size="40"
+            icon="OfficeBuilding"
+          />
+          <div class="ws-name">
+            {{ ws.name }}
+          </div>
+          <el-button
+            size="small"
+            type="danger"
+            class="ws-action"
+            @click.stop="deleteWorkspace(ws)"
+          >
+            删除
+          </el-button>
         </div>
       </div>
     </el-card>
 
-    <el-card class="section" v-if="joinedWorkspaces.length > 0">
-      <template #header><span>加入的工作空间</span></template>
+    <el-card
+      v-if="joinedWorkspaces.length > 0"
+      class="section"
+    >
+      <template #header>
+        <span>加入的工作空间</span>
+      </template>
       <div class="ws-grid">
         <div
           v-for="ws in joinedWorkspaces"
@@ -38,41 +87,118 @@
           class="ws-card"
           @click="enterWorkspace(ws.id)"
         >
-          <el-avatar :size="40" icon="OfficeBuilding" />
-          <div class="ws-name">{{ ws.name }}</div>
-          <el-button size="small" type="warning" class="ws-action" @click.stop="leaveWorkspace(ws)">退出</el-button>
+          <el-avatar
+            :size="40"
+            icon="OfficeBuilding"
+          />
+          <div class="ws-name">
+            {{ ws.name }}
+          </div>
+          <el-button
+            size="small"
+            type="warning"
+            class="ws-action"
+            @click.stop="leaveWorkspace(ws)"
+          >
+            退出
+          </el-button>
         </div>
       </div>
     </el-card>
 
     <el-card class="section">
-      <template #header><span>最近表单</span></template>
-      <el-table :data="recentForms" style="width:100%" v-if="recentForms.length">
-        <el-table-column prop="name" label="表单名称" min-width="150" show-overflow-tooltip align="center" />
-        <el-table-column prop="status" label="状态" min-width="100" align="center">
-          <template #default="{ row }"><el-tag :type="row.status==='published'?'success':'info'" size="small">{{ row.status }}</el-tag></template>
-        </el-table-column>
-        <el-table-column label="更新时间" min-width="150" align="center">
-          <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" min-width="150" align="center">
+      <template #header>
+        <span>最近表单</span>
+      </template>
+      <el-table
+        v-if="recentForms.length"
+        :data="recentForms"
+        style="width:100%"
+      >
+        <el-table-column
+          prop="name"
+          label="表单名称"
+          min-width="150"
+          show-overflow-tooltip
+          align="center"
+        />
+        <el-table-column
+          prop="status"
+          label="状态"
+          min-width="100"
+          align="center"
+        >
           <template #default="{ row }">
-            <el-button size="small" @click="openDesigner(row)">编辑</el-button>
-            <el-button size="small" @click="viewData(row)">数据</el-button>
+            <el-tag
+              :type="row.status==='published'?'success':'info'"
+              size="small"
+            >
+              {{ row.status }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="更新时间"
+          min-width="150"
+          align="center"
+        >
+          <template #default="{ row }">
+            {{ formatDate(row.updatedAt) }}
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="操作"
+          min-width="150"
+          align="center"
+        >
+          <template #default="{ row }">
+            <el-button
+              size="small"
+              @click="openDesigner(row)"
+            >
+              编辑
+            </el-button>
+            <el-button
+              size="small"
+              @click="viewData(row)"
+            >
+              数据
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
-      <div v-else class="empty-hint">还没有表单，去创建一个吧</div>
+      <div
+        v-else
+        class="empty-hint"
+      >
+        还没有表单，去创建一个吧
+      </div>
     </el-card>
 
     <!-- 创建空间弹窗 -->
-    <el-dialog v-model="showCreateWS" title="创建工作空间" width="400px">
+    <el-dialog
+      v-model="showCreateWS"
+      title="创建工作空间"
+      width="400px"
+    >
       <el-form :model="wsForm">
-        <el-form-item label="名称"><el-input v-model="wsForm.name" placeholder="如：我的团队" /></el-form-item>
+        <el-form-item label="名称">
+          <el-input
+            v-model="wsForm.name"
+            placeholder="如：我的团队"
+          />
+        </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showCreateWS = false">取消</el-button>
-        <el-button type="primary" @click="doCreateWS">创建</el-button>
+        <el-button @click="showCreateWS = false">
+          取消
+        </el-button>
+        <el-button
+          type="primary"
+          @click="doCreateWS"
+        >
+          创建
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -175,7 +301,7 @@ async function doCreateWS() {
     showCreateWS.value = false
     wsForm.name = ''
   } catch (e: any) {
-    console.error(e)
+    ElMessage.error(e.response?.data?.message || '创建工作空间失败')
   }
 }
 </script>

@@ -1,5 +1,8 @@
 <template>
-  <div class="cn-node" :style="{ marginLeft: depth * 20 + 'px' }">
+  <div
+    class="cn-node"
+    :style="{ marginLeft: depth * 20 + 'px' }"
+  >
     <div class="cn-row">
       <el-input
         :model-value="node.label"
@@ -8,8 +11,22 @@
         style="width: 120px"
         @input="(v) => $emit('update', path, { label: v, value: v })"
       />
-      <el-button size="small" text type="primary" @click="$emit('add-child', path)">+子级</el-button>
-      <el-button size="small" text type="danger" @click="$emit('remove', path)">×</el-button>
+      <el-button
+        size="small"
+        text
+        type="primary"
+        @click="$emit('add-child', path)"
+      >
+        +子级
+      </el-button>
+      <el-button
+        size="small"
+        text
+        type="danger"
+        @click="$emit('remove', path)"
+      >
+        ×
+      </el-button>
     </div>
     <template v-if="node.children?.length">
       <CascaderNode

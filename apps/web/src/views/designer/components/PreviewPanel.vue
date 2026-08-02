@@ -1,9 +1,26 @@
 <template>
   <div class="preview-wrapper">
-    <div class="preview-canvas" :style="canvasStyle">
-      <div v-if="schema.settings.formTitle" class="pv-title">{{ schema.settings.formTitle }}</div>
-      <div v-if="!schema.fields.length" class="empty">无控件</div>
-      <div v-else class="pv-fields" :style="gridStyle">
+    <div
+      class="preview-canvas"
+      :style="canvasStyle"
+    >
+      <div
+        v-if="schema.settings.formTitle"
+        class="pv-title"
+      >
+        {{ schema.settings.formTitle }}
+      </div>
+      <div
+        v-if="!schema.fields.length"
+        class="empty"
+      >
+        无控件
+      </div>
+      <div
+        v-else
+        class="pv-fields"
+        :style="gridStyle"
+      >
         <FormField
           v-for="field in schema.fields"
           :key="field.id"
@@ -17,7 +34,12 @@
       </div>
     </div>
     <div class="preview-footer">
-      <el-button type="primary" @click="onSave">保存</el-button>
+      <el-button
+        type="primary"
+        @click="onSave"
+      >
+        保存
+      </el-button>
     </div>
   </div>
 </template>

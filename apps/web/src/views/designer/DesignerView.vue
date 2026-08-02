@@ -1,9 +1,19 @@
 <template>
-  <div class="designer-layout" @mousemove="onResizeMove" @mouseup="onResizeUp" @mouseleave="onResizeUp">
+  <div
+    class="designer-layout"
+    @mousemove="onResizeMove"
+    @mouseup="onResizeUp"
+    @mouseleave="onResizeUp"
+  >
     <!-- ========== 顶部工具栏 ========== -->
     <header class="designer-header">
       <div class="header-left">
-        <el-button text @click="goBack"><el-icon><ArrowLeft /></el-icon> 返回</el-button>
+        <el-button
+          text
+          @click="goBack"
+        >
+          <el-icon><ArrowLeft /></el-icon> 返回
+        </el-button>
         <el-input
           v-model="formName"
           class="form-name-input"
@@ -14,25 +24,54 @@
       </div>
       <div class="header-center">
         <el-button-group class="header-btn-group">
-          <el-button :type="viewMode === 'design' ? 'primary' : 'default'" @click="viewMode = 'design'">
+          <el-button
+            :type="viewMode === 'design' ? 'primary' : 'default'"
+            @click="viewMode = 'design'"
+          >
             设计
           </el-button>
-          <el-button :type="viewMode === 'json' ? 'primary' : 'default'" @click="viewMode = 'json'">
+          <el-button
+            :type="viewMode === 'json' ? 'primary' : 'default'"
+            @click="viewMode = 'json'"
+          >
             JSON
           </el-button>
         </el-button-group>
-        <el-button class="header-btn-group" @click="undo" :disabled="!store.canUndo"><el-icon><RefreshLeft /></el-icon></el-button>
-        <el-button @click="redo" :disabled="!store.canRedo"><el-icon><RefreshRight /></el-icon></el-button>
+        <el-button
+          class="header-btn-group"
+          :disabled="!store.canUndo"
+          @click="undo"
+        >
+          <el-icon><RefreshLeft /></el-icon>
+        </el-button>
+        <el-button
+          :disabled="!store.canRedo"
+          @click="redo"
+        >
+          <el-icon><RefreshRight /></el-icon>
+        </el-button>
       </div>
       <div class="header-right">
-        <el-button @click="openPreview">预览</el-button>
+        <el-button @click="openPreview">
+          预览
+        </el-button>
         <template v-if="isTemplateMode">
-          <el-button type="primary" :loading="savingToTemplate" @click="handleSaveToTemplate">
+          <el-button
+            type="primary"
+            :loading="savingToTemplate"
+            @click="handleSaveToTemplate"
+          >
             保存修改
           </el-button>
         </template>
         <template v-else>
-          <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+          <el-button
+            type="primary"
+            :loading="saving"
+            @click="handleSave"
+          >
+            保存
+          </el-button>
         </template>
       </div>
     </header>
@@ -40,7 +79,10 @@
     <!-- ========== 三列主体 ========== -->
     <div class="designer-body">
       <!-- 第一列：组件面板 -->
-      <aside class="panel-left" :style="{ width: leftWidth + 'px' }">
+      <aside
+        class="panel-left"
+        :style="{ width: leftWidth + 'px' }"
+      >
         <ComponentPalette />
       </aside>
 
@@ -69,33 +111,65 @@
       </div>
 
       <!-- 第三列：属性面板 -->
-      <aside class="panel-right" :style="{ width: rightWidth + 'px' }">
+      <aside
+        class="panel-right"
+        :style="{ width: rightWidth + 'px' }"
+      >
         <PropertyPanel />
       </aside>
     </div>
 
     <!-- ========== 预览浮层 ========== -->
-    <div v-if="showPreview" class="preview-overlay">
+    <div
+      v-if="showPreview"
+      class="preview-overlay"
+    >
       <div class="preview-overlay-header">
         <span>表单预览</span>
-        <el-button text @click="showPreview = false"><el-icon><Close /></el-icon> 关闭预览</el-button>
+        <el-button
+          text
+          @click="showPreview = false"
+        >
+          <el-icon><Close /></el-icon> 关闭预览
+        </el-button>
       </div>
       <div class="preview-overlay-body">
-        <PreviewPanel :schema="store.getSchema()" @save="handleSaveFromPreview" />
+        <PreviewPanel
+          :schema="store.getSchema()"
+          @save="handleSaveFromPreview"
+        />
       </div>
     </div>
 
     <!-- ========== 发布弹窗 ========== -->
-    <el-dialog v-model="showPublishPrompt" title="保存成功" width="400px">
-      <p style="text-align:center;font-size:15px">是否立即发布表单？</p>
-      <p style="text-align:center;font-size:13px;color:#909399">发布后生成公开填写链接，无需登录即可填写</p>
+    <el-dialog
+      v-model="showPublishPrompt"
+      title="保存成功"
+      width="400px"
+    >
+      <p style="text-align:center;font-size:15px">
+        是否立即发布表单？
+      </p>
+      <p style="text-align:center;font-size:13px;color:#909399">
+        发布后生成公开填写链接，无需登录即可填写
+      </p>
       <template #footer>
-        <el-button @click="handlePublishLater">稍后</el-button>
-        <el-button type="primary" @click="handlePublishNow">发布</el-button>
+        <el-button @click="handlePublishLater">
+          稍后
+        </el-button>
+        <el-button
+          type="primary"
+          @click="handlePublishNow"
+        >
+          发布
+        </el-button>
       </template>
     </el-dialog>
 
-    <PublishLinkDialog v-model:visible="showLinkDialog" :form-id="currentFormId" />
+    <PublishLinkDialog
+      v-model:visible="showLinkDialog"
+      :form-id="currentFormId"
+    />
   </div>
 </template>
 
@@ -190,8 +264,8 @@ async function initDesigner(queryTemplate?: string) {
       if (!schema.settings.canvasCols) schema.settings.canvasCols = 24
       if (!schema.fields) schema.fields = []
       store.loadSchema(schema)
-    } catch (e) {
-      console.error('加载模板失败', e)
+    } catch (e: any) {
+      ElMessage.error(e.response?.data?.message || '加载模板失败')
     }
   } else if (formId) {
     try {
@@ -205,8 +279,8 @@ async function initDesigner(queryTemplate?: string) {
       if (!fs.settings.formTitle) fs.settings.formTitle = form.name
       if (!fs.fields) fs.fields = []
       store.loadSchema(fs)
-    } catch (e) {
-      console.error('加载表单失败', e)
+    } catch (e: any) {
+      ElMessage.error(e.response?.data?.message || '加载表单失败')
     }
   }
 }

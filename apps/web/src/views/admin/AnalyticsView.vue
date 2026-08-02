@@ -3,33 +3,65 @@
     <h2>数据分析</h2>
 
     <!-- 统计卡片 -->
-    <el-row :gutter="16" class="stat-row">
-      <el-col :span="6" v-for="s in stats" :key="s.label">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-value">{{ s.value }}</div>
-          <div class="stat-label">{{ s.label }}</div>
+    <el-row
+      :gutter="16"
+      class="stat-row"
+    >
+      <el-col
+        v-for="s in stats"
+        :key="s.label"
+        :span="6"
+      >
+        <el-card
+          shadow="hover"
+          class="stat-card"
+        >
+          <div class="stat-value">
+            {{ s.value }}
+          </div>
+          <div class="stat-label">
+            {{ s.label }}
+          </div>
         </el-card>
       </el-col>
     </el-row>
 
     <!-- 提交趋势图 -->
     <el-card class="chart-card">
-      <template #header><span>提交趋势（近30天）</span></template>
-      <div ref="trendChartRef" class="chart-box" />
+      <template #header>
+        <span>提交趋势（近30天）</span>
+      </template>
+      <div
+        ref="trendChartRef"
+        class="chart-box"
+      />
     </el-card>
 
     <!-- 表单排名 + 状态分布 -->
-    <el-row :gutter="16" class="bottom-row">
+    <el-row
+      :gutter="16"
+      class="bottom-row"
+    >
       <el-col :span="14">
         <el-card>
-          <template #header><span>表单提交排名 TOP 10</span></template>
-          <div ref="rankChartRef" class="chart-box" />
+          <template #header>
+            <span>表单提交排名 TOP 10</span>
+          </template>
+          <div
+            ref="rankChartRef"
+            class="chart-box"
+          />
         </el-card>
       </el-col>
       <el-col :span="10">
         <el-card>
-          <template #header><span>表单状态分布</span></template>
-          <div ref="pieChartRef" class="chart-box" />
+          <template #header>
+            <span>表单状态分布</span>
+          </template>
+          <div
+            ref="pieChartRef"
+            class="chart-box"
+          />
         </el-card>
       </el-col>
     </el-row>

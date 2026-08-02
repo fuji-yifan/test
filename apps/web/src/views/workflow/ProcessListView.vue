@@ -2,7 +2,12 @@
   <div class="process-list-page">
     <div class="page-header">
       <h2>流程管理</h2>
-      <el-button type="primary" @click="showCreate = true"><el-icon><Plus /></el-icon> 新建流程</el-button>
+      <el-button
+        type="primary"
+        @click="showCreate = true"
+      >
+        <el-icon><Plus /></el-icon> 新建流程
+      </el-button>
     </div>
 
     <!-- 搜索&筛选 -->
@@ -14,48 +19,119 @@
         style="width: 240px"
         @input="fetchList"
       />
-      <el-select v-model="statusFilter" placeholder="状态筛选" clearable style="width: 140px" @change="fetchList">
-        <el-option label="全部" value="" />
-        <el-option label="草稿" value="draft" />
-        <el-option label="已发布" value="published" />
-        <el-option label="已归档" value="archived" />
+      <el-select
+        v-model="statusFilter"
+        placeholder="状态筛选"
+        clearable
+        style="width: 140px"
+        @change="fetchList"
+      >
+        <el-option
+          label="全部"
+          value=""
+        />
+        <el-option
+          label="草稿"
+          value="draft"
+        />
+        <el-option
+          label="已发布"
+          value="published"
+        />
+        <el-option
+          label="已归档"
+          value="archived"
+        />
       </el-select>
     </div>
 
     <!-- 列表 -->
-    <el-table :data="list" stripe v-loading="loading" style="margin-top: 16px">
-      <el-table-column prop="name" label="流程名称" min-width="120" align="center" show-overflow-tooltip>
+    <el-table
+      v-loading="loading"
+      :data="list"
+      stripe
+      style="margin-top: 16px"
+    >
+      <el-table-column
+        prop="name"
+        label="流程名称"
+        min-width="120"
+        align="center"
+        show-overflow-tooltip
+      >
         <template #default="{ row }">
-          <router-link :to="`/workspace/${wsId}/workflows/${row.id}/designer`">{{ row.name }}</router-link>
+          <router-link :to="`/workspace/${wsId}/workflows/${row.id}/designer`">
+            {{ row.name }}
+          </router-link>
         </template>
       </el-table-column>
-      <el-table-column prop="description" label="描述" min-width="300" align="center" show-overflow-tooltip />
-      <el-table-column prop="status" label="状态" min-width="90" align="center">
+      <el-table-column
+        prop="description"
+        label="描述"
+        min-width="300"
+        align="center"
+        show-overflow-tooltip
+      />
+      <el-table-column
+        prop="status"
+        label="状态"
+        min-width="90"
+        align="center"
+      >
         <template #default="{ row }">
-          <el-tag :type="row.status === 'published' ? 'success' : row.status === 'draft' ? 'info' : 'warning'" size="small">
+          <el-tag
+            :type="row.status === 'published' ? 'success' : row.status === 'draft' ? 'info' : 'warning'"
+            size="small"
+          >
             {{ row.status === 'published' ? '已发布' : row.status === 'draft' ? '草稿' : '已归档' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="发布时间" min-width="150" align="center">
-        <template #default="{ row }">{{ row.publishedAt ? formatDate(row.publishedAt) : '-' }}</template>
-      </el-table-column>
-      <el-table-column label="操作" min-width="150" align="center" fixed="right">
+      <el-table-column
+        label="发布时间"
+        min-width="150"
+        align="center"
+      >
         <template #default="{ row }">
-          <el-button size="small" @click="openDesigner(row)">设计</el-button>
+          {{ row.publishedAt ? formatDate(row.publishedAt) : '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column
+        label="操作"
+        min-width="150"
+        align="center"
+        fixed="right"
+      >
+        <template #default="{ row }">
+          <el-button
+            size="small"
+            @click="openDesigner(row)"
+          >
+            设计
+          </el-button>
           <el-button
             v-if="row.status === 'draft'"
             size="small"
             type="success"
             @click="publishDef(row)"
-          >发布</el-button>
+          >
+            发布
+          </el-button>
           <el-button
             v-if="row.status === 'published'"
             size="small"
             type="warning"
             @click="unpublishDef(row)"
-          >撤销发布</el-button>
-          <el-button size="small" type="danger" @click="confirmDelete(row)">删除</el-button>
+          >
+            撤销发布
+          </el-button>
+          <el-button
+            size="small"
+            type="danger"
+            @click="confirmDelete(row)"
+          >
+            删除
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -73,21 +149,47 @@
     />
 
     <!-- 新建对话框 -->
-    <el-dialog v-model="showCreate" title="新建流程" width="420px" @closed="resetForm">
-      <el-form :model="createForm" label-width="80px" @submit.prevent="doCreate">
-        <el-form-item label="名称" required>
-          <el-input v-model="createForm.name" placeholder="如：请假审批流程" />
+    <el-dialog
+      v-model="showCreate"
+      title="新建流程"
+      width="420px"
+      @closed="resetForm"
+    >
+      <el-form
+        :model="createForm"
+        label-width="80px"
+        @submit.prevent="doCreate"
+      >
+        <el-form-item
+          label="名称"
+          required
+        >
+          <el-input
+            v-model="createForm.name"
+            placeholder="如：请假审批流程"
+          />
         </el-form-item>
         <el-form-item label="描述">
-          <el-input v-model="createForm.description" type="textarea" placeholder="流程用途说明" />
+          <el-input
+            v-model="createForm.description"
+            type="textarea"
+            placeholder="流程用途说明"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showCreate = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="doCreate">创建</el-button>
+        <el-button @click="showCreate = false">
+          取消
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="creating"
+          @click="doCreate"
+        >
+          创建
+        </el-button>
       </template>
     </el-dialog>
-
   </div>
 </template>
 

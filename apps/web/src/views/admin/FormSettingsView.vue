@@ -1,39 +1,81 @@
 <template>
   <div class="settings-page">
     <div class="page-header">
-      <el-button text @click="$router.back()"><el-icon><ArrowLeft /></el-icon> 返回</el-button>
+      <el-button
+        text
+        @click="$router.back()"
+      >
+        <el-icon><ArrowLeft /></el-icon> 返回
+      </el-button>
       <h2>{{ formName }}</h2>
     </div>
 
     <el-card class="section-card">
-      <template #header><span class="section-title">基本信息</span></template>
-      <el-form label-width="100px" :model="form" @submit.prevent>
+      <template #header>
+        <span class="section-title">基本信息</span>
+      </template>
+      <el-form
+        label-width="100px"
+        :model="form"
+        @submit.prevent
+      >
         <el-form-item label="表单名称">
-          <el-input v-model="form.name" placeholder="请输入表单名称" />
+          <el-input
+            v-model="form.name"
+            placeholder="请输入表单名称"
+          />
         </el-form-item>
         <el-form-item label="描述">
-          <el-input v-model="form.description" type="textarea" :rows="3" placeholder="可选描述" />
+          <el-input
+            v-model="form.description"
+            type="textarea"
+            :rows="3"
+            placeholder="可选描述"
+          />
         </el-form-item>
         <el-form-item label="分类">
-          <el-select v-model="form.category" placeholder="选择分类" clearable>
-            <el-option v-for="c in CATEGORIES" :key="c" :label="c" :value="c" />
+          <el-select
+            v-model="form.category"
+            placeholder="选择分类"
+            clearable
+          >
+            <el-option
+              v-for="c in CATEGORIES"
+              :key="c"
+              :label="c"
+              :value="c"
+            />
           </el-select>
         </el-form-item>
       </el-form>
     </el-card>
 
     <el-card class="section-card">
-      <template #header><span class="section-title">提交设置</span></template>
-      <el-form label-width="120px" :model="form">
+      <template #header>
+        <span class="section-title">提交设置</span>
+      </template>
+      <el-form
+        label-width="120px"
+        :model="form"
+      >
         <el-form-item label="提交上限">
-          <el-input-number v-model="form.maxSubmissions" :min="0" />
+          <el-input-number
+            v-model="form.maxSubmissions"
+            :min="0"
+          />
           <span class="hint">0 表示不限制</span>
         </el-form-item>
       </el-form>
     </el-card>
 
     <div class="save-bar">
-      <el-button type="primary" :loading="saving" @click="save">保存设置</el-button>
+      <el-button
+        type="primary"
+        :loading="saving"
+        @click="save"
+      >
+        保存设置
+      </el-button>
     </div>
   </div>
 </template>

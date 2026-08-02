@@ -2,81 +2,221 @@
   <div>
     <div class="page-header">
       <h2>Webhook 管理</h2>
-      <el-button type="primary" @click="openCreate">添加 Webhook</el-button>
+      <el-button
+        type="primary"
+        @click="openCreate"
+      >
+        添加 Webhook
+      </el-button>
     </div>
-    <el-table :data="webhooks" stripe v-loading="loading">
-      <el-table-column prop="url" label="URL" align="center" show-overflow-tooltip>
-        <template #default="{ row }"><span class="mono">{{ row.url }}</span></template>
-      </el-table-column>
-      <el-table-column label="事件" width="220" align="center">
+    <el-table
+      v-loading="loading"
+      :data="webhooks"
+      stripe
+    >
+      <el-table-column
+        prop="url"
+        label="URL"
+        align="center"
+        show-overflow-tooltip
+      >
         <template #default="{ row }">
-          <el-tag v-for="ev in (row.events as string[])" :key="ev" size="small" style="margin-right:4px">
+          <span class="mono">{{ row.url }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column
+        label="事件"
+        width="220"
+        align="center"
+      >
+        <template #default="{ row }">
+          <el-tag
+            v-for="ev in (row.events as string[])"
+            :key="ev"
+            size="small"
+            style="margin-right:4px"
+          >
             {{ eventLabel(ev) }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="80" align="center">
+      <el-table-column
+        label="状态"
+        width="80"
+        align="center"
+      >
         <template #default="{ row }">
-          <el-switch v-model="row.isActive" size="small" @change="(v:boolean) => toggleStatus(row,v)" />
+          <el-switch
+            v-model="row.isActive"
+            size="small"
+            @change="(v:boolean) => toggleStatus(row,v)"
+          />
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="280" align="center" fixed="right">
+      <el-table-column
+        label="操作"
+        width="280"
+        align="center"
+        fixed="right"
+      >
         <template #default="{ row }">
-          <el-button size="small" @click="openEdit(row)">编辑</el-button>
-          <el-button size="small" @click="testHook(row)">测试</el-button>
-          <el-button size="small" type="primary" @click="showDeliveries(row)">日志</el-button>
-          <el-button size="small" type="danger" @click="deleteWH(row)">删除</el-button>
+          <el-button
+            size="small"
+            @click="openEdit(row)"
+          >
+            编辑
+          </el-button>
+          <el-button
+            size="small"
+            @click="testHook(row)"
+          >
+            测试
+          </el-button>
+          <el-button
+            size="small"
+            type="primary"
+            @click="showDeliveries(row)"
+          >
+            日志
+          </el-button>
+          <el-button
+            size="small"
+            type="danger"
+            @click="deleteWH(row)"
+          >
+            删除
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
 
-    <el-empty v-if="!loading && webhooks.length === 0" description="暂无 Webhook" />
+    <el-empty
+      v-if="!loading && webhooks.length === 0"
+      description="暂无 Webhook"
+    />
 
     <!-- 创建/编辑对话框 -->
-    <el-dialog v-model="showDialog" :title="editingId ? '编辑 Webhook' : '添加 Webhook'" width="500px">
-      <el-form :model="form" label-width="80px">
-        <el-form-item label="URL" required>
-          <el-input v-model="form.url" placeholder="https://example.com/webhook" />
+    <el-dialog
+      v-model="showDialog"
+      :title="editingId ? '编辑 Webhook' : '添加 Webhook'"
+      width="500px"
+    >
+      <el-form
+        :model="form"
+        label-width="80px"
+      >
+        <el-form-item
+          label="URL"
+          required
+        >
+          <el-input
+            v-model="form.url"
+            placeholder="https://example.com/webhook"
+          />
         </el-form-item>
         <el-form-item label="事件">
           <el-checkbox-group v-model="form.events">
-            <el-checkbox label="submission.created">数据提交</el-checkbox>
-            <el-checkbox label="submission.updated">数据更新</el-checkbox>
-            <el-checkbox label="form.published">表单发布</el-checkbox>
-            <el-checkbox label="form.archived">表单归档</el-checkbox>
+            <el-checkbox label="submission.created">
+              数据提交
+            </el-checkbox>
+            <el-checkbox label="submission.updated">
+              数据更新
+            </el-checkbox>
+            <el-checkbox label="form.published">
+              表单发布
+            </el-checkbox>
+            <el-checkbox label="form.archived">
+              表单归档
+            </el-checkbox>
           </el-checkbox-group>
         </el-form-item>
         <el-form-item label="密钥">
-          <el-input v-model="form.secret" placeholder="HMAC 签名密钥（可选）">
-            <template #append><el-button @click="generateSecret">生成</el-button></template>
+          <el-input
+            v-model="form.secret"
+            placeholder="HMAC 签名密钥（可选）"
+          >
+            <template #append>
+              <el-button @click="generateSecret">
+                生成
+              </el-button>
+            </template>
           </el-input>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showDialog = false">取消</el-button>
-        <el-button type="primary" @click="doSave" :loading="saving">{{ editingId ? '保存' : '添加' }}</el-button>
+        <el-button @click="showDialog = false">
+          取消
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="saving"
+          @click="doSave"
+        >
+          {{ editingId ? '保存' : '添加' }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 投递日志抽屉 -->
-    <el-drawer v-model="deliveryDrawer" title="投递日志" size="600px">
-      <el-table :data="deliveries" stripe v-loading="deliveryLoading" size="small">
-        <el-table-column prop="event" label="事件" width="130" align="center" />
-        <el-table-column label="状态" width="70" align="center">
+    <el-drawer
+      v-model="deliveryDrawer"
+      title="投递日志"
+      size="600px"
+    >
+      <el-table
+        v-loading="deliveryLoading"
+        :data="deliveries"
+        stripe
+        size="small"
+      >
+        <el-table-column
+          prop="event"
+          label="事件"
+          width="130"
+          align="center"
+        />
+        <el-table-column
+          label="状态"
+          width="70"
+          align="center"
+        >
           <template #default="{ row }">
-            <el-tag :type="row.status >= 200 && row.status < 300 ? 'success' : 'danger'" size="small">
+            <el-tag
+              :type="row.status >= 200 && row.status < 300 ? 'success' : 'danger'"
+              size="small"
+            >
               {{ row.status || 'FAIL' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="耗时" width="75" align="center">
-          <template #default="{ row }">{{ row.duration }}ms</template>
+        <el-table-column
+          label="耗时"
+          width="75"
+          align="center"
+        >
+          <template #default="{ row }">
+            {{ row.duration }}ms
+          </template>
         </el-table-column>
-        <el-table-column prop="error" label="错误" min-width="150" align="center" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.error || '-' }}</template>
+        <el-table-column
+          prop="error"
+          label="错误"
+          min-width="150"
+          align="center"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            {{ row.error || '-' }}
+          </template>
         </el-table-column>
-        <el-table-column label="时间" width="175" align="center">
-          <template #default="{ row }">{{ fmt(row.createdAt) }}</template>
+        <el-table-column
+          label="时间"
+          width="175"
+          align="center"
+        >
+          <template #default="{ row }">
+            {{ fmt(row.createdAt) }}
+          </template>
         </el-table-column>
       </el-table>
     </el-drawer>

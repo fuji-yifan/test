@@ -1,10 +1,19 @@
 <template>
   <div class="public-form">
-    <div v-if="!schema" class="loading-state">
-      <el-skeleton :rows="8" animated />
+    <div
+      v-if="!schema"
+      class="loading-state"
+    >
+      <el-skeleton
+        :rows="8"
+        animated
+      />
     </div>
 
-    <div v-else class="form-wrapper">
+    <div
+      v-else
+      class="form-wrapper"
+    >
       <!-- 用户身份栏 -->
       <div class="user-bar">
         <template v-if="formUser">
@@ -12,22 +21,51 @@
             <el-icon><UserFilled /></el-icon>
             {{ formUser.nickname || formUser.email }}
           </span>
-          <el-button size="small" @click="logout">切换账号</el-button>
+          <el-button
+            size="small"
+            @click="logout"
+          >
+            切换账号
+          </el-button>
         </template>
         <template v-else>
           <span class="user-tip">登录后提交表单</span>
           <el-button-group size="small">
-            <el-button type="primary" @click="showLogin = true">登录</el-button>
-            <el-button @click="showLogin = true">注册</el-button>
+            <el-button
+              type="primary"
+              @click="showLogin = true"
+            >
+              登录
+            </el-button>
+            <el-button @click="showLogin = true">
+              注册
+            </el-button>
           </el-button-group>
         </template>
       </div>
 
       <!-- 表单卡片 -->
-      <div class="form-card" :style="{ width: canvasWidth + 'px' }">
-        <div v-if="schema.settings.formTitle" class="form-title">{{ schema.settings.formTitle }}</div>
-        <div v-if="!schema.fields?.length" class="empty-hint">无控件</div>
-        <div v-else class="form-fields" :style="gridStyle">
+      <div
+        class="form-card"
+        :style="{ width: canvasWidth + 'px' }"
+      >
+        <div
+          v-if="schema.settings.formTitle"
+          class="form-title"
+        >
+          {{ schema.settings.formTitle }}
+        </div>
+        <div
+          v-if="!schema.fields?.length"
+          class="empty-hint"
+        >
+          无控件
+        </div>
+        <div
+          v-else
+          class="form-fields"
+          :style="gridStyle"
+        >
           <FormField
             v-for="field in schema.fields"
             :key="field.id"
@@ -42,14 +80,17 @@
       </div>
 
       <!-- 提交按钮 -->
-      <div class="form-footer" v-if="schema.fields?.length">
+      <div
+        v-if="schema.fields?.length"
+        class="form-footer"
+      >
         <el-button
           type="primary"
           size="large"
           :loading="submitting"
           :disabled="!formUser"
-          @click="handleSubmit"
           class="submit-btn"
+          @click="handleSubmit"
         >
           {{ formUser ? (schema.settings.submitText || '提交') : '请先登录后提交' }}
         </el-button>
@@ -57,46 +98,118 @@
     </div>
 
     <!-- 登录/注册弹窗 -->
-    <el-dialog v-model="showLogin" width="420px" :close-on-click-modal="false" :show-close="false">
+    <el-dialog
+      v-model="showLogin"
+      width="420px"
+      :close-on-click-modal="false"
+      :show-close="false"
+    >
       <div class="auth-dialog">
         <div class="auth-header">
           <h3>{{ loginTab === 'login' ? '登录' : '注册' }}</h3>
-          <p class="auth-sub">登录后即可提交表单</p>
+          <p class="auth-sub">
+            登录后即可提交表单
+          </p>
         </div>
 
         <!-- 登录 -->
-        <el-form v-if="loginTab === 'login'" :model="loginForm" @submit.prevent="doLogin" label-position="top">
+        <el-form
+          v-if="loginTab === 'login'"
+          :model="loginForm"
+          label-position="top"
+          @submit.prevent="doLogin"
+        >
           <el-form-item label="邮箱">
-            <el-input v-model="loginForm.email" placeholder="输入邮箱地址" :prefix-icon="Message" />
+            <el-input
+              v-model="loginForm.email"
+              placeholder="输入邮箱地址"
+              :prefix-icon="Message"
+            />
           </el-form-item>
           <el-form-item label="密码">
-            <el-input v-model="loginForm.password" type="password" placeholder="输入密码" show-password :prefix-icon="Lock" @keyup.enter="doLogin" />
+            <el-input
+              v-model="loginForm.password"
+              type="password"
+              placeholder="输入密码"
+              show-password
+              :prefix-icon="Lock"
+              @keyup.enter="doLogin"
+            />
           </el-form-item>
-          <el-button type="primary" :loading="loginLoading" class="auth-btn" @click="doLogin">登录</el-button>
-          <p v-if="loginError" class="error-msg">{{ loginError }}</p>
+          <el-button
+            type="primary"
+            :loading="loginLoading"
+            class="auth-btn"
+            @click="doLogin"
+          >
+            登录
+          </el-button>
+          <p
+            v-if="loginError"
+            class="error-msg"
+          >
+            {{ loginError }}
+          </p>
         </el-form>
 
         <!-- 注册 -->
-        <el-form v-if="loginTab === 'register'" :model="registerForm" @submit.prevent="doRegister" label-position="top">
+        <el-form
+          v-if="loginTab === 'register'"
+          :model="registerForm"
+          label-position="top"
+          @submit.prevent="doRegister"
+        >
           <el-form-item label="邮箱">
-            <el-input v-model="registerForm.email" placeholder="输入邮箱地址" :prefix-icon="Message" />
+            <el-input
+              v-model="registerForm.email"
+              placeholder="输入邮箱地址"
+              :prefix-icon="Message"
+            />
           </el-form-item>
           <el-form-item label="昵称">
-            <el-input v-model="registerForm.nickname" placeholder="输入昵称" :prefix-icon="User" />
+            <el-input
+              v-model="registerForm.nickname"
+              placeholder="输入昵称"
+              :prefix-icon="User"
+            />
           </el-form-item>
           <el-form-item label="密码">
-            <el-input v-model="registerForm.password" type="password" placeholder="至少6位" show-password :prefix-icon="Lock" />
+            <el-input
+              v-model="registerForm.password"
+              type="password"
+              placeholder="至少6位"
+              show-password
+              :prefix-icon="Lock"
+            />
           </el-form-item>
-          <el-button type="primary" :loading="regLoading" class="auth-btn" @click="doRegister">注册</el-button>
-          <p v-if="regError" class="error-msg">{{ regError }}</p>
+          <el-button
+            type="primary"
+            :loading="regLoading"
+            class="auth-btn"
+            @click="doRegister"
+          >
+            注册
+          </el-button>
+          <p
+            v-if="regError"
+            class="error-msg"
+          >
+            {{ regError }}
+          </p>
         </el-form>
 
         <div class="auth-switch">
           <template v-if="loginTab === 'login'">
-            还没有账号？<a href="#" @click.prevent="loginTab = 'register'; loginError = ''; regError = ''">立即注册</a>
+            还没有账号？<a
+              href="#"
+              @click.prevent="loginTab = 'register'; loginError = ''; regError = ''"
+            >立即注册</a>
           </template>
           <template v-else>
-            已有账号？<a href="#" @click.prevent="loginTab = 'login'; loginError = ''; regError = ''">立即登录</a>
+            已有账号？<a
+              href="#"
+              @click.prevent="loginTab = 'login'; loginError = ''; regError = ''"
+            >立即登录</a>
           </template>
         </div>
       </div>

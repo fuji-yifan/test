@@ -10,6 +10,7 @@
     "build": "turbo run build",
     "build:sdk": "turbo run build --filter=@furmx/sdk",
     "lint": "turbo run lint",
+    "check": "pnpm lint && pnpm format:check",
     "format": "prettier --write \"**/*.{ts,vue,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,vue,json,md}\"",
     "clean": "turbo run clean",

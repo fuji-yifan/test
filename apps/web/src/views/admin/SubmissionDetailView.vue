@@ -1,32 +1,70 @@
 <template>
   <div class="detail-page">
     <div class="page-header">
-      <el-button text @click="$router.back()"><el-icon><ArrowLeft /></el-icon> 返回</el-button>
+      <el-button
+        text
+        @click="$router.back()"
+      >
+        <el-icon><ArrowLeft /></el-icon> 返回
+      </el-button>
       <h2>提交详情</h2>
     </div>
 
-    <div v-if="!schema" v-loading="loading" class="loading-area" />
+    <div
+      v-if="!schema"
+      v-loading="loading"
+      class="loading-area"
+    />
 
     <template v-else>
       <!-- 提交信息表格 -->
-      <el-descriptions :column="3" border class="info-table">
+      <el-descriptions
+        :column="3"
+        border
+        class="info-table"
+      >
         <el-descriptions-item label="提交人">
           <template v-if="detail.submitter">
-            <el-tooltip :content="'用户ID：' + detail.submitterId" placement="top" effect="light">
+            <el-tooltip
+              :content="'用户ID：' + detail.submitterId"
+              placement="top"
+              effect="light"
+            >
               <span class="user-link">{{ detail.submitter.nickname || detail.submitter.email }}</span>
             </el-tooltip>
           </template>
           <span v-else>匿名</span>
         </el-descriptions-item>
-        <el-descriptions-item label="提交人ID">{{ detail.submitterId || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="提交时间">{{ formatDate(detail.createdAt) }}</el-descriptions-item>
+        <el-descriptions-item label="提交人ID">
+          {{ detail.submitterId || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="提交时间">
+          {{ formatDate(detail.createdAt) }}
+        </el-descriptions-item>
       </el-descriptions>
 
       <!-- 表单数据卡片 -->
-      <div class="form-card" :style="{ width: canvasWidth + 'px' }">
-        <div v-if="schema.settings.formTitle" class="form-title">{{ schema.settings.formTitle }}</div>
-        <div v-if="!schema.fields?.length" class="empty-hint">无控件</div>
-        <div v-else class="form-fields" :style="gridStyle">
+      <div
+        class="form-card"
+        :style="{ width: canvasWidth + 'px' }"
+      >
+        <div
+          v-if="schema.settings.formTitle"
+          class="form-title"
+        >
+          {{ schema.settings.formTitle }}
+        </div>
+        <div
+          v-if="!schema.fields?.length"
+          class="empty-hint"
+        >
+          无控件
+        </div>
+        <div
+          v-else
+          class="form-fields"
+          :style="gridStyle"
+        >
           <FormField
             v-for="field in schema.fields"
             :key="field.id"

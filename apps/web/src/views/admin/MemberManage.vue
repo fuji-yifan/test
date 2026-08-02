@@ -2,45 +2,108 @@
   <div>
     <div class="page-header">
       <h2>成员管理</h2>
-      <el-button type="primary" @click="openInvite">添加成员</el-button>
+      <el-button
+        type="primary"
+        @click="openInvite"
+      >
+        添加成员
+      </el-button>
     </div>
-    <el-table :data="members" stripe>
-      <el-table-column prop="user.email" label="邮箱" min-width="200" align="center" show-overflow-tooltip />
-      <el-table-column label="昵称" min-width="140" align="center">
+    <el-table
+      :data="members"
+      stripe
+    >
+      <el-table-column
+        prop="user.email"
+        label="邮箱"
+        min-width="200"
+        align="center"
+        show-overflow-tooltip
+      />
+      <el-table-column
+        label="昵称"
+        min-width="140"
+        align="center"
+      >
         <template #default="{ row }">
-          <el-tooltip :content="'用户ID：' + row.user.id" placement="top" effect="light">
+          <el-tooltip
+            :content="'用户ID：' + row.user.id"
+            placement="top"
+            effect="light"
+          >
             <span class="user-link">{{ row.user.nickname || '-' }}</span>
           </el-tooltip>
         </template>
       </el-table-column>
-      <el-table-column label="角色" min-width="140" align="center">
+      <el-table-column
+        label="角色"
+        min-width="140"
+        align="center"
+      >
         <template #default="{ row }">
-          <span v-if="row.role === 'owner'" class="owner-tag">创建者</span>
+          <span
+            v-if="row.role === 'owner'"
+            class="owner-tag"
+          >创建者</span>
           <template v-else>
             <el-select
               :model-value="row.role"
               size="small"
               @change="(v: string) => changeRole(row, v)"
             >
-              <el-option label="编辑者" value="editor" />
-              <el-option label="查看者" value="viewer" />
+              <el-option
+                label="编辑者"
+                value="editor"
+              />
+              <el-option
+                label="查看者"
+                value="viewer"
+              />
             </el-select>
           </template>
         </template>
       </el-table-column>
-      <el-table-column label="加入时间" min-width="180" align="center">
-        <template #default="{ row }">{{ row.createdAt ? new Date(row.createdAt).toLocaleString('zh-CN') : '-' }}</template>
-      </el-table-column>
-      <el-table-column label="操作" min-width="80" align="center" fixed="right">
+      <el-table-column
+        label="加入时间"
+        min-width="180"
+        align="center"
+      >
         <template #default="{ row }">
-          <el-button v-if="row.role !== 'owner'" size="small" type="danger" @click="removeMember(row)">移除</el-button>
+          {{ row.createdAt ? new Date(row.createdAt).toLocaleString('zh-CN') : '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column
+        label="操作"
+        min-width="80"
+        align="center"
+        fixed="right"
+      >
+        <template #default="{ row }">
+          <el-button
+            v-if="row.role !== 'owner'"
+            size="small"
+            type="danger"
+            @click="removeMember(row)"
+          >
+            移除
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
-    <el-empty v-if="!members.length" description="暂无成员" />
+    <el-empty
+      v-if="!members.length"
+      description="暂无成员"
+    />
 
-    <el-dialog v-model="showInvite" title="添加成员" width="480px">
-      <el-form :model="inviteForm" label-width="60px">
+    <el-dialog
+      v-model="showInvite"
+      title="添加成员"
+      width="480px"
+    >
+      <el-form
+        :model="inviteForm"
+        label-width="60px"
+      >
         <el-form-item label="用户">
           <el-select
             v-model="inviteForm.email"
@@ -65,14 +128,28 @@
         </el-form-item>
         <el-form-item label="角色">
           <el-select v-model="inviteForm.role">
-            <el-option label="编辑者" value="editor" />
-            <el-option label="查看者" value="viewer" />
+            <el-option
+              label="编辑者"
+              value="editor"
+            />
+            <el-option
+              label="查看者"
+              value="viewer"
+            />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showInvite = false">取消</el-button>
-        <el-button type="primary" @click="doInvite" :loading="inviting">添加</el-button>
+        <el-button @click="showInvite = false">
+          取消
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="inviting"
+          @click="doInvite"
+        >
+          添加
+        </el-button>
       </template>
     </el-dialog>
   </div>

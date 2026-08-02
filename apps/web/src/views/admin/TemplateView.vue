@@ -3,54 +3,144 @@
     <div class="header">
       <h2>模板市场</h2>
       <div class="header-right">
-        <el-input v-model="keyword" placeholder="搜索模板..." style="width:260px" clearable @change="fetchList" />
-        <el-button type="primary" @click="openCreate">创建模板</el-button>
+        <el-input
+          v-model="keyword"
+          placeholder="搜索模板..."
+          style="width:260px"
+          clearable
+          @change="fetchList"
+        />
+        <el-button
+          type="primary"
+          @click="openCreate"
+        >
+          创建模板
+        </el-button>
       </div>
     </div>
 
-    <el-tabs v-model="activeCategory" @tab-change="onCategoryChange">
-      <el-tab-pane label="全部" name="" />
-      <el-tab-pane v-for="c in CATEGORIES" :key="c" :label="c" :name="c" />
+    <el-tabs
+      v-model="activeCategory"
+      @tab-change="onCategoryChange"
+    >
+      <el-tab-pane
+        label="全部"
+        name=""
+      />
+      <el-tab-pane
+        v-for="c in CATEGORIES"
+        :key="c"
+        :label="c"
+        :name="c"
+      />
     </el-tabs>
 
-    <div v-loading="loading" class="card-grid">
-      <el-card v-for="tpl in templates" :key="tpl.id" class="tpl-card" shadow="hover">
+    <div
+      v-loading="loading"
+      class="card-grid"
+    >
+      <el-card
+        v-for="tpl in templates"
+        :key="tpl.id"
+        class="tpl-card"
+        shadow="hover"
+      >
         <template #header>
           <div class="card-title">
             <span>{{ tpl.name }}</span>
-            <el-tag v-if="tpl.category" size="small">{{ tpl.category }}</el-tag>
+            <el-tag
+              v-if="tpl.category"
+              size="small"
+            >
+              {{ tpl.category }}
+            </el-tag>
           </div>
         </template>
-        <p class="tpl-desc">{{ tpl.description || '暂无描述' }}</p>
-        <div class="tpl-tags" v-if="tpl.tags?.length">
-          <el-tag v-for="tag in tpl.tags" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
+        <p class="tpl-desc">
+          {{ tpl.description || '暂无描述' }}
+        </p>
+        <div
+          v-if="tpl.tags?.length"
+          class="tpl-tags"
+        >
+          <el-tag
+            v-for="tag in tpl.tags"
+            :key="tag"
+            size="small"
+            effect="plain"
+          >
+            {{ tag }}
+          </el-tag>
         </div>
-        <div class="tpl-meta"><span>已使用 {{ tpl.usageCount }} 次</span></div>
+        <div class="tpl-meta">
+          <span>已使用 {{ tpl.usageCount }} 次</span>
+        </div>
         <div class="tpl-actions">
-          <el-button size="small" @click="previewTemplate(tpl)">预览</el-button>
-          <el-button size="small" type="warning" @click="openEdit(tpl)">修改</el-button>
-          <el-button size="small" type="primary" @click="useTemplate(tpl)">使用</el-button>
+          <el-button
+            size="small"
+            @click="previewTemplate(tpl)"
+          >
+            预览
+          </el-button>
+          <el-button
+            size="small"
+            type="warning"
+            @click="openEdit(tpl)"
+          >
+            修改
+          </el-button>
+          <el-button
+            size="small"
+            type="primary"
+            @click="useTemplate(tpl)"
+          >
+            使用
+          </el-button>
         </div>
       </el-card>
     </div>
 
-    <el-empty v-if="!loading && templates.length === 0" description="暂无模板，点击「创建模板」添加" />
+    <el-empty
+      v-if="!loading && templates.length === 0"
+      description="暂无模板，点击「创建模板」添加"
+    />
     <el-pagination
       v-if="total > pageSize"
-      v-model:current-page="page" :page-size="pageSize" :total="total"
-      layout="prev, pager, next" class="pagination"
+      v-model:current-page="page"
+      :page-size="pageSize"
+      :total="total"
+      layout="prev, pager, next"
+      class="pagination"
     />
 
     <!-- ========== 预览弹窗 ========== -->
-    <el-dialog v-model="previewVisible" title="模板预览" width="750px">
+    <el-dialog
+      v-model="previewVisible"
+      title="模板预览"
+      width="750px"
+    >
       <template v-if="previewTpl">
-        <el-descriptions :column="2" border size="small">
-          <el-descriptions-item label="名称">{{ previewTpl.name }}</el-descriptions-item>
-          <el-descriptions-item label="分类">{{ previewTpl.category || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="使用次数">{{ previewTpl.usageCount }}</el-descriptions-item>
-          <el-descriptions-item label="标签">{{ (previewTpl.tags || []).join(', ') || '-' }}</el-descriptions-item>
+        <el-descriptions
+          :column="2"
+          border
+          size="small"
+        >
+          <el-descriptions-item label="名称">
+            {{ previewTpl.name }}
+          </el-descriptions-item>
+          <el-descriptions-item label="分类">
+            {{ previewTpl.category || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="使用次数">
+            {{ previewTpl.usageCount }}
+          </el-descriptions-item>
+          <el-descriptions-item label="标签">
+            {{ (previewTpl.tags || []).join(', ') || '-' }}
+          </el-descriptions-item>
         </el-descriptions>
-        <h4 style="margin:16px 0 8px">表单预览</h4>
+        <h4 style="margin:16px 0 8px">
+          表单预览
+        </h4>
         <div class="form-preview-box">
           <FormPreview :schema="previewTpl.schema" />
         </div>
@@ -58,45 +148,110 @@
     </el-dialog>
 
     <!-- ========== 创建/编辑模板弹窗 ========== -->
-    <el-dialog v-model="createVisible" :title="editingId ? '修改模板' : '创建模板'" width="650px">
-      <el-form :model="form" label-width="80px">
-        <el-form-item label="名称" required>
-          <el-input v-model="form.name" placeholder="如：请假申请" />
+    <el-dialog
+      v-model="createVisible"
+      :title="editingId ? '修改模板' : '创建模板'"
+      width="650px"
+    >
+      <el-form
+        :model="form"
+        label-width="80px"
+      >
+        <el-form-item
+          label="名称"
+          required
+        >
+          <el-input
+            v-model="form.name"
+            placeholder="如：请假申请"
+          />
         </el-form-item>
         <el-form-item label="描述">
-          <el-input v-model="form.description" type="textarea" :rows="2" placeholder="简要描述模板用途" />
+          <el-input
+            v-model="form.description"
+            type="textarea"
+            :rows="2"
+            placeholder="简要描述模板用途"
+          />
         </el-form-item>
         <el-form-item label="分类">
-          <el-select v-model="form.category" placeholder="选择分类" clearable>
-            <el-option v-for="c in CATEGORIES" :key="c" :label="c" :value="c" />
+          <el-select
+            v-model="form.category"
+            placeholder="选择分类"
+            clearable
+          >
+            <el-option
+              v-for="c in CATEGORIES"
+              :key="c"
+              :label="c"
+              :value="c"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="标签">
-          <el-select v-model="form.tags" multiple allow-create filterable placeholder="输入后回车添加标签" />
+          <el-select
+            v-model="form.tags"
+            multiple
+            allow-create
+            filterable
+            placeholder="输入后回车添加标签"
+          />
         </el-form-item>
-        <el-form-item v-if="!editingId" label="来源表单" required>
-          <el-select v-model="selectedFormId" filterable placeholder="选择一个已发布的表单" @change="onFormSelected">
-            <el-option v-for="f in publishedForms" :key="f.id" :label="f.name" :value="f.id">
+        <el-form-item
+          v-if="!editingId"
+          label="来源表单"
+          required
+        >
+          <el-select
+            v-model="selectedFormId"
+            filterable
+            placeholder="选择一个已发布的表单"
+            @change="onFormSelected"
+          >
+            <el-option
+              v-for="f in publishedForms"
+              :key="f.id"
+              :label="f.name"
+              :value="f.id"
+            >
               <span>{{ f.name }}</span>
               <span style="color:#999;float:right;font-size:12px">{{ f.publishedVersion ? 'v' + f.publishedVersion : '' }}</span>
             </el-option>
           </el-select>
         </el-form-item>
         <!-- 表单预览 + 修改视图入口 -->
-        <el-form-item v-if="selectedFormName && previewSchema?.fields?.length" label="表单预览">
+        <el-form-item
+          v-if="selectedFormName && previewSchema?.fields?.length"
+          label="表单预览"
+        >
           <div class="form-preview-box">
             <FormPreview :schema="previewSchema" />
           </div>
-          <div v-if="editingId" style="margin-top:10px;text-align:right">
-            <el-button type="primary" size="small" @click="editTemplateInDesigner()">
+          <div
+            v-if="editingId"
+            style="margin-top:10px;text-align:right"
+          >
+            <el-button
+              type="primary"
+              size="small"
+              @click="editTemplateInDesigner()"
+            >
               在设计中修改视图
             </el-button>
           </div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createVisible = false">取消</el-button>
-        <el-button type="primary" @click="doSave" :loading="saving">保存</el-button>
+        <el-button @click="createVisible = false">
+          取消
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="saving"
+          @click="doSave"
+        >
+          保存
+        </el-button>
       </template>
     </el-dialog>
   </div>

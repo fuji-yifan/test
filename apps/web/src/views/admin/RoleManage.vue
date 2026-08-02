@@ -2,78 +2,167 @@
   <div>
     <div class="page-header">
       <h2>角色权限管理</h2>
-      <el-button type="primary" @click="openCreate">新建角色</el-button>
+      <el-button
+        type="primary"
+        @click="openCreate"
+      >
+        新建角色
+      </el-button>
     </div>
 
     <!-- 权限矩阵 -->
-    <el-card class="section-card" v-if="matrix.roles && matrix.roles.length">
-      <template #header><span>权限矩阵</span></template>
+    <el-card
+      v-if="matrix.roles && matrix.roles.length"
+      class="section-card"
+    >
+      <template #header>
+        <span>权限矩阵</span>
+      </template>
       <div class="matrix-scroll">
         <div class="matrix-wrapper">
-        <table class="matrix-table">
-          <thead>
-            <tr class="tr-group">
-              <th class="col-role" rowspan="2">角色权限</th>
-              <template v-for="group in permGroups" :key="group.group">
-                <th :colspan="group.perms.length" class="th-group">{{ group.group }}</th>
-              </template>
-            </tr>
-            <tr>
-              <template v-for="group in permGroups" :key="'sub-'+group.group">
-                <th v-for="p in group.perms" :key="p.key" class="th-perm">{{ p.label }}</th>
-              </template>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="role in matrix.roles" :key="role.id">
-              <td class="col-role">{{ role.name }}</td>
-              <template v-for="group in permGroups" :key="'body-'+group.group">
-                <td
-                  v-for="p in group.perms" :key="p.key"
-                  class="td-check"
-                  :class="{ 'td-check--active': hasPerm(role, p.key), 'td-check--locked': role.isSystem && !isOwner }"
-                  @click="(role.isSystem && !isOwner) ? undefined : toggleMatrixPerm(role, p.key)"
+          <table class="matrix-table">
+            <thead>
+              <tr class="tr-group">
+                <th
+                  class="col-role"
+                  rowspan="2"
                 >
-                  <el-icon v-if="hasPerm(role, p.key)" color="#409eff"><Check /></el-icon>
+                  角色权限
+                </th>
+                <template
+                  v-for="group in permGroups"
+                  :key="group.group"
+                >
+                  <th
+                    :colspan="group.perms.length"
+                    class="th-group"
+                  >
+                    {{ group.group }}
+                  </th>
+                </template>
+              </tr>
+              <tr>
+                <template
+                  v-for="group in permGroups"
+                  :key="'sub-'+group.group"
+                >
+                  <th
+                    v-for="p in group.perms"
+                    :key="p.key"
+                    class="th-perm"
+                  >
+                    {{ p.label }}
+                  </th>
+                </template>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="role in matrix.roles"
+                :key="role.id"
+              >
+                <td class="col-role">
+                  {{ role.name }}
                 </td>
-              </template>
-            </tr>
-          </tbody>
-        </table>
+                <template
+                  v-for="group in permGroups"
+                  :key="'body-'+group.group"
+                >
+                  <td
+                    v-for="p in group.perms"
+                    :key="p.key"
+                    class="td-check"
+                    :class="{ 'td-check--active': hasPerm(role, p.key), 'td-check--locked': role.isSystem && !isOwner }"
+                    @click="(role.isSystem && !isOwner) ? undefined : toggleMatrixPerm(role, p.key)"
+                  >
+                    <el-icon
+                      v-if="hasPerm(role, p.key)"
+                      color="#409eff"
+                    >
+                      <Check />
+                    </el-icon>
+                  </td>
+                </template>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </el-card>
 
     <!-- 角色列表 -->
     <el-card class="section-card">
-      <template #header><span>角色列表</span></template>
-      <el-table :data="roles" stripe>
-        <el-table-column prop="name" label="角色名" width="120" align="center" />
-        <el-table-column label="权限列表" min-width="400" align="center">
+      <template #header>
+        <span>角色列表</span>
+      </template>
+      <el-table
+        :data="roles"
+        stripe
+      >
+        <el-table-column
+          prop="name"
+          label="角色名"
+          width="120"
+          align="center"
+        />
+        <el-table-column
+          label="权限列表"
+          min-width="400"
+          align="center"
+        >
           <template #default="{ row }">
             <template v-if="(row.permissions || []).includes('*')">
-              <el-tag size="small" type="danger">全部权限</el-tag>
+              <el-tag
+                size="small"
+                type="danger"
+              >
+                全部权限
+              </el-tag>
             </template>
             <template v-else>
               <el-tag
-                v-for="p in (row.permissions || [])" :key="p"
+                v-for="p in (row.permissions || [])"
+                :key="p"
                 size="small"
                 style="margin-right: 4px; margin-bottom: 4px"
-              >{{ permLabel(p) }}</el-tag>
+              >
+                {{ permLabel(p) }}
+              </el-tag>
             </template>
           </template>
         </el-table-column>
-        <el-table-column label="用户数" min-width="60" align="center">
-          <template #default="{ row }">{{ row.users?.length || 0 }}</template>
+        <el-table-column
+          label="用户数"
+          min-width="60"
+          align="center"
+        >
+          <template #default="{ row }">
+            {{ row.users?.length || 0 }}
+          </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" align="center">
+        <el-table-column
+          label="操作"
+          width="160"
+          align="center"
+        >
           <template #default="{ row }">
             <template v-if="row.isSystem && !isOwner">
               <span class="system-hint">系统角色</span>
             </template>
             <template v-if="!row.isSystem || isOwner">
-              <el-button size="small" @click="openEdit(row)">编辑</el-button>
-              <el-button size="small" type="danger" @click="deleteRole(row)">删除</el-button>
+              <el-button
+                size="small"
+                @click="openEdit(row)"
+              >
+                编辑
+              </el-button>
+              <el-button
+                size="small"
+                type="danger"
+                @click="deleteRole(row)"
+              >
+                删除
+              </el-button>
             </template>
           </template>
         </el-table-column>
@@ -81,39 +170,86 @@
     </el-card>
 
     <!-- 新建/编辑角色 -->
-    <el-dialog v-model="showDialog" :title="editingRole ? '编辑角色' : '新建角色'" width="680px">
-      <el-form :model="form" label-width="60px">
+    <el-dialog
+      v-model="showDialog"
+      :title="editingRole ? '编辑角色' : '新建角色'"
+      width="680px"
+    >
+      <el-form
+        :model="form"
+        label-width="60px"
+      >
         <el-form-item label="名称">
-          <el-input v-model="form.name" placeholder="如：数据管理员" />
+          <el-input
+            v-model="form.name"
+            placeholder="如：数据管理员"
+          />
         </el-form-item>
         <el-form-item label="权限">
           <div class="perm-container">
-          <div v-for="group in mainGroups" :key="group.group" class="perm-group">
-            <div class="perm-group-header">
-              <el-checkbox :model-value="isGroupAllChecked(group)" :indeterminate="isGroupIndeterminate(group)" @change="(v: any) => toggleGroup(group, v)">
-                <span class="group-name">{{ group.group }}</span>
-              </el-checkbox>
+            <div
+              v-for="group in mainGroups"
+              :key="group.group"
+              class="perm-group"
+            >
+              <div class="perm-group-header">
+                <el-checkbox
+                  :model-value="isGroupAllChecked(group)"
+                  :indeterminate="isGroupIndeterminate(group)"
+                  @change="(v: any) => toggleGroup(group, v)"
+                >
+                  <span class="group-name">{{ group.group }}</span>
+                </el-checkbox>
+              </div>
+              <div class="perm-children">
+                <el-checkbox
+                  v-for="p in group.perms"
+                  :key="p.key"
+                  :model-value="form.permissions.includes(p.key)"
+                  @change="(v: any) => togglePerm(p.key, v)"
+                >
+                  {{ p.label }}
+                </el-checkbox>
+              </div>
             </div>
-            <div class="perm-children">
-              <el-checkbox v-for="p in group.perms" :key="p.key" :model-value="form.permissions.includes(p.key)" @change="(v: any) => togglePerm(p.key, v)">{{ p.label }}</el-checkbox>
+            <div
+              v-for="group in otherGroup"
+              :key="group.group"
+              class="perm-group"
+            >
+              <div class="perm-group-header">
+                <el-checkbox
+                  :model-value="isGroupAllChecked(group)"
+                  :indeterminate="isGroupIndeterminate(group)"
+                  @change="(v: any) => toggleGroup(group, v)"
+                >
+                  <span class="group-name">{{ group.group }}</span>
+                </el-checkbox>
+              </div>
+              <div class="perm-children">
+                <el-checkbox
+                  v-for="p in group.perms"
+                  :key="p.key"
+                  :model-value="form.permissions.includes(p.key)"
+                  @change="(v: any) => togglePerm(p.key, v)"
+                >
+                  {{ p.label }}
+                </el-checkbox>
+              </div>
             </div>
-          </div>
-          <div v-for="group in otherGroup" :key="group.group" class="perm-group">
-            <div class="perm-group-header">
-              <el-checkbox :model-value="isGroupAllChecked(group)" :indeterminate="isGroupIndeterminate(group)" @change="(v: any) => toggleGroup(group, v)">
-                <span class="group-name">{{ group.group }}</span>
-              </el-checkbox>
-            </div>
-            <div class="perm-children">
-              <el-checkbox v-for="p in group.perms" :key="p.key" :model-value="form.permissions.includes(p.key)" @change="(v: any) => togglePerm(p.key, v)">{{ p.label }}</el-checkbox>
-            </div>
-          </div>
           </div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showDialog = false">取消</el-button>
-        <el-button type="primary" @click="doSave">{{ editingRole ? '保存' : '创建' }}</el-button>
+        <el-button @click="showDialog = false">
+          取消
+        </el-button>
+        <el-button
+          type="primary"
+          @click="doSave"
+        >
+          {{ editingRole ? '保存' : '创建' }}
+        </el-button>
       </template>
     </el-dialog>
   </div>
