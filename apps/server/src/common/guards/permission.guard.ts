@@ -117,7 +117,6 @@ export class PermissionGuard implements CanActivate {
       'analytics:view': '查看数据分析',
       'template:create': '创建模板', 'template:edit': '修改模板', 'template:delete': '删除模板',
       'workflow:manage': '新建固有流程', 'workflow:edit': '修改固有流程', 'workflow:delete': '删除固有流程',
-      'workflow:start': '发起我的流程', 'workflow:withdraw': '撤回我的流程', 'workflow:remove': '删除我的流程',
       'task:approve': '通过审批', 'task:reject': '驳回审批', 'task:transfer': '转交审批',
       'member:invite': '添加成员', 'member:role': '修改成员角色', 'member:remove': '移除成员',
       'role:create': '新建角色', 'role:edit': '编辑角色权限', 'role:delete': '删除角色',
