@@ -539,13 +539,8 @@ export class ExpressionEngine implements IExpressionEngine {
     const trimmed = expression.trim()
     const lexer = new Lexer(trimmed)
     const tokens = lexer.tokenize()
-    console.log('[ExprEngine] 表达式:', trimmed)
-    console.log('[ExprEngine] Tokens:', tokens.map(t => `${t.type}(${t.value})`).join(' '))
-    console.log('[ExprEngine] 上下文:', JSON.stringify(enrichedContext))
-    // 传入自定义函数表，Parser 的 callBuiltin 会先查自定义函数
     const parser = new Parser(tokens, this.customFunctions)
     const result = parser.parse(enrichedContext)
-    console.log('[ExprEngine] 结果:', result, '类型:', typeof result)
     return result
   }
 
