@@ -390,7 +390,7 @@ async function doSave() {
     }
     createVisible.value = false
     fetchList()
-  } catch { ElMessage.error('保存失败') }
+  } catch (e: any) { if (e?.__handled) return; ElMessage.error('保存失败') }
   finally { saving.value = false }
 }
 

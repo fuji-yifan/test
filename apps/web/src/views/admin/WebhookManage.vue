@@ -297,7 +297,7 @@ async function doSave() {
     }
     showDialog.value = false
     fetchWebhooks()
-  } catch { ElMessage.error('操作失败') }
+  } catch (e: any) { if (e?.__handled) return; ElMessage.error('操作失败') }
   finally { saving.value = false }
 }
 
@@ -312,7 +312,7 @@ async function testHook(row: any) {
     const res = await http.post(`/forms/${formId.value}/webhooks/${row.id}/test`) as any
     const d = res?.data || res
     ElMessage.success(`测试完成 — 状态 ${d.status}, 耗时 ${d.duration}ms`)
-  } catch { ElMessage.error('测试失败') }
+  } catch (e: any) { if (e?.__handled) return; ElMessage.error('测试失败') }
 }
 
 async function deleteWH(row: any) {

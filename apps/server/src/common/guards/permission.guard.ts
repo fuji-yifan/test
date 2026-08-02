@@ -69,7 +69,7 @@ export class PermissionGuard implements CanActivate {
       return true
     }
 
-    let workspaceId = request.params.wsId || request.params.workspaceId
+    let workspaceId = request.params.wsId || request.params.workspaceId || request.query?.workspaceId
 
     // 如果路径中没有 workspaceId，尝试从 :id 参数（workspace 路由）或资源推断
     if (!workspaceId) {
@@ -112,7 +112,7 @@ export class PermissionGuard implements CanActivate {
     const labelMap: Record<string, string> = {
       'form:create': '新建表单', 'form:edit': '修改表单', 'form:delete': '删除表单',
       'form:publish': '发布表单', 'form:archive': '归档表单', 'form:copy': '复制表单',
-      'submission:create': '提交表单数据', 'submission:view': '查看表单数据',
+      'submission:view': '查看表单数据',
       'submission:delete': '删除表单数据', 'submission:export': '导出表单数据',
       'analytics:view': '查看数据分析',
       'template:create': '创建模板', 'template:edit': '修改模板', 'template:delete': '删除模板',

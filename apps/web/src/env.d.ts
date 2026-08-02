@@ -5,3 +5,8 @@ declare module '*.vue' {
   const component: DefineComponent<object, object, any>
   export default component
 }
+
+interface Window {
+  __last403Msg?: string
+  __last403Time?: number
+}

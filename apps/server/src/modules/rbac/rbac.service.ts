@@ -11,7 +11,7 @@ const ROLE_MAP: Record<string, string> = {
 /** 全部权限点集合——用于判断是否等于全权限 */
 const ALL_PERMISSION_KEYS = [
   'form:create', 'form:edit', 'form:publish', 'form:archive', 'form:copy', 'form:delete',
-  'submission:create', 'submission:view', 'submission:delete', 'submission:export',
+  'submission:view', 'submission:delete', 'submission:export',
   'analytics:view',
   'template:create', 'template:edit', 'template:delete',
   'workflow:manage', 'workflow:edit', 'workflow:delete',
@@ -212,7 +212,6 @@ export class RbacService {
       { key: 'form:archive', label: '归档表单', group: '表单' },
       { key: 'form:copy', label: '复制表单', group: '表单' },
       { key: 'form:delete', label: '删除表单', group: '表单' },
-      { key: 'submission:create', label: '提交表单数据', group: '数据' },
       { key: 'submission:view', label: '查看表单数据', group: '数据' },
       { key: 'submission:delete', label: '删除表单数据', group: '数据' },
       { key: 'submission:export', label: '导出表单数据', group: '数据' },

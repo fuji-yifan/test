@@ -279,7 +279,7 @@ async function confirmDelete(row: any) {
     ElMessage.success('已删除')
     fetchList()
   } catch (e: any) {
-    if (e !== 'cancel') ElMessage.error(e.response?.data?.message || '删除失败')
+    if (e !== 'cancel' && !e?.__handled) ElMessage.error(e.response?.data?.message || '删除失败')
   }
 }
 

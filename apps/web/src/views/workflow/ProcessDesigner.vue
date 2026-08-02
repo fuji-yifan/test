@@ -1916,7 +1916,7 @@ async function saveDefinition() {
     })
     dirty.value = false
     ElMessage.success('已保存')
-  } catch (e: any) { ElMessage.error('保存失败') } finally { saving.value = false }
+  } catch (e: any) { if (e?.__handled) return; ElMessage.error('保存失败') } finally { saving.value = false }
 }
 
 async function publishDef() {
@@ -1926,7 +1926,7 @@ async function publishDef() {
     await http.post(`/workflows/${workflowId.value}/publish`)
     definition.value.status = 'published'
     ElMessage.success('已发布')
-  } catch (e: any) { ElMessage.error('发布失败') } finally { saving.value = false }
+  } catch (e: any) { if (e?.__handled) return; ElMessage.error('发布失败') } finally { saving.value = false }
 }
 
 function goBack() { router.push(`/workspace/${wsId.value}/workflows`) }

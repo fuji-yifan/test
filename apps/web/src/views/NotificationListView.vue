@@ -153,7 +153,7 @@ async function markAllRead() {
     await http.post('/notifications/read-all')
     ElMessage.success('全部已读')
     fetch()
-  } catch { ElMessage.error('操作失败') }
+  } catch (e: any) { if (e?.__handled) return; ElMessage.error('操作失败') }
   finally { markingAll.value = false }
 }
 

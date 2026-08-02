@@ -60,14 +60,20 @@ export function setupAxios(): void {
             window.location.href = '/home'
             return Promise.reject(error)
           }
-          // 权限不足 → 页面中央弹窗提示
-          import('element-plus').then(({ ElMessageBox }) => {
-            ElMessageBox.alert(msg || '权限不足，无法执行此操作', '无权限', {
-              confirmButtonText: '知道了',
-              type: 'warning',
-              center: true,
+          // 权限不足 → 页面中央弹窗提示（相同消息 2 秒内不重复弹）
+          const now = Date.now()
+          if (window.__last403Msg !== msg || now - (window.__last403Time || 0) > 2000) {
+            window.__last403Msg = msg
+            window.__last403Time = now
+            import('element-plus').then(({ ElMessageBox }) => {
+              ElMessageBox.alert(msg || '权限不足，无法执行此操作', '无权限', {
+                confirmButtonText: '知道了',
+                type: 'warning',
+                center: true,
+              })
             })
-          })
+          }
+          return Promise.reject(Object.assign(new Error('__handled__'), { __handled: true }))
         }
       }
       return Promise.reject(error)

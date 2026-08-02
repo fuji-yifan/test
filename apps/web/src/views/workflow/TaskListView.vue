@@ -7,16 +7,16 @@
         @tab-change="fetchList"
       >
         <el-tab-pane
+          label="全部"
+          name=""
+        />
+        <el-tab-pane
           label="待处理"
           name="pending"
         />
         <el-tab-pane
           label="已处理"
-          name="approved"
-        />
-        <el-tab-pane
-          label="全部"
-          name=""
+          name="processed"
         />
       </el-tabs>
     </div>
@@ -226,7 +226,7 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 20
 const loading = ref(false)
-const activeTab = ref('pending')
+const activeTab = ref('')
 
 const currentTask = ref<any>(null)
 const showRejectDialog = ref(false)

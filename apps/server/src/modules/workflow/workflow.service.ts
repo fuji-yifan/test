@@ -558,7 +558,11 @@ export class WorkflowService {
     const page = Number(query.page) || 1
     const pageSize = Number(query.pageSize) || 20
     const where: any = { assigneeId: userId }
-    if (query.status) where.status = query.status
+    if (query.status === 'processed') {
+      where.status = { in: ['approved', 'rejected', 'transferred', 'withdrawn'] }
+    } else if (query.status) {
+      where.status = query.status
+    }
 
     const [list, total] = await Promise.all([
       this.prisma.taskInstance.findMany({

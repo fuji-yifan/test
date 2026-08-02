@@ -52,11 +52,11 @@ async function main() {
 
   const editorRole = await prisma.role.upsert({
     where: { workspaceId_name: { workspaceId: workspace.id, name: '编辑者' } },
-    update: { permissions: ['form:create', 'form:edit', 'form:publish', 'form:archive', 'form:copy', 'submission:create', 'submission:view', 'submission:delete', 'submission:export'] },
+    update: { permissions: ['form:create', 'form:edit', 'form:publish', 'form:archive', 'form:copy', 'submission:view', 'submission:delete', 'submission:export'] },
     create: {
       workspaceId: workspace.id,
       name: '编辑者',
-      permissions: ['form:create', 'form:edit', 'form:publish', 'form:archive', 'form:copy', 'submission:create', 'submission:view', 'submission:delete', 'submission:export'],
+      permissions: ['form:create', 'form:edit', 'form:publish', 'form:archive', 'form:copy', 'submission:view', 'submission:delete', 'submission:export'],
       isSystem: false,
     },
   })

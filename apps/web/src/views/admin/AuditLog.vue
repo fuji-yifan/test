@@ -283,7 +283,7 @@ async function exportCsv() {
     a.click()
     URL.revokeObjectURL(url)
     ElMessage.success('导出成功')
-  } catch { ElMessage.error('导出失败') }
+  } catch (e: any) { if (e?.__handled) return; ElMessage.error('导出失败') }
 }
 
 onMounted(() => { fetchLogs() })

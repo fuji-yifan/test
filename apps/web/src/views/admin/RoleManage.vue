@@ -274,7 +274,7 @@ const permGroups = [
     { key: 'form:copy', label: '复制表单' }, { key: 'form:delete', label: '删除表单' },
   ]},
   { group: '数据', perms: [
-    { key: 'submission:create', label: '提交表单数据' }, { key: 'submission:view', label: '查看表单数据' },
+    { key: 'submission:view', label: '查看表单数据' },
     { key: 'submission:delete', label: '删除表单数据' }, { key: 'submission:export', label: '导出表单数据' },
     { key: 'analytics:view', label: '查看数据分析' },
   ]},
@@ -376,7 +376,7 @@ async function doSave() {
     editingRole.value = null
     form.name = ''; form.permissions = []
     fetchData()
-  } catch (e: any) { ElMessage.error(e.response?.data?.message || '保存失败') }
+  } catch (e: any) { if (e?.__handled) return; ElMessage.error(e.response?.data?.message || '保存失败') }
 }
 
 async function toggleMatrixPerm(role: any, permKey: string) {
@@ -392,7 +392,7 @@ async function toggleMatrixPerm(role: any, permKey: string) {
     await http.patch(`/workspaces/${wsId.value}/roles/${role.id}`, { permissions: perms })
     role.permissions = perms
     ElMessage.success('权限已更新')
-  } catch (e: any) { ElMessage.error(e.response?.data?.message || '更新失败') }
+  } catch (e: any) { if (e?.__handled) return; ElMessage.error(e.response?.data?.message || '更新失败') }
 }
 
 async function deleteRole(row: any) {
