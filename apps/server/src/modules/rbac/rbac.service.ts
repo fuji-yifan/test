@@ -8,6 +8,19 @@ const ROLE_MAP: Record<string, string> = {
   viewer: '查看者',
 }
 
+/** 全部权限点集合——用于判断是否等于全权限 */
+const ALL_PERMISSION_KEYS = [
+  'form:create', 'form:edit', 'form:publish', 'form:archive', 'form:copy', 'form:delete',
+  'submission:create', 'submission:view', 'submission:delete', 'submission:export',
+  'analytics:view',
+  'template:create', 'template:edit', 'template:delete',
+  'workflow:manage', 'workflow:edit', 'workflow:delete', 'workflow:start', 'workflow:withdraw', 'workflow:remove',
+  'task:approve', 'task:reject', 'task:transfer',
+  'member:invite', 'member:role', 'member:remove',
+  'role:create', 'role:edit', 'role:delete',
+  'audit:view', 'audit:export',
+]
+
 @Injectable()
 export class RbacService {
   constructor(
@@ -62,6 +75,10 @@ export class RbacService {
   }
 
   async createRole(workspaceId: string, dto: { name: string; permissions: string[] }) {
+    // 禁止创建第二个拥有全部权限的角色
+    if (dto.permissions.includes('*') || dto.permissions.length >= ALL_PERMISSION_KEYS.length) {
+      throw new ForbiddenException('已存在拥有全部权限的创建者角色，不可再新建全权限角色')
+    }
     return this.prisma.role.create({
       data: { workspaceId, name: dto.name, permissions: dto.permissions },
     })
@@ -73,6 +90,15 @@ export class RbacService {
     if (role.isSystem) {
       const isOwner = await this.isWorkspaceOwner(role.workspaceId, userId)
       if (!isOwner) throw new ForbiddenException('系统角色不能编辑')
+    }
+    // 禁止将其他角色升级为全权限（创建者角色已存在且唯一）
+    const isAllPerm = dto.permissions?.includes('*') || (dto.permissions && dto.permissions.length >= ALL_PERMISSION_KEYS.length)
+    if (isAllPerm) {
+      const currentPerms: string[] = Array.isArray(role.permissions) ? role.permissions as string[] : []
+      const alreadyHasAll = currentPerms.includes('*') || currentPerms.length >= ALL_PERMISSION_KEYS.length
+      if (!alreadyHasAll) {
+        throw new ForbiddenException('已存在拥有全部权限的创建者角色，不可将其他角色升级为全权限')
+      }
     }
     const result = await this.prisma.role.update({ where: { id }, data: dto })
     // 失效该角色下所有用户的权限缓存
