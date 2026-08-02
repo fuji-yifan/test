@@ -120,20 +120,13 @@ export const useDesignerStore = defineStore('designer', () => {
     _syncFromEngine()
   }
 
-  // ========== 保存 ==========
-  async function saveForm() {
-    // TODO: 对接后端 API
-    console.log('[Designer] Saving form...', JSON.stringify(engine.getSchema(), null, 2))
-    isDirty.value = false
-  }
-
   return {
     // state
     schema, selectedFieldId, selectedField, isDirty, formId, flatFieldMap,
     canUndo, canRedo, showGrid, dragComponentType, dragSourceFieldId, canvasContentHeight,
     // actions
     addField, removeField, selectField, updateFieldProps, updateFieldMeta, updateSettings,
-    undo, redo, getSchema, loadSchema, saveForm,
+    undo, redo, getSchema, loadSchema,
     // engine ref
     engine,
   }
