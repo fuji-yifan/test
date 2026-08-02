@@ -54,14 +54,14 @@ export class PermissionGuard implements CanActivate {
     const user = request.user
     if (!user?.userId) return false
 
-    // 从装饰器获取所需权限
-    const requiredPermission = this.reflector.get<string>(
+    // 从装饰器获取所需权限（同时检查方法级别和类级别）
+    const requiredPermission = this.reflector.getAllAndOverride<string>(
       REQUIRED_PERMISSION_KEY,
-      context.getHandler(),
+      [context.getHandler(), context.getClass()],
     )
-    const requiredPermissions = this.reflector.get<string[]>(
+    const requiredPermissions = this.reflector.getAllAndMerge<string[]>(
       REQUIRED_PERMISSIONS_KEY,
-      context.getHandler(),
+      [context.getHandler(), context.getClass()],
     )
 
     // 无权限要求 → 放行

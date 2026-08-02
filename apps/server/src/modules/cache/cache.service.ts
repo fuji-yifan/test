@@ -96,4 +96,17 @@ export class CacheService {
       this.logger.warn(`Redis invalidate permissions error: ${err}`)
     }
   }
+
+  /** 启动时清空所有权限缓存，防止旧数据残留 */
+  async clearAllPermissionCache(): Promise<void> {
+    try {
+      const keys = await this.redis.keys(`${PERMISSION_PREFIX}*`)
+      if (keys.length > 0) {
+        await this.redis.del(keys)
+        this.logger.log(`Cleared ${keys.length} stale permission cache entries`)
+      }
+    } catch (err) {
+      this.logger.warn(`Redis clear all permissions error: ${err}`)
+    }
+  }
 }

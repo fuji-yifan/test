@@ -80,6 +80,10 @@ export class RbacService {
         }
       }
     }
+    // 清除所有受影响成员的权限缓存
+    for (const m of members) {
+      await this.cache.invalidateUserPermissions(workspaceId, m.userId)
+    }
   }
 
   async listRoles(workspaceId: string) {
