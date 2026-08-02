@@ -71,9 +71,19 @@ export class PermissionGuard implements CanActivate {
 
     let workspaceId = request.params.wsId || request.params.workspaceId
 
-    // 如果路径中没有 workspaceId，尝试从资源中推断
+    // 如果路径中没有 workspaceId，尝试从 :id 参数（workspace 路由）或资源推断
     if (!workspaceId) {
-      workspaceId = await this.resolveWorkspaceId(request)
+      // 检查 :id 是否为 workspace ID（如 /workspaces/:id/members 等路由）
+      if (request.params.id) {
+        const ws = await this.prisma.workspace.findUnique({
+          where: { id: request.params.id },
+          select: { id: true },
+        })
+        if (ws) workspaceId = ws.id
+      }
+      if (!workspaceId) {
+        workspaceId = await this.resolveWorkspaceId(request)
+      }
     }
 
     // === L1 平台级 → super_admin 拥有所有权限 ===
@@ -153,28 +163,12 @@ export class PermissionGuard implements CanActivate {
   }
 
   private async getUserPermissions(workspaceId: string | undefined, userId: string): Promise<string[]> {
-    if (!workspaceId) {
-      // 无工作空间上下文时，检查用户是否在任何空间有权限
-      const anyMembership = await this.prisma.workspaceMember.findFirst({
-        where: { userId },
-      })
-      // 如果用户属于至少一个空间，给予基础权限
-      return anyMembership ? [
-        'form:create', 'form:edit', 'form:delete', 'form:publish', 'form:archive', 'form:copy',
-        'submission:view', 'submission:export', 'submission:delete',
-        'template:create', 'template:edit', 'template:delete',
-        'workflow:manage', 'workflow:approve',
-        'member:invite', 'member:remove', 'member:role',
-        'webhook:manage', 'upload:manage',
-        'audit:view', 'workspace:settings',
-      ] : []
-    }
+    // 无工作空间上下文 → 拒绝（不给任何权限）
+    if (!workspaceId) return []
 
     // 尝试从 Redis 缓存获取权限
     const cached = await this.cache.getUserPermissions(workspaceId, userId)
-    if (cached !== null) {
-      return cached
-    }
+    if (cached !== null) return cached
 
     const membership = await this.prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId } },
@@ -185,8 +179,9 @@ export class PermissionGuard implements CanActivate {
       return ['*']
     }
 
+    // 查询该用户在此工作空间所属 RBAC 角色的权限
     const userRoles = await this.prisma.userRole.findMany({
-      where: { userId },
+      where: { userId, role: { workspaceId } },
       include: { role: true },
     })
 
@@ -197,7 +192,6 @@ export class PermissionGuard implements CanActivate {
     }
     const result = Array.from(permissions)
 
-    // 写入 Redis 缓存
     await this.cache.setUserPermissions(workspaceId, userId, result)
     return result
   }

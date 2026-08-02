@@ -79,8 +79,9 @@
         fixed="right"
       >
         <template #default="{ row }">
+          <span v-if="row.role === 'owner'" class="system-hint">系统角色</span>
           <el-button
-            v-if="row.role !== 'owner'"
+            v-else
             size="small"
             type="danger"
             @click="removeMember(row)"
@@ -243,4 +244,5 @@ async function removeMember(row: any) {
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-header h2 { margin: 0; }
 .owner-tag { color: #909399; font-size: 13px; }
+.system-hint { color: #909399; font-size: 12px; }
 </style>

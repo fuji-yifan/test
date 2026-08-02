@@ -57,17 +57,17 @@ async function main() {
       workspaceId: workspace.id,
       name: '编辑者',
       permissions: ['form:create', 'form:edit', 'form:publish', 'form:archive', 'form:copy', 'submission:create', 'submission:view', 'submission:delete', 'submission:export', 'workflow:start'],
-      isSystem: true,
+      isSystem: false,
     },
   })
 
   const viewerRole = await prisma.role.upsert({
     where: { workspaceId_name: { workspaceId: workspace.id, name: '查看者' } },
-    update: { permissions: ['submission:view', 'submission:export', 'analytics:view'] },
+    update: {},
     create: {
       workspaceId: workspace.id,
       name: '查看者',
-      permissions: ['submission:view', 'submission:export', 'analytics:view'],
+      permissions: [],
       isSystem: true,
     },
   })

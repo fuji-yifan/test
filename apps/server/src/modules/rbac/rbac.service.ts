@@ -44,6 +44,22 @@ export class RbacService {
       legacyAdminRole.name = '创建者'
     }
 
+    // 修正旧的"编辑者"被错误标记为系统角色
+    const legacyEditorRole = workspaceRoles.find((r) => r.isSystem && r.name === '编辑者')
+    if (legacyEditorRole) {
+      await this.prisma.role.update({ where: { id: legacyEditorRole.id }, data: { isSystem: false } })
+      legacyEditorRole.isSystem = false
+    }
+
+    // 修正旧的"查看者"拥有非空权限，改为空权限
+    const legacyViewerRole = workspaceRoles.find(
+      (r) => r.isSystem && r.name === '查看者' && Array.isArray(r.permissions) && (r.permissions as string[]).length > 0,
+    )
+    if (legacyViewerRole) {
+      await this.prisma.role.update({ where: { id: legacyViewerRole.id }, data: { permissions: [] } })
+      ;(legacyViewerRole as any).permissions = []
+    }
+
     const roleIds = workspaceRoles.map((r) => r.id)
     const memberIds = members.map((m) => m.userId)
 

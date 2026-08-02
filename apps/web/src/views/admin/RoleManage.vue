@@ -120,6 +120,10 @@
               </el-tag>
             </template>
             <template v-else>
+              <span
+                v-if="!(row.permissions || []).length"
+                class="no-perm-hint"
+              >无权限</span>
               <el-tag
                 v-for="p in (row.permissions || [])"
                 :key="p"
@@ -147,23 +151,12 @@
           fixed="right"
         >
           <template #default="{ row }">
-            <template v-if="row.isSystem && !isOwner">
+            <template v-if="row.isSystem">
               <span class="system-hint">系统角色</span>
             </template>
-            <template v-if="!row.isSystem || isOwner">
-              <el-button
-                size="small"
-                @click="openEdit(row)"
-              >
-                编辑
-              </el-button>
-              <el-button
-                size="small"
-                type="danger"
-                @click="deleteRole(row)"
-              >
-                删除
-              </el-button>
+            <template v-else>
+              <el-button size="small" @click="openEdit(row)">编辑</el-button>
+              <el-button size="small" type="danger" @click="deleteRole(row)">删除</el-button>
             </template>
           </template>
         </el-table-column>
@@ -439,6 +432,7 @@ async function deleteRole(row: any) {
 .td-check--locked:hover { background: transparent; }
 .edit-btn { margin-left: 4px; }
 .system-hint { color: #909399; font-size: 12px; }
+.no-perm-hint { color: #c0c4cc; font-size: 12px; }
 
 /* 新建对话框 */
 .perm-container { display: flex; flex-direction: column; }

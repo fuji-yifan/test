@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common'
 import { PrismaClient } from '@prisma/client'
+import { CacheService } from '../cache/cache.service'
 
 /** WorkspaceMember.role → RBAC 角色名映射 */
 const ROLE_MAP: Record<string, string> = {
@@ -10,7 +11,10 @@ const ROLE_MAP: Record<string, string> = {
 
 @Injectable()
 export class WorkspaceService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(
+    private prisma: PrismaClient,
+    private cache: CacheService,
+  ) {}
 
   /** 同步成员工作空间角色到 RBAC UserRole 表 */
   private async syncRbacRole(workspaceId: string, userId: string, wsRole: string) {
@@ -33,6 +37,8 @@ export class WorkspaceService {
         data: { userId, roleId: targetRole.id },
       })
     }
+    // 清除权限缓存，下次请求时重新计算
+    await this.cache.invalidateUserPermissions(workspaceId, userId)
   }
 
   async list(userId: string) {
