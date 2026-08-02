@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client'
 import { CacheService } from '../cache/cache.service'
 
 const ROLE_MAP: Record<string, string> = {
-  owner: '管理员',
+  owner: '创建者',
   editor: '编辑者',
   viewer: '查看者',
 }
@@ -19,8 +19,18 @@ export class RbacService {
   private async normalizeMemberRoles(workspaceId: string) {
     const [members, workspaceRoles] = await Promise.all([
       this.prisma.workspaceMember.findMany({ where: { workspaceId }, select: { userId: true, role: true } }),
-      this.prisma.role.findMany({ where: { workspaceId }, select: { id: true, name: true } }),
+      this.prisma.role.findMany({ where: { workspaceId }, select: { id: true, name: true, permissions: true, isSystem: true } }),
     ])
+
+    // 将旧的"管理员"系统角色重命名为"创建者"
+    const legacyAdminRole = workspaceRoles.find(
+      (r) => r.isSystem && r.name === '管理员' && Array.isArray(r.permissions) && r.permissions.includes('*'),
+    )
+    if (legacyAdminRole) {
+      await this.prisma.role.update({ where: { id: legacyAdminRole.id }, data: { name: '创建者' } })
+      legacyAdminRole.name = '创建者'
+    }
+
     const roleIds = workspaceRoles.map((r) => r.id)
     const memberIds = members.map((m) => m.userId)
 

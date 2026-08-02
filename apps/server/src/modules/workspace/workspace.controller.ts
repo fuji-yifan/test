@@ -18,7 +18,7 @@ export class WorkspaceController {
   }
 
   @Post()
-  create(@CurrentUser('userId') userId: string, @Body() dto: { name: string; slug: string }) {
+  create(@CurrentUser('userId') userId: string, @Body() dto: { name: string; remark?: string }) {
     return this.workspaceService.create(userId, dto)
   }
 
@@ -28,7 +28,7 @@ export class WorkspaceController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: { name?: string; logoUrl?: string; settings?: any }) {
+  update(@Param('id') id: string, @Body() dto: { name?: string; remark?: string; logoUrl?: string; settings?: any }) {
     return this.workspaceService.update(id, dto)
   }
 

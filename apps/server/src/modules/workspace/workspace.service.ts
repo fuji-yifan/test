@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client'
 
 /** WorkspaceMember.role → RBAC 角色名映射 */
 const ROLE_MAP: Record<string, string> = {
-  owner: '管理员',
+  owner: '创建者',
   editor: '编辑者',
   viewer: '查看者',
 }
@@ -49,30 +49,49 @@ export class WorkspaceService {
     if (items.length === 0) {
       const user = await this.prisma.user.findUnique({ where: { id: userId } })
       const name = (user?.nickname || user?.email || '用户') + ' 的工作空间'
-      const slug = 'ws_' + userId.substring(0, 8)
+      const slug = `ws-${userId.substring(0, 8)}-${Math.random().toString(36).slice(2, 6)}`
       const ws = await this.prisma.workspace.create({
         data: {
           name,
           slug,
           members: { create: { userId, role: 'owner' } },
+          roles: {
+            create: [
+              { name: '创建者', permissions: ['*'], isSystem: true },
+              { name: '查看者', permissions: [], isSystem: true },
+            ],
+          },
         },
       })
+      await this.syncRbacRole(ws.id, userId, 'owner')
       items.push({ ...ws, role: 'owner' })
     }
 
     return items
   }
 
-  async create(userId: string, dto: { name: string; slug: string }) {
+  async create(userId: string, dto: { name: string; remark?: string }) {
+    // slug 自动生成：名称 + 随机后缀，避免不同用户创建同名空间时冲突
+    const baseSlug = dto.name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\u4e00-\u9fa5-]/g, '') || 'workspace'
+    const slug = `${baseSlug}-${Math.random().toString(36).slice(2, 8)}`
     const workspace = await this.prisma.workspace.create({
       data: {
         name: dto.name,
-        slug: dto.slug,
+        slug,
+        remark: dto.remark || null,
         members: {
           create: { userId, role: 'owner' },
         },
+        roles: {
+          create: [
+            { name: '创建者', permissions: ['*'], isSystem: true },
+            { name: '查看者', permissions: [], isSystem: true },
+          ],
+        },
       },
     })
+    // 将创建者关联到 RBAC 创建者角色
+    await this.syncRbacRole(workspace.id, userId, 'owner')
     return workspace
   }
 
@@ -82,7 +101,7 @@ export class WorkspaceService {
     return workspace
   }
 
-  async update(id: string, dto: { name?: string; logoUrl?: string; settings?: any }) {
+  async update(id: string, dto: { name?: string; remark?: string; logoUrl?: string; settings?: any }) {
     return this.prisma.workspace.update({ where: { id }, data: dto })
   }
 

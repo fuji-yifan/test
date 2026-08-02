@@ -167,7 +167,7 @@ const members = ref<any[]>([])
 const showInvite = ref(false)
 const inviting = ref(false)
 const searching = ref(false)
-const inviteForm = reactive({ email: '', role: 'editor' })
+const inviteForm = reactive({ email: '', role: 'viewer' })
 const userOptions = ref<any[]>([])
 
 async function fetchMembers() {

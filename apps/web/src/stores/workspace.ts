@@ -6,6 +6,7 @@ export interface Workspace {
   id: string
   name: string
   slug: string
+  remark?: string
   logoUrl?: string
   plan: string
   role?: string

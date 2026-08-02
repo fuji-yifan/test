@@ -6,7 +6,7 @@ const prisma = new PrismaClient()
 async function main() {
   console.log('🌱 Seeding database...')
 
-  // ---- 默认管理员 ----
+  // ---- 默认创建者 ----
   const passwordHash = await bcrypt.hash('123456', 10)
   const admin = await prisma.user.upsert({
     where: { email: 'admin@furm.com' },
@@ -14,11 +14,11 @@ async function main() {
     create: {
       email: 'admin@furm.com',
       passwordHash,
-      nickname: '管理员',
+      nickname: '创建者',
       status: 'active',
     },
   })
-  console.log(`  ✅ 管理员账号: admin@furm.com / 123456`)
+  console.log(`  ✅ 创建者账号: admin@furm.com / 123456`)
 
   // ---- 默认工作空间 ----
   const workspace = await prisma.workspace.upsert({
@@ -40,11 +40,11 @@ async function main() {
 
   // ---- 默认角色 ----
   const adminRole = await prisma.role.upsert({
-    where: { workspaceId_name: { workspaceId: workspace.id, name: '管理员' } },
+    where: { workspaceId_name: { workspaceId: workspace.id, name: '创建者' } },
     update: {},
     create: {
       workspaceId: workspace.id,
-      name: '管理员',
+      name: '创建者',
       permissions: ['*'],
       isSystem: true,
     },
@@ -71,9 +71,9 @@ async function main() {
       isSystem: true,
     },
   })
-  console.log(`  ✅ 默认角色: 管理员 / 编辑者 / 查看者`)
+  console.log(`  ✅ 默认角色: 创建者 / 编辑者 / 查看者`)
 
-  // ---- 给管理员分配管理员角色 ----
+  // ---- 给创建者分配创建者角色 ----
   await prisma.userRole.upsert({
     where: { userId_roleId: { userId: admin.id, roleId: adminRole.id } },
     update: {},
@@ -167,8 +167,8 @@ async function main() {
             col: 12,
             props: { min: 0, precision: 2, step: 1000 },
             acl: {
-              viewable: ['role:管理员', 'role:编辑者'],
-              editable: ['role:管理员'],
+              viewable: ['role:创建者', 'role:编辑者'],
+              editable: ['role:创建者'],
             },
           },
           {
@@ -188,7 +188,7 @@ async function main() {
       },
     },
   })
-  console.log(`  ✅ 示例表单: ${demoForm.name}（含 ACL 示例：薪资字段仅管理员可编辑）`)
+  console.log(`  ✅ 示例表单: ${demoForm.name}（含 ACL 示例：薪资字段仅创建者可编辑）`)
 
   // ---- 版本快照 ----
   await prisma.formVersion.upsert({

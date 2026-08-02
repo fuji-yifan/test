@@ -60,6 +60,12 @@
           />
           <div class="ws-name">
             {{ ws.name }}
+            <div
+              v-if="ws.remark"
+              class="ws-remark"
+            >
+              {{ ws.remark }}
+            </div>
           </div>
           <el-button
             size="small"
@@ -93,6 +99,12 @@
           />
           <div class="ws-name">
             {{ ws.name }}
+            <div
+              v-if="ws.remark"
+              class="ws-remark"
+            >
+              {{ ws.remark }}
+            </div>
           </div>
           <el-button
             size="small"
@@ -188,6 +200,12 @@
             placeholder="如：我的团队"
           />
         </el-form-item>
+        <el-form-item v-if="showRemark" label="备注">
+          <el-input
+            v-model="wsForm.remark"
+            placeholder="用于区分同名工作空间"
+          />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showCreateWS = false">
@@ -217,7 +235,8 @@ const wsStore = useWorkspaceStore()
 const stats = reactive({ formCount: 0, submissionCount: 0, pendingCount: 0 })
 const recentForms = ref<any[]>([])
 const showCreateWS = ref(false)
-const wsForm = reactive({ name: '' })
+const wsForm = reactive({ name: '', remark: '' })
+const showRemark = ref(false)
 
 const ownedWorkspaces = computed(() => wsStore.list.filter((w: any) => w.role === 'owner'))
 const joinedWorkspaces = computed(() => wsStore.list.filter((w: any) => w.role !== 'owner'))
@@ -257,7 +276,12 @@ function viewData(form: any) {
   router.push(`/workspace/${wsId}/forms/${form.id}/data`)
 }
 
-async function createWorkspace() { showCreateWS.value = true }
+function createWorkspace() {
+  wsForm.name = ''
+  wsForm.remark = ''
+  showRemark.value = false
+  showCreateWS.value = true
+}
 
 async function deleteWorkspace(ws: any) {
   try {
@@ -293,13 +317,24 @@ function formatDate(d: string) { return d ? new Date(d).toLocaleString('zh-CN') 
 
 async function doCreateWS() {
   if (!wsForm.name.trim()) return
+  // 检测是否与已有工作空间重名
+  const dup = wsStore.list.find((w: any) =>
+    w.name === wsForm.name.trim() && (!wsForm.remark || w.remark === wsForm.remark))
+  if (dup && !wsForm.remark) {
+    showRemark.value = true
+    ElMessage.warning('工作空间名称已存在，请添加备注以区分')
+    return
+  }
   try {
-    // slug 由服务端自动从 name 生成拼音/英文简称
-    const slug = wsForm.name.trim().toLowerCase().replace(/\s+/g, '-')
-    await http.post('/workspaces', { name: wsForm.name.trim(), slug })
+    await http.post('/workspaces', {
+      name: wsForm.name.trim(),
+      remark: wsForm.remark.trim() || undefined,
+    })
     await wsStore.fetchList()
     showCreateWS.value = false
     wsForm.name = ''
+    wsForm.remark = ''
+    showRemark.value = false
   } catch (e: any) {
     ElMessage.error(e.response?.data?.message || '创建工作空间失败')
   }
@@ -318,6 +353,7 @@ async function doCreateWS() {
 .ws-card { padding: 20px 12px 12px; border: 1px solid #e5e7eb; border-radius: 12px; text-align: center; cursor: pointer; width: 150px; transition: transform 0.15s, box-shadow 0.15s; position: relative; }
 .ws-card:hover { transform: translateY(-2px); box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 .ws-name { font-size: 13px; font-weight: 600; margin-top: 6px; }
+.ws-remark { font-size: 11px; font-weight: 400; color: #909399; margin-top: 2px; }
 .ws-header { display: flex; justify-content: space-between; align-items: center; }
 .ws-action { margin-top: 8px; }
 .empty-hint { color: #94a3b8; text-align: center; padding: 32px 0; }
