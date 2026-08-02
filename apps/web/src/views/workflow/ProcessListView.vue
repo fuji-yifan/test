@@ -2,10 +2,7 @@
   <div class="process-list-page">
     <div class="page-header">
       <h2>流程管理</h2>
-      <el-button
-        type="primary"
-        @click="showCreate = true"
-      >
+      <el-button size="small" type="primary" @click="showCreate = true">
         <el-icon><Plus /></el-icon> 新建流程
       </el-button>
     </div>
@@ -135,6 +132,7 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-empty v-if="!list.length" description="暂无流程" />
 
     <!-- 分页 -->
     <el-pagination
@@ -178,16 +176,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showCreate = false">
-          取消
-        </el-button>
-        <el-button
-          type="primary"
-          :loading="creating"
-          @click="doCreate"
-        >
-          创建
-        </el-button>
+        <el-button size="small" @click="showCreate = false">取消</el-button>
+        <el-button size="small" type="primary" :loading="creating" @click="doCreate">创建</el-button>
       </template>
     </el-dialog>
   </div>

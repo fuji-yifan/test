@@ -3,12 +3,8 @@
     <div class="page-header">
       <h2>提交数据</h2>
       <div class="header-actions">
-        <el-button @click="exportCSV">
-          导出 CSV
-        </el-button>
-        <el-button @click="exportExcel">
-          导出 Excel
-        </el-button>
+        <el-button size="small" @click="exportCSV">导出 CSV</el-button>
+        <el-button size="small" @click="exportExcel">导出 Excel</el-button>
       </div>
     </div>
 
@@ -87,6 +83,7 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-empty v-if="!list.length" description="暂无提交数据" />
 
     <el-pagination
       v-if="total > pageSize"
@@ -140,8 +137,31 @@ async function deleteItem(row: any) {
   } catch { /* 取消 */ }
 }
 
-function exportCSV() { ElMessage.info('导出 CSV 功能待接入') }
-function exportExcel() { ElMessage.info('导出 Excel 功能待接入') }
+async function doExport(format: 'csv' | 'excel') {
+  try {
+    const token = localStorage.getItem('access_token')
+    const res = await fetch(`/api/v1/forms/${formId}/submissions/export?format=${format}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: '导出失败' }))
+      ElMessage.error(err.message || '导出失败')
+      return
+    }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = format === 'csv' ? 'export.csv' : 'export.xls'
+    a.click()
+    URL.revokeObjectURL(url)
+    ElMessage.success('导出完成')
+  } catch {
+    ElMessage.error('导出失败')
+  }
+}
+function exportCSV() { doExport('csv') }
+function exportExcel() { doExport('excel') }
 function formatDate(d: string) { return d ? new Date(d).toLocaleString('zh-CN') : '-' }
 </script>
 

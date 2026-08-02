@@ -351,7 +351,7 @@ async function doCreateWS() {
 .stat-card:hover { transform: translateY(-2px); box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 .stat-card .num { font-size: 32px; font-weight: 700; color: var(--el-color-primary); }
 .stat-card .label { font-size: 13px; color: #94a3b8; margin-top: 8px; }
-.section { margin-bottom: 24px; }
+.section { margin-bottom: 16px; }
 .ws-grid { display: flex; gap: 16px; flex-wrap: wrap; }
 .ws-card { padding: 20px 12px 12px; border: 1px solid #e5e7eb; border-radius: 12px; text-align: center; cursor: pointer; width: 150px; transition: transform 0.15s, box-shadow 0.15s; position: relative; }
 .ws-card:hover { transform: translateY(-2px); box-shadow: 0 2px 8px rgba(0,0,0,0.08); }

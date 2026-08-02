@@ -32,26 +32,14 @@
           />
         </el-form-item>
         <el-form-item>
-          <el-button
-            type="primary"
-            @click="resetPage"
-          >
-            查询
-          </el-button>
-          <el-button @click="clearFilters">
-            重置
-          </el-button>
-          <el-button
-            type="success"
-            @click="exportCsv"
-          >
-            导出 CSV
-          </el-button>
+          <el-button size="small" type="primary" @click="resetPage">查询</el-button>
+          <el-button size="small" @click="clearFilters">重置</el-button>
+          <el-button size="small" @click="exportCsv">导出 CSV</el-button>
           <el-dropdown
             style="margin-left: 8px"
             @command="doCleanup"
           >
-            <el-button type="warning">
+            <el-button size="small" type="warning">
               清理日志 <el-icon><ArrowDown /></el-icon>
             </el-button>
             <template #dropdown>

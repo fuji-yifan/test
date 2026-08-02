@@ -144,6 +144,7 @@
           label="操作"
           width="160"
           align="center"
+          fixed="right"
         >
           <template #default="{ row }">
             <template v-if="row.isSystem && !isOwner">
@@ -417,7 +418,7 @@ async function deleteRole(row: any) {
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-header h2 { margin: 0; }
-.section-card { margin-bottom: 20px; }
+.section-card { margin-bottom: 16px; }
 
 /* 矩阵 */
 .matrix-scroll { overflow-x: auto; }

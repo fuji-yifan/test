@@ -84,7 +84,6 @@
           </el-button>
           <el-button
             size="small"
-            type="warning"
             @click="openEdit(tpl)"
           >
             修改

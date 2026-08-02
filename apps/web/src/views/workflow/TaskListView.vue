@@ -124,6 +124,7 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-empty v-if="!list.length" description="暂无待办任务" />
 
     <el-pagination
       v-if="total > 0"
@@ -148,15 +149,8 @@
         placeholder="驳回原因（可选）"
       />
       <template #footer>
-        <el-button @click="showRejectDialog = false">
-          取消
-        </el-button>
-        <el-button
-          type="danger"
-          @click="doReject"
-        >
-          确认驳回
-        </el-button>
+        <el-button size="small" @click="showRejectDialog = false">取消</el-button>
+        <el-button size="small" type="danger" @click="doReject">确认驳回</el-button>
       </template>
     </el-dialog>
 
@@ -185,15 +179,8 @@
         />
       </el-select>
       <template #footer>
-        <el-button @click="showTransferDialog = false">
-          取消
-        </el-button>
-        <el-button
-          type="primary"
-          @click="doTransfer"
-        >
-          确认转交
-        </el-button>
+        <el-button size="small" @click="showTransferDialog = false">取消</el-button>
+        <el-button size="small" type="primary" @click="doTransfer">确认转交</el-button>
       </template>
     </el-dialog>
 
@@ -222,15 +209,8 @@
         />
       </el-select>
       <template #footer>
-        <el-button @click="showAddSignDialog = false">
-          取消
-        </el-button>
-        <el-button
-          type="primary"
-          @click="doAddSign"
-        >
-          确认加签
-        </el-button>
+        <el-button size="small" @click="showAddSignDialog = false">取消</el-button>
+        <el-button size="small" type="primary" @click="doAddSign">确认加签</el-button>
       </template>
     </el-dialog>
   </div>

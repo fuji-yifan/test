@@ -1,5 +1,5 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, UseGuards, UseInterceptors } from '@nestjs/common'
-import { Request } from 'express'
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, Res, UseGuards, UseInterceptors } from '@nestjs/common'
+import { Response } from 'express'
 import { JwtService } from '@nestjs/jwt'
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger'
 import { SubmissionService } from './submission.service'
@@ -29,7 +29,7 @@ export class SubmissionController {
     // 从 Authorization header 中提取用户身份（可选，未登录也可提交）
     let userId: string | undefined
     try {
-      const authHeader = req?.headers?.authorization
+      const authHeader = (req?.headers as any)?.['authorization']
       if (authHeader?.startsWith('Bearer ')) {
         const token = authHeader.slice(7)
         const payload = this.jwtService.verify(token)
@@ -67,6 +67,21 @@ export class SubmissionController {
     @Query() query: { page?: number; pageSize?: number },
   ) {
     return this.submissionService.list(formId, query)
+  }
+
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequiredPermission('submission:export')
+  @ApiBearerAuth()
+  @Get('forms/:formId/submissions/export')
+  async exportData(
+    @Param('formId') formId: string,
+    @Query('format') format: 'csv' | 'excel',
+    @Res() res: Response,
+  ) {
+    const result = await this.submissionService.exportSubmissions(formId, format || 'csv')
+    res.setHeader('Content-Type', result.contentType)
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(result.filename)}`)
+    res.send(result.content)
   }
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
