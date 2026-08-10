@@ -38,7 +38,7 @@ export function useCompatibility(
   const needed = ref(false)
 
   // 同步执行适配（纯 JS，无需网络请求即可判断）
-  if (dataVersion !== undefined && dataVersion < (schema as any).publishedVersion) {
+  if (dataVersion !== undefined && dataVersion < (schema as { publishedVersion?: number }).publishedVersion!) {
     loading.value = true
     try {
       const result = adapter.adapt(rawData, schema)

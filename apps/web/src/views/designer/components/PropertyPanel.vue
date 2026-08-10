@@ -752,64 +752,7 @@
     </div>
 
     <!-- ====== 界面设置 ====== -->
-    <template v-if="panelMode === 'form'">
-      <el-form
-        label-position="top"
-        size="small"
-      >
-        <h5 class="section-title">
-          表单
-        </h5>
-        <el-form-item label="表单标题">
-          <el-input
-            :model-value="store.schema.settings.formTitle || ''"
-            placeholder="留空则不显示标题"
-            @input="(v: string) => updateSetting('formTitle', v)"
-          />
-        </el-form-item>
-        <el-form-item label="尺寸">
-          <el-radio-group
-            :model-value="store.schema.settings.size"
-            @change="(v: string) => updateSetting('size', v)"
-          >
-            <el-radio value="small">
-              小
-            </el-radio>
-            <el-radio value="default">
-              默认
-            </el-radio>
-            <el-radio value="large">
-              大
-            </el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="提交文案">
-          <el-input
-            :model-value="store.schema.settings.submitText"
-            @input="(v: string) => updateSetting('submitText', v)"
-          />
-        </el-form-item>
-
-        <h5 class="section-title">
-          画布
-        </h5>
-        <el-form-item label="显示网格">
-          <el-switch v-model="store.showGrid" />
-        </el-form-item>
-        <el-form-item label="画布列数">
-          <div class="col-px-hint">
-            画布宽 = {{ store.schema.settings.canvasCols || 24 }} × {{ colPxHint }}px ≈ {{ canvasPxW }}px
-          </div>
-          <el-input-number
-            :model-value="store.schema.settings.canvasCols || 24"
-            :min="24"
-            :max="48"
-            :step="1"
-            @change="(v: any) => updateSetting('canvasCols', v)"
-          />
-        </el-form-item>
-      </el-form>
-    </template>
+    <FormSettingsPanel v-if="panelMode === 'form'" />
   </div>
 </template>
 
@@ -820,7 +763,8 @@ import { builtinComponents } from '../config/component-registry'
 import { getMinCol } from '@furmx/sdk'
 import type { FieldSchema } from '@furmx/sdk'
 import CascaderNode from './CascaderNode.vue'
-import { regionData } from 'element-china-area-data'
+import FormSettingsPanel from './FormSettingsPanel.vue'
+// regionData 由子组件 CascaderNode 按需导入
 
 const store = useDesignerStore()
 
@@ -856,16 +800,6 @@ const minCol = computed(() => {
   return min
 })
 const maxCol = computed(() => store.schema.settings.canvasCols || 24)
-
-/** 每列固定像素（基准 800 / 24） */
-const COL_PX = 800 / 24
-
-const colPxHint = computed(() => Math.round(COL_PX))
-
-const canvasPxW = computed(() => {
-  const cols = store.schema.settings.canvasCols || 24
-  return Math.round(cols * COL_PX)
-})
 
 /** 画布高度显示值：取 max(设定值, 内容实际高度) */
 const fieldMeta = reactive({
@@ -1208,10 +1142,6 @@ function updateFieldType(v: string) {
     filtered.push({ type: v as any, message: TYPE_MSGS[v] || '格式不正确' })
   }
   store.updateFieldMeta(store.selectedFieldId, { rules: filtered })
-}
-
-function updateSetting(key: string, value: any) {
-  store.updateSettings({ [key]: value })
 }
 
 // ---- 级联选择：选项树编辑 ----

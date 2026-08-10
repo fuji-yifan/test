@@ -22,7 +22,7 @@ export function useRendererEngine(schema: FormSchema, initialData?: Record<strin
   // 可见字段
   const visibleFields = computed<FieldSchema[]>(() => {
     // 浅读触发依赖追踪
-    const _ = { ...reactiveData }
+    void ({ ...reactiveData } as unknown)
     return engine.getVisibleFields()
   })
 
@@ -32,7 +32,7 @@ export function useRendererEngine(schema: FormSchema, initialData?: Record<strin
   }
 
   // 字段值变更 — 同时更新 Vue reactive 和引擎
-  function updateField(key: string, value: any) {
+  function updateField(key: string, value: unknown) {
     reactiveData[key] = value          // Vue 响应式更新 → 模板刷新
     engine.setValue(key, value)        // 引擎内部同步
     engine.triggerLinkage(key)

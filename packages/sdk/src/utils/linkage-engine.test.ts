@@ -87,7 +87,7 @@ describe('resolveLinkage', () => {
     const result = resolveLinkage(fields, 'province', { province: 'X' })
     expect(result).toHaveLength(1)
     expect(result[0].action.type).toBe('setValue')
-    expect((result[0].action as any).value).toBe('A')
+    expect((result[0].action as { type: string; value: unknown }).value).toBe('A')
   })
 
   it('resolves nested fields linkage', () => {

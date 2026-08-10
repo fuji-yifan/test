@@ -313,7 +313,7 @@ function onUploadChange(field: FieldSchema, file: UploadFile, files: UploadFiles
 function onUploadRemove(key: string, _file: UploadFile, files: UploadFiles) {
   uploadFiles.value[key] = [...files]
   const names = files.map((f: UploadFile) => f.name)
-  emit('update', field.key, names)
+  emit('update', key, names)
 }
 
 function onUploadExceed() {
@@ -341,17 +341,17 @@ function resolveControl(type: string): string {
 }
 
 function selectProps(field: FieldSchema) {
-  const { options, ...rest } = field.props
+  const { options: _, ...rest } = field.props
   return rest
 }
 
 function radioCheckboxProps(field: FieldSchema) {
-  const { options, ...rest } = field.props
+  const { options: _, ...rest } = field.props
   return rest
 }
 
 function textareaProps(field: FieldSchema) {
-  const { type, ...rest } = field.props
+  const { type: _t, ...rest } = field.props
   return { ...rest, type: 'textarea' }
 }
 
@@ -372,7 +372,7 @@ const frCascaderOpts = computed(() => {
 
 const frCascaderProps = computed(() => {
   const raw = (props.field.props || {}) as Record<string, any>
-  const { options, ...rest } = raw
+  const { options: _, ...rest } = raw
   return rest
 })
 

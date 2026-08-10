@@ -6,6 +6,27 @@
         <span v-if="!app.sidebarCollapsed">FurmX</span>
         <span v-else>F</span>
       </div>
+      <!-- 工作空间下拉选择 -->
+      <div v-if="!app.sidebarCollapsed" class="sidebar-ws-select">
+        <el-select
+          :model-value="sidebarWsValue"
+          placeholder="选择工作空间"
+          popper-class="sidebar-ws-popper"
+          @change="onSidebarWsChange"
+        >
+          <el-option label="首页" value="__home__" />
+          <el-option
+            v-for="ws in wsStore.list"
+            :key="ws.id"
+            :label="ws.name"
+            :value="ws.id"
+          />
+        </el-select>
+      </div>
+      <div v-else class="sidebar-ws-collapsed">
+        <el-icon :size="20" @click="goHome"><House /></el-icon>
+      </div>
+
       <el-menu
         :default-active="activeMenu"
         :collapse="app.sidebarCollapsed"
@@ -15,6 +36,10 @@
         active-text-color="#409eff"
       >
         <el-menu-item :index="`/home`">
+          <el-icon><House /></el-icon>
+          <span>首页</span>
+        </el-menu-item>
+        <el-menu-item :index="`/workspace/${defaultWsId}/home`">
           <el-icon><Monitor /></el-icon>
           <span>工作台</span>
         </el-menu-item>
@@ -108,23 +133,13 @@
 
         <div class="topbar-right">
           <NotificationBell />
-          <!-- 工作空间选择器 -->
-          <el-select
-            v-if="wsStore.list.length > 0"
-            :model-value="wsId"
-            placeholder="选择工作空间"
-            size="small"
-            class="ws-selector"
-            @change="switchWorkspace"
+          <el-button
+            class="ai-btn"
+            @click="chatVisible = true"
           >
-            <el-option
-              v-for="ws in wsStore.list"
-              :key="ws.id"
-              :label="ws.name"
-              :value="ws.id"
-            />
-          </el-select>
-
+            <el-icon class="ai-btn-icon"><ChatDotRound /></el-icon>
+            AgentX
+          </el-button>
           <!-- 用户 -->
           <el-dropdown trigger="click">
             <span class="user-info">
@@ -157,17 +172,24 @@
         <router-view />
       </main>
     </div>
+
+    <ChatPanel
+      v-model:visible="chatVisible"
+      :scenario="agentScenario"
+      :workspace-id="wsId"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { useWorkspaceStore } from '@/stores/workspace'
 import {
   Monitor,
+  House,
   DocumentCopy,
   ScaleToOriginal,
   Files,
@@ -180,8 +202,24 @@ import {
   ArrowDown,
   Sunny,
   Moon,
+  ChatDotRound,
 } from '@element-plus/icons-vue'
 import NotificationBell from '@/components/global/NotificationBell.vue'
+import ChatPanel from '@/components/ChatPanel.vue'
+
+const chatVisible = ref(false)
+
+// 根据当前路由自动推断 Agent 场景
+const agentScenario = computed(() => {
+  const path = route.path
+  console.log('[agentScenario] path:', path)
+  if (path.includes('/templates')) return 'template-creator'
+  if (path.includes('/workflows') || path.includes('/my-processes')) return 'workflow-node'
+  if (path.includes('/tasks') || path.includes('/my-tasks')) return 'approval-assist'
+  if (path.includes('/analytics')) return 'data-analysis'
+  if (path.includes('/designer') || path.includes('/forms')) return 'form-builder'
+  return 'form-builder'
+})
 
 const route = useRoute()
 const router = useRouter()
@@ -206,8 +244,31 @@ const defaultWsId = computed(() => {
 const activeMenu = computed(() => {
   const path = route.path
   if (path === '/home') return '/home'
+  // workspace home
+  if (path.match(/^\/workspace\/[^/]+\/home$/)) return `/workspace/${route.params.wsId}/home`
   return path
 })
+
+/** 侧边栏下拉框的值：首页 or 工作空间 ID */
+const sidebarWsValue = computed(() => {
+  if (route.path === '/home') return '__home__'
+  const id = route.params.wsId
+  if (typeof id === 'string' && id) return id
+  if (wsStore.currentId) return wsStore.currentId
+  return '__home__'
+})
+
+function onSidebarWsChange(val: string) {
+  if (val === '__home__') {
+    router.push('/home')
+    return
+  }
+  switchWorkspace(val)
+}
+
+function goHome() {
+  router.push('/home')
+}
 
 const breadcrumbs = computed(() => {
   const items: { title: string; to?: string }[] = [{ title: '首页', to: '/home' }]
@@ -217,6 +278,7 @@ const breadcrumbs = computed(() => {
   const routeName = route.name as string
   const map: Record<string, { title: string; to?: string }[]> = {
     Home: [],
+    WorkspaceHome: [{ title: '工作台' }],
     FormList: [{ title: '表单管理' }],
     FormDesigner: [
       { title: '表单管理', to: `/workspace/${wsIdVal}/forms` },
@@ -284,7 +346,7 @@ function switchWorkspace(id: string) {
   const ws = wsStore.list.find((w) => w.id === id)
   if (ws) {
     wsStore.setCurrent(ws)
-    router.push(`/workspace/${id}/forms`)
+    router.push(`/workspace/${id}/home`)
   }
 }
 
@@ -353,6 +415,26 @@ function handleLogout() {
   align-items: center;
   gap: 12px;
 }
+.ai-btn {
+  font-weight: 700;
+  font-size: 15px;
+  padding: 6px 18px;
+  border-radius: 8px;
+  background: #e8f2fc;
+  border-color: #d0e3f7;
+  color: #2c3e50;
+}
+.ai-btn:hover {
+  background: #d4e8fa;
+  border-color: #b3d8ff;
+}
+.ai-btn:active {
+  background: #c0dcf7;
+}
+.ai-btn-icon {
+  font-size: 20px;
+  margin-right: 4px;
+}
 .topbar-right {
   display: flex;
   align-items: center;
@@ -405,6 +487,34 @@ function handleLogout() {
   font-size: 13px;
   color: var(--app-text-regular);
   white-space: nowrap;
+}
+
+.sidebar-ws-select {
+  padding: 10px 12px 6px;
+}
+.sidebar-ws-select :deep(.el-select) {
+  width: 100%;
+}
+.sidebar-ws-select :deep(.el-input__wrapper) {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.15);
+  box-shadow: none;
+}
+.sidebar-ws-select :deep(.el-input__inner) {
+  color: #bfcbd9;
+}
+.sidebar-ws-select :deep(.el-input__inner::placeholder) {
+  color: rgba(255,255,255,0.4);
+}
+.sidebar-ws-collapsed {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
+  color: #bfcbd9;
+  cursor: pointer;
+}
+.sidebar-ws-collapsed:hover {
+  color: #409eff;
 }
 
 .content {

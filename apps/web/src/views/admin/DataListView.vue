@@ -101,6 +101,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '@/api/client'
+import type { Submission } from '@/types/models'
 
 const route = useRoute()
 const router = useRouter()
@@ -116,8 +117,8 @@ const loading = ref(false)
 async function fetchData() {
   loading.value = true
   try {
-    const res = await http.get(`/forms/${formId}/submissions`, { params: { page: page.value, pageSize } }) as any
-    const data = res.data || res
+    const res = await http.get(`/forms/${formId}/submissions`, { params: { page: page.value, pageSize } })
+    const data = (res as { data?: { list?: Submission[]; pagination?: { total: number } } }).data || (res as { list?: Submission[]; pagination?: { total: number } })
     list.value = data?.list || []
     total.value = data?.pagination?.total || 0
   } finally { loading.value = false }
@@ -127,8 +128,8 @@ onMounted(fetchData)
 watch(page, fetchData)
 watch(() => route.params.wsId, () => { page.value = 1; fetchData() })
 
-function viewDetail(row: any) { router.push(`/workspace/${wsId.value}/forms/${formId}/data/${row.id}`) }
-async function deleteItem(row: any) {
+function viewDetail(row: Submission) { router.push(`/workspace/${wsId.value}/forms/${formId}/data/${row.id}`) }
+async function deleteItem(row: Submission) {
   try {
     await ElMessageBox.confirm('确定删除该提交记录？', '删除确认', { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' })
     await http.delete(`/forms/${formId}/submissions/${row.id}`)

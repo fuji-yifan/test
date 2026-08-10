@@ -55,40 +55,47 @@ export class FormService {
     return form
   }
 
-  async update(id: string, userId: string, dto: { name?: string; description?: string; category?: string; schema?: any; settings?: any }) {
+  async update(id: string, userId: string, dto: { name?: string; description?: string; category?: string; schema?: any; settings?: any; targetVersion?: number }) {
     // 如果 Schema 更新，保存版本快照
     if (dto.schema) {
-      // 查询当前最大版本号（独立于 publishedVersion，支持多次保存不发布）
-      const lastVersion = await this.prisma.formVersion.findFirst({
-        where: { formId: id },
-        orderBy: { version: 'desc' },
-        select: { version: true },
-      })
-      const nextVersion = (lastVersion?.version || 0) + 1
+      // 指定目标版本 → 覆盖已有版本；否则 → 新建版本
+      if (dto.targetVersion && dto.targetVersion > 0) {
+        await this.prisma.formVersion.update({
+          where: { formId_version: { formId: id, version: dto.targetVersion } },
+          data: { schema: dto.schema, createdBy: userId },
+        })
+      } else {
+        const lastVersion = await this.prisma.formVersion.findFirst({
+          where: { formId: id },
+          orderBy: { version: 'desc' },
+          select: { version: true },
+        })
+        const nextVersion = (lastVersion?.version || 0) + 1
 
-      await this.prisma.formVersion.upsert({
-        where: { formId_version: { formId: id, version: nextVersion } },
-        create: {
-          formId: id,
-          version: nextVersion,
-          schema: dto.schema,
-          changeLog: 'Schema updated',
-          createdBy: userId,
-        },
-        update: {
-          schema: dto.schema,
-          changeLog: 'Schema updated',
-          createdBy: userId,
-        },
-      })
+        await this.prisma.formVersion.upsert({
+          where: { formId_version: { formId: id, version: nextVersion } },
+          create: {
+            formId: id,
+            version: nextVersion,
+            schema: dto.schema,
+            createdBy: userId,
+          },
+          update: {
+            schema: dto.schema,
+            createdBy: userId,
+          },
+        })
+      }
 
       // 失效 Schema 缓存
       await this.cache.invalidateFormSchema(id)
     }
 
+    // 剥离 targetVersion（只用于版本快照，不是 Form 表的字段）
+    const { targetVersion, ...formData } = dto
     return this.prisma.form.update({
       where: { id },
-      data: { ...dto, updatedBy: userId },
+      data: { ...formData, updatedBy: userId },
     })
   }
 
@@ -100,13 +107,21 @@ export class FormService {
   }
 
   async publish(id: string, userId: string) {
+    // 将当前最新版本号记为已发布版本（而非独立自增计数器）
+    const lastVersion = await this.prisma.formVersion.findFirst({
+      where: { formId: id },
+      orderBy: { version: 'desc' },
+      select: { version: true },
+    })
+    const currentVersion = lastVersion?.version || 0
+
     const now = new Date()
     const result = await this.prisma.form.update({
       where: { id },
       data: {
         status: 'published',
         publishedAt: now,
-        publishedVersion: { increment: 1 },
+        publishedVersion: currentVersion,
         updatedBy: userId,
       },
     })
@@ -143,6 +158,17 @@ export class FormService {
     return this.prisma.formVersion.findMany({
       where: { formId },
       orderBy: { version: 'desc' },
+    })
+  }
+
+  async deleteVersion(formId: string, version: number) {
+    // 不允许删除当前已发布版本
+    const form = await this.prisma.form.findUnique({ where: { id: formId }, select: { publishedVersion: true } })
+    if (form && form.publishedVersion === version) {
+      throw new Error('不能删除当前已发布的版本')
+    }
+    return this.prisma.formVersion.delete({
+      where: { formId_version: { formId, version } },
     })
   }
 

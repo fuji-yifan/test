@@ -247,7 +247,7 @@ const cascaderOpts = computed(() => {
 
 const cascaderProps = computed(() => {
   const raw = (props.field.props || {}) as Record<string, any>
-  const { options, ...rest } = raw
+  const { options: _, ...rest } = raw
   return rest
 })
 
@@ -264,7 +264,7 @@ const numProps = computed(() => {
 })
 
 const selectProps = computed(() => {
-  const { options, ...rest } = (props.field.props || {}) as Record<string, any>
+  const { options: _, ...rest } = (props.field.props || {}) as Record<string, any>
   return rest
 })
 

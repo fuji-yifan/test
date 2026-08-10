@@ -178,7 +178,7 @@ function buildCascade() {
       { value: '超时升级', label: '超时升级' },
     ]},
     { value: 'WorkspaceMember', label: '成员', children: [
-      { value: '添加成员', label: '添加成员' },
+      { value: '邀请成员', label: '邀请成员' },
       { value: '修改成员角色', label: '修改成员角色' },
       { value: '移除成员', label: '移除成员' },
     ]},
@@ -234,14 +234,14 @@ function clearFilters() {
 async function fetchLogs() {
   loading.value = true
   try {
-    const params: any = { page: page.value, pageSize }
+    const params: Record<string, string | number> = { page: page.value, pageSize }
     if (filters.action) params.action = filters.action
     if (filters.resourceType) params.resourceType = filters.resourceType
     if (dateRange.value) {
       params.startDate = dateRange.value[0]
       params.endDate = dateRange.value[1]
     }
-    const res = await http.get(`/workspaces/${wsId.value}/audit-logs`, { params }) as any
+    const res = await http.get(`/workspaces/${wsId.value}/audit-logs`, { params })
     const data = res.data || res
     logs.value = data?.list || []
     total.value = data?.pagination?.total || 0

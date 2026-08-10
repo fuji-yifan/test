@@ -21,6 +21,7 @@
     "echarts": "^6.1.0",
     "element-china-area-data": "^6.1.0",
     "element-plus": "^2.7.0",
+    "marked": "^18.0.9",
     "pinia": "^2.1.7",
     "vue": "^3.4.0",
     "vue-draggable-plus": "^0.5.0",

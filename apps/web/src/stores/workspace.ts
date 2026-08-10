@@ -19,9 +19,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const currentId = computed(() => current.value?.id || null)
 
   async function fetchList() {
-    const res = await http.get('/workspaces') as any
-    const data = res.data || res
-    list.value = Array.isArray(data) ? data : (data?.list || [])
+    const res = await http.get('/workspaces')
+    const data = (res as { data?: Workspace[] | { list?: Workspace[] } }).data || res
+    list.value = Array.isArray(data) ? data : ((data as { list?: Workspace[] })?.list || []) as Workspace[]
   }
 
   function setCurrent(ws: Workspace) {

@@ -26,27 +26,27 @@ export interface ComponentAdapter {
   category: 'basic' | 'advanced' | 'layout' | 'custom'
 
   /** 默认 Props */
-  defaultProps: Record<string, any>
+  defaultProps: Record<string, unknown>
 
   /**
    * 属性映射函数
    * 输入：FieldSchema.props + defaultProps
    * 输出：直接传给 UI 组件的 props 对象
    */
-  mapProps?: (fieldProps: Record<string, any>) => Record<string, any>
+  mapProps?: (fieldProps: Record<string, unknown>) => Record<string, unknown>
 
   /**
    * 事件映射函数
    * 输入：引擎的 setValue 方法
    * 输出：UI 组件的事件绑定对象
    */
-  mapEvents?: (emit: (value: any) => void) => Record<string, (...args: any[]) => any>
+  mapEvents?: (emit: (value: unknown) => void) => Record<string, (...args: unknown[]) => unknown>
 
   /** 是否为布局控件 */
   isLayout?: boolean
 
   /** 属性面板定义 Schema（自身就是一份小表单） */
-  configSchema?: any
+  configSchema?: import('../types/schema.js').FormSchema
 }
 
 /**

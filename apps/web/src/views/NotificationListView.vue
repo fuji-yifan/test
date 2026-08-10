@@ -13,7 +13,6 @@
         <el-button
           size="small"
           type="danger"
-          plain
           @click="clearAll"
         >
           清除所有
@@ -178,11 +177,11 @@ async function del(id: string) {
 }
 
 function typeLabel(t: string) {
-  const m: Record<string, string> = { info: '信息', warning: '警告', approval: '审批', rejection: '驳回' }
+  const m: Record<string, string> = { info: '信息', warning: '警告', approval: '审批', rejection: '驳回', '邀请': '邀请' }
   return m[t] || t
 }
 function typeTag(t: string) {
-  const m: Record<string, string> = { info: 'info', warning: 'warning', approval: 'success', rejection: 'danger' }
+  const m: Record<string, string> = { info: 'info', warning: 'warning', approval: 'success', rejection: 'danger', '邀请': 'warning' }
   return m[t] || 'info'
 }
 function fmt(d: string) { return d ? new Date(d).toLocaleString('zh-CN') : '-' }

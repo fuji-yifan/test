@@ -60,17 +60,17 @@ const elementPlusAdapters: ComponentAdapter[] = [
   {
     type: 'select', display: '下拉选择', icon: 'ArrowDown', category: 'basic',
     defaultProps: { options: [], filterable: false, multiple: false },
-    mapProps: (props) => { const { options, ...rest } = props; return rest },
+    mapProps: (props) => { const { options: _, ...rest } = props; return rest },
   },
   {
     type: 'radio', display: '单选框组', icon: 'CircleCheck', category: 'basic',
     defaultProps: { options: [] },
-    mapProps: (props) => { const { options, ...rest } = props; return rest },
+    mapProps: (props) => { const { options: _, ...rest } = props; return rest },
   },
   {
     type: 'checkbox', display: '多选框组', icon: 'Select', category: 'basic',
     defaultProps: { options: [] },
-    mapProps: (props) => { const { options, ...rest } = props; return rest },
+    mapProps: (props) => { const { options: _, ...rest } = props; return rest },
   },
   {
     type: 'date-picker', display: '日期选择', icon: 'Calendar', category: 'basic',

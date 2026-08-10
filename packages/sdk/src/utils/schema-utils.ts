@@ -111,7 +111,7 @@ export function flattenFieldsByKey(fields: FieldSchema[]): Map<string, FieldSche
  * 判断是否为布局容器（用于跳过渲染控件本体，递归渲染 children）
  */
 export function isLayoutField(type: string): boolean {
-  return ['card', 'collapse', 'tabs', 'divider'].includes(type)
+  return ['card', 'collapse', 'divider'].includes(type)
 }
 
 /**

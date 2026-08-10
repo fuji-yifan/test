@@ -182,14 +182,24 @@ import {
   Connection, Link, Message, Setting, QuestionFilled, Rank,
 } from '@element-plus/icons-vue'
 import http from '@/api/client'
+import type { ProcessNode, ProcessEdge, TaskInstance } from '@furmx/sdk'
+
+interface ProcessInstanceData {
+  id: string; definitionId: string; currentState: string; currentNodeIds: string[]
+  initiatorId: string; formId?: string; submissionId?: string
+  definition: { name: string; nodes?: ProcessNode[]; edges?: ProcessEdge[] }
+  tasks?: TaskInstance[]
+  initiator?: { id: string; nickname?: string; email: string }
+  createdAt: string; updatedAt?: string; completedAt?: string
+}
 
 const route = useRoute()
 const router = useRouter()
 const instanceId = computed(() => route.params.id as string)
 
-const instance = ref<any>(null)
-const nodes = ref<any[]>([])
-const edges = ref<any[]>([])
+const instance = ref<ProcessInstanceData | null>(null)
+const nodes = ref<ProcessNode[]>([])
+const edges = ref<ProcessEdge[]>([])
 const canvasW = ref(1000)
 const canvasH = ref(600)
 
@@ -198,7 +208,7 @@ const NODE_W = 180; const NODE_H = 58; const CIRCLE_W = 60; const GW = 150; cons
 function isCircle(t: string) { return t === 'start' || t === 'end' }
 function isGateway(t: string) { return ['condition', 'parallel', 'join'].includes(t) }
 
-function nodeStyle(node: any) {
+function nodeStyle(node: ProcessNode) {
   if (isCircle(node.type)) return { left: node.position.x + 'px', top: node.position.y + 'px', width: CIRCLE_W + 'px', height: CIRCLE_W + 'px', borderRadius: '50%' }
   if (isGateway(node.type)) return { left: node.position.x + 'px', top: node.position.y + 'px', width: GW + 'px', height: GH + 'px' }
   return { left: node.position.x + 'px', top: node.position.y + 'px', width: NODE_W + 'px', height: NODE_H + 'px' }
@@ -227,7 +237,7 @@ const taskMap = computed(() => {
 
 function getNodeState(nodeId: string): string {
   const tasks = taskMap.value[nodeId]
-  const node = nodes.value.find((n: any) => n.id === nodeId)
+  const node = nodes.value.find((n: ProcessNode | undefined) => n.id === nodeId)
   const currentNodeIds: string[] = instance.value?.currentNodeIds || []
   const isCompleted = instance.value?.currentState === 'completed'
 
@@ -239,11 +249,11 @@ function getNodeState(nodeId: string): string {
 
   // 有任务的节点（审批类）
   if (tasks && tasks.length > 0) {
-    const hasRejected = tasks.some((t: any) => t.status === 'rejected')
+    const hasRejected = tasks.some((t: TaskInstance) => t.status === 'rejected')
     if (hasRejected) return 'rejected'
-    const allApproved = tasks.every((t: any) => t.status === 'approved')
+    const allApproved = tasks.every((t: TaskInstance) => t.status === 'approved')
     if (allApproved) return 'completed'
-    const hasPending = tasks.some((t: any) => t.status === 'pending')
+    const hasPending = tasks.some((t: TaskInstance) => t.status === 'pending')
     if (hasPending) return 'active'
     return 'completed'
   }
@@ -278,15 +288,15 @@ function computeTraversal() {
 
     const tasks = taskMap.value[nodeId]
     if (tasks && tasks.length > 0) {
-      if (!tasks.every((t: any) => t.status === 'approved')) return
+      if (!tasks.every((t: TaskInstance) => t.status === 'approved')) return
     }
 
-    const outEdges = edges.value.filter((e: any) => e.sourceNodeId === nodeId)
+    const outEdges = edges.value.filter((e: ProcessEdge) => e.sourceNodeId === nodeId)
     for (const e of outEdges) {
-      const tgtNode = nodes.value.find((n: any) => n.id === e.targetNodeId)
+      const tgtNode = nodes.value.find((n: ProcessNode | undefined) => n.id === e.targetNodeId)
       if (!tgtNode) continue
 
-      const srcNode = nodes.value.find((n: any) => n.id === nodeId)
+      const srcNode = nodes.value.find((n: ProcessNode | undefined) => n.id === nodeId)
       if (srcNode?.type === 'condition') {
         if (reached.has(e.targetNodeId) || tgtNode.type === 'end') {
           edgeSet.add(e.id)
@@ -310,7 +320,7 @@ const traversedEdgeIds = computed(() => traversal.value.edges)
 function getNodeTooltip(nodeId: string): string {
   const tasks = taskMap.value[nodeId]
   if (!tasks || tasks.length === 0) return ''
-  return tasks.map((t: any) => {
+  return tasks.map((t: TaskInstance) => {
     const name = t.assignee?.nickname || t.assignee?.email || t.assigneeId
     const st = { pending: '待处理', approved: '已通过', rejected: '已驳回', transferred: '已转交', withdrawn: '已撤回' }[t.status] || t.status
     return `${name}: ${st}` + (t.comment ? ` (${t.comment})` : '')
@@ -318,15 +328,14 @@ function getNodeTooltip(nodeId: string): string {
 }
 
 const edgePaths = computed(() => {
-  return edges.value.map((e: any) => {
-    const src = nodes.value.find((n: any) => n.id === e.sourceNodeId)
-    const tgt = nodes.value.find((n: any) => n.id === e.targetNodeId)
+  return edges.value.map((e: ProcessEdge) => {
+    const src = nodes.value.find((n: ProcessNode | undefined) => n.id === e.sourceNodeId)
+    const tgt = nodes.value.find((n: ProcessNode | undefined) => n.id === e.targetNodeId)
     if (!src || !tgt) return { id: e.id, d: '', edgeColor: '#c0c4cc', marker: 'arrow-gray', label: e.label || '', labelX: 0, labelY: 0 }
 
     const srcW = isCircle(src.type) ? CIRCLE_W : isGateway(src.type) ? GW : NODE_W
     const srcH = isCircle(src.type) ? CIRCLE_W : isGateway(src.type) ? GH : NODE_H
     const tgtW = isCircle(tgt.type) ? CIRCLE_W : isGateway(tgt.type) ? GW : NODE_W
-    const tgtH = isCircle(tgt.type) ? CIRCLE_W : isGateway(tgt.type) ? GH : NODE_H
 
     const x1 = src.position.x + srcW / 2; const y1 = src.position.y + srcH
     const x2 = tgt.position.x + tgtW / 2; const y2 = tgt.position.y
@@ -334,7 +343,6 @@ const edgePaths = computed(() => {
     const d = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`
 
     const srcState = getNodeState(e.sourceNodeId)
-    const tgtState = getNodeState(e.targetNodeId)
     let edgeColor = '#c0c4cc'; let marker = 'arrow-gray'
 
     if (traversedEdgeIds.value.has(e.id)) {
@@ -365,17 +373,17 @@ onMounted(async () => {
     const data = res.data || res
     instance.value = data
     const def = data.definition || {}
-    nodes.value = (def.nodes || []) as any[]
-    edges.value = (def.edges || []) as any[]
+    nodes.value = (def.nodes || []) as ProcessNode[]
+    edges.value = (def.edges || []) as ProcessEdge[]
     let mx = 800, my = 600
-    nodes.value.forEach((n: any) => {
+    nodes.value.forEach((n: ProcessNode) => {
       const w = isCircle(n.type) ? CIRCLE_W : isGateway(n.type) ? GW : NODE_W
       const h = isCircle(n.type) ? CIRCLE_W : isGateway(n.type) ? GH : NODE_H
       if (n.position.x + w + 100 > mx) mx = n.position.x + w + 100
       if (n.position.y + h + 100 > my) my = n.position.y + h + 100
     })
     canvasW.value = Math.max(1000, mx); canvasH.value = Math.max(600, my)
-  } catch (e: any) {
+  } catch (e: unknown) {
     ElMessage.error('加载流程实例失败: ' + (e.response?.data?.message || e.message || '未知错误'))
   }
 })

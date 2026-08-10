@@ -51,26 +51,29 @@ export class WorkspaceService {
       role: m.role,
     }))
 
-    // 确保用户至少有一个工作空间
+    // 确保用户至少有一个工作空间（仅对从未有过空间的用户生效）
     if (items.length === 0) {
-      const user = await this.prisma.user.findUnique({ where: { id: userId } })
-      const name = (user?.nickname || user?.email || '用户') + ' 的工作空间'
-      const slug = `ws-${userId.substring(0, 8)}-${Math.random().toString(36).slice(2, 6)}`
-      const ws = await this.prisma.workspace.create({
-        data: {
-          name,
-          slug,
-          members: { create: { userId, role: 'owner' } },
-          roles: {
-            create: [
-              { name: '创建者', permissions: ['*'], isSystem: true },
-              { name: '查看者', permissions: [], isSystem: true },
-            ],
+      const totalMemberships = await this.prisma.workspaceMember.count({ where: { userId } })
+      if (totalMemberships === 0) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } })
+        const name = (user?.nickname || user?.email || '用户') + ' 的工作空间'
+        const slug = `ws-${userId.substring(0, 8)}-${Math.random().toString(36).slice(2, 6)}`
+        const ws = await this.prisma.workspace.create({
+          data: {
+            name,
+            slug,
+            members: { create: { userId, role: 'owner' } },
+            roles: {
+              create: [
+                { name: '创建者', permissions: ['*'], isSystem: true },
+                { name: '查看者', permissions: [], isSystem: true },
+              ],
+            },
           },
-        },
-      })
-      await this.syncRbacRole(ws.id, userId, 'owner')
-      items.push({ ...ws, role: 'owner' })
+        })
+        await this.syncRbacRole(ws.id, userId, 'owner')
+        items.push({ ...ws, role: 'owner' })
+      }
     }
 
     return items

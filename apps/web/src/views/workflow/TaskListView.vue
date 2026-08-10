@@ -218,8 +218,11 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import http from '@/api/client'
+const route = useRoute()
+const wsId = (route.params.wsId as string) || ''
 
 const list = ref<any[]>([])
 const total = ref(0)

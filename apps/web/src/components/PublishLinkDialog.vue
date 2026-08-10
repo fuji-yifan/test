@@ -15,7 +15,7 @@
         style="margin-bottom:16px"
       />
       <p class="tip">
-        将以下链接分享给填写人，无需登录即可填写：
+        将以下链接分享给填写人，登录后即可填写：
       </p>
       <div class="link-row">
         <el-input

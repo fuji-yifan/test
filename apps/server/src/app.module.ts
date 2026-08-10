@@ -14,6 +14,7 @@ import { RbacModule } from './modules/rbac/rbac.module'
 import { AuditModule } from './modules/audit/audit.module'
 import { WebhookModule } from './modules/webhook/webhook.module'
 import { WorkflowModule } from './modules/workflow/workflow.module'
+import { InvitationModule } from './modules/invitation/invitation.module'
 import { NotificationModule } from './modules/notification/notification.module'
 import { AnalyticsModule } from './modules/analytics/analytics.module'
 import { UploadModule } from './modules/upload/upload.module'
@@ -36,6 +37,7 @@ import { PermissionGuard } from './common/guards/permission.guard'
     AuditModule,
     WebhookModule,
     WorkflowModule,
+    InvitationModule,
     NotificationModule,
     AnalyticsModule,
     UploadModule,

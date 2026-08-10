@@ -49,7 +49,7 @@ export class FormController {
   update(
     @Param('id') id: string,
     @CurrentUser('userId') userId: string,
-    @Body() dto: { name?: string; description?: string; category?: string; schema?: any; settings?: any; maxSubmissions?: number },
+    @Body() dto: { name?: string; description?: string; category?: string; schema?: any; settings?: any; maxSubmissions?: number; targetVersion?: number },
   ) {
     return this.formService.update(id, userId, dto)
   }
@@ -89,6 +89,13 @@ export class FormController {
   @Get('forms/:id/versions')
   getVersions(@Param('id') id: string) {
     return this.formService.getVersions(id)
+  }
+
+  @UseGuards(PermissionGuard)
+  @RequiredPermission('form:edit')
+  @Delete('forms/:id/versions/:version')
+  deleteVersion(@Param('id') id: string, @Param('version') version: string) {
+    return this.formService.deleteVersion(id, parseInt(version))
   }
 
   // ---- 公开接口（渲染器获取 Schema + 版本兼容性检查） ----

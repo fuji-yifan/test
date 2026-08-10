@@ -2,15 +2,38 @@
   <div>
     <div class="page-header">
       <h2>成员管理</h2>
-      <el-button
-        type="primary"
-        @click="openInvite"
-      >
-        添加成员
-      </el-button>
+      <div class="header-actions">
+        <el-select
+          v-model="sortOrder"
+          placeholder="排序"
+          style="width:120px"
+        >
+          <el-option label="按时间最近" value="desc" />
+          <el-option label="按时间最早" value="asc" />
+        </el-select>
+        <el-button type="primary" @click="openInvite">邀请成员</el-button>
+      </div>
     </div>
+    <div class="filter-bar">
+      <el-tabs v-model="activeRole" @tab-change="onRoleChange">
+        <el-tab-pane label="全部" name="" />
+        <el-tab-pane
+          v-for="r in filterRoles"
+          :key="r.key"
+          :label="r.name"
+          :name="r.key"
+        />
+      </el-tabs>
+    </div>
+    <el-skeleton
+      v-if="loading"
+      :rows="5"
+      animated
+      style="padding: 20px"
+    />
     <el-table
-      :data="members"
+      v-else
+      :data="filteredMembers"
       stripe
     >
       <el-table-column
@@ -52,12 +75,10 @@
               @change="(v: string) => changeRole(row, v)"
             >
               <el-option
-                label="编辑者"
-                value="editor"
-              />
-              <el-option
-                label="查看者"
-                value="viewer"
+                v-for="r in availableRoles"
+                :key="r.key"
+                :label="r.name"
+                :value="r.key"
               />
             </el-select>
           </template>
@@ -98,7 +119,7 @@
 
     <el-dialog
       v-model="showInvite"
-      title="添加成员"
+      title="邀请成员"
       width="480px"
     >
       <el-form
@@ -130,12 +151,10 @@
         <el-form-item label="角色">
           <el-select v-model="inviteForm.role">
             <el-option
-              label="编辑者"
-              value="editor"
-            />
-            <el-option
-              label="查看者"
-              value="viewer"
+              v-for="r in availableRoles"
+              :key="r.key"
+              :label="r.name"
+              :value="r.key"
             />
           </el-select>
         </el-form-item>
@@ -149,7 +168,7 @@
           :loading="inviting"
           @click="doInvite"
         >
-          添加
+          发送邀请
         </el-button>
       </template>
     </el-dialog>
@@ -161,30 +180,78 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '@/api/client'
+import type { Member, Role, User } from '@/types/models'
 
 const route = useRoute()
 const wsId = computed(() => route.params.wsId as string)
-const members = ref<any[]>([])
+const loading = ref(true)
+const members = ref<Member[]>([])
+const availableRoles = ref<{ name: string; key: string }[]>([])
+const activeRole = ref('')
+const sortOrder = ref('desc')
 const showInvite = ref(false)
 const inviting = ref(false)
 const searching = ref(false)
 const inviteForm = reactive({ email: '', role: 'viewer' })
 const userOptions = ref<any[]>([])
 
+const filterRoles = computed(() => {
+  const seen = new Set<string>()
+  const list = [{ name: '创建者', key: 'owner' }, ...availableRoles.value]
+  return list.filter(r => { if (seen.has(r.key)) return false; seen.add(r.key); return true })
+})
+
+const filteredMembers = computed(() => {
+  let list = [...members.value]
+  if (activeRole.value === 'owner') {
+    list = list.filter(m => m.role === 'owner')
+  } else if (activeRole.value) {
+    list = list.filter(m => m.role === activeRole.value)
+  }
+  list.sort((a, b) => {
+    const da = new Date(a.createdAt).getTime()
+    const db = new Date(b.createdAt).getTime()
+    return sortOrder.value === 'asc' ? da - db : db - da
+  })
+  return list
+})
+
+function onRoleChange() { /* 切换角色筛选 */ }
+
 async function fetchMembers() {
-  const res = await http.get(`/workspaces/${wsId.value}/members`) as any
-  members.value = (res.data || res)?.list || res.data || res || []
+  loading.value = true
+  try {
+    const res = await http.get(`/workspaces/${wsId.value}/members`)
+    members.value = (res as { data: Member[] }).data ?? []
+  } catch {
+    members.value = []
+  } finally {
+    loading.value = false
+  }
 }
 
-onMounted(fetchMembers)
-watch(() => route.params.wsId, fetchMembers)
+async function fetchRoles() {
+  try {
+    const res = await http.get(`/workspaces/${wsId.value}/roles`)
+    const roles = ((res as { data?: Role[] }).data || res || []) as Role[]
+    availableRoles.value = roles
+      .filter((r) => r.name !== '创建者')
+      .map((r) => ({ name: r.name, key: ROLE_MAP_REVERSE[r.name] || r.name }))
+    inviteForm.role = availableRoles.value[0]?.key || 'viewer'
+  } catch { /* ignore */ }
+}
+
+const ROLE_MAP_REVERSE: Record<string, string> = { '创建者': 'owner', '编辑者': 'editor', '查看者': 'viewer' }
+
+onMounted(() => { fetchMembers(); fetchRoles() })
+watch(() => route.params.wsId, () => { fetchMembers(); fetchRoles() })
 
 async function searchUsers(query: string) {
   if (!query || query.length < 1) { userOptions.value = []; return }
   searching.value = true
   try {
-    const res = await http.get('/auth/users', { params: { search: query } }) as any
-    userOptions.value = (res.data || res) || []
+    const res = await http.get('/auth/users', { params: { search: query } })
+    userOptions.value = ((res as { data?: User[] }).data || res || []) as User[]
   } catch { userOptions.value = [] }
   finally { searching.value = false }
 }
@@ -202,31 +269,31 @@ async function doInvite() {
   }
   inviting.value = true
   try {
-    await http.post(`/workspaces/${wsId.value}/members`, {
+    await http.post(`/workspaces/${wsId.value}/invitations`, {
       email: inviteForm.email.trim(),
       role: inviteForm.role,
     })
-    ElMessage.success('已添加')
+    ElMessage.success('邀请已发送')
     showInvite.value = false
     fetchMembers()
-  } catch (e: any) {
-    ElMessage.error(e.response?.data?.message || '添加失败')
+  } catch (e: unknown) {
+    ElMessage.error((e as { response?: { data?: { message?: string } } }).response?.data?.message || '添加失败')
   } finally {
     inviting.value = false
   }
 }
 
-async function changeRole(row: any, role: string) {
+async function changeRole(row: Member, role: string) {
   try {
     await http.patch(`/workspaces/${wsId.value}/members/${row.userId || row.user.id}`, { role })
     ElMessage.success('角色已更新')
     fetchMembers()
-  } catch (e: any) {
-    ElMessage.error(e.response?.data?.message || '更新失败')
+  } catch (e: unknown) {
+    ElMessage.error((e as { response?: { data?: { message?: string } } }).response?.data?.message || '更新失败')
   }
 }
 
-async function removeMember(row: any) {
+async function removeMember(row: Member) {
   try {
     await ElMessageBox.confirm(
       `确定移除成员「${row.user?.nickname || row.user?.email || ''}」？`,
@@ -243,6 +310,8 @@ async function removeMember(row: any) {
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-header h2 { margin: 0; }
+.header-actions { display: flex; gap: 12px; }
+.filter-bar { margin-bottom: 8px; }
 .owner-tag { color: #909399; font-size: 13px; }
 .system-hint { color: #909399; font-size: 12px; }
 </style>

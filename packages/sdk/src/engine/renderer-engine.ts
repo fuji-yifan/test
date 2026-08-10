@@ -34,21 +34,21 @@ export interface ValidationResult {
 
 export interface FieldValidator {
   type: ValidationType
-  validate(value: any, rule: ValidationRule, ctx: ValidationContext): ValidationError | null | Promise<ValidationError | null>
+  validate(value: unknown, rule: ValidationRule, ctx: ValidationContext): ValidationError | null | Promise<ValidationError | null>
 }
 
 export interface ValidationContext {
-  formData: Record<string, any>
+  formData: Record<string, unknown>
   schema: FormSchema
 }
 
 export interface AffectedField {
   fieldKey: string
-  rule: any
+  rule: unknown
   action: LinkageAction
 }
 
-type WatchCallback = (newValue: any, oldValue: any) => void
+type WatchCallback = (newValue: unknown, oldValue: unknown) => void
 
 // ==================== 校验管道 ====================
 
@@ -63,7 +63,7 @@ export class ValidationPipeline {
     this.validators.set(name, validator)
   }
 
-  async execute(field: FieldSchema, value: any, ctx: ValidationContext): Promise<ValidationError[]> {
+  async execute(field: FieldSchema, value: unknown, ctx: ValidationContext): Promise<ValidationError[]> {
     if (!field.rules?.length) return []
     const errors: ValidationError[] = []
 
@@ -74,8 +74,9 @@ export class ValidationPipeline {
       try {
         const err = await validator.validate(value, rule, ctx)
         if (err) errors.push(err)
-      } catch (e: any) {
-        errors.push({ fieldKey: field.key, type: rule.type as ValidationType, message: e.message || '校验失败' })
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : '校验失败'
+        errors.push({ fieldKey: field.key, type: rule.type as ValidationType, message: msg })
       }
     }
 
@@ -83,7 +84,7 @@ export class ValidationPipeline {
   }
 
   /** 执行整个表单的校验 */
-  async executeAll(schema: FormSchema, formData: Record<string, any>): Promise<Map<string, ValidationError[]>> {
+  async executeAll(schema: FormSchema, formData: Record<string, unknown>): Promise<Map<string, ValidationError[]>> {
     const result = new Map<string, ValidationError[]>()
     const ctx: ValidationContext = { formData, schema }
 
@@ -183,7 +184,7 @@ interface GraphNode {
 }
 
 interface Edge {
-  rule: any
+  rule: unknown
   action: LinkageAction
 }
 
@@ -191,7 +192,7 @@ export class DependencyGraph {
   private nodes = new Map<string, GraphNode>()
 
   /** 注册依赖关系 */
-  addDependency(sourceFieldKey: string, targetFieldKey: string, rule: any, action: LinkageAction): void {
+  addDependency(sourceFieldKey: string, targetFieldKey: string, rule: unknown, action: LinkageAction): void {
     this.ensureNode(sourceFieldKey)
     this.ensureNode(targetFieldKey)
 
@@ -318,14 +319,14 @@ export class DependencyGraph {
 
 export class RendererEngine {
   private _schema: FormSchema
-  private _formData!: Record<string, any>
-  private _previousData!: Record<string, any>
+  private _formData!: Record<string, unknown>
+  private _previousData!: Record<string, unknown>
   private _watchers = new Map<string, Set<WatchCallback>>()
 
   readonly validation: ValidationPipeline
   readonly dependencyGraph: DependencyGraph
 
-  constructor(schema: FormSchema, initialData?: Record<string, any>) {
+  constructor(schema: FormSchema, initialData?: Record<string, unknown>) {
     this._schema = schema
     this._formData = {}  // 先初始化对象
     this.validation = new ValidationPipeline()
@@ -335,11 +336,11 @@ export class RendererEngine {
 
   // ---- 数据管理 ----
 
-  getValue(fieldKey: string): any {
+  getValue(fieldKey: string): unknown {
     return this._formData[fieldKey]
   }
 
-  setValue(fieldKey: string, value: any): void {
+  setValue(fieldKey: string, value: unknown): void {
     const oldValue = this._formData[fieldKey]
     this._previousData[fieldKey] = oldValue
     this._formData[fieldKey] = value
@@ -348,11 +349,11 @@ export class RendererEngine {
     this._notifyWatchers(fieldKey, value, oldValue)
   }
 
-  getFormData(): Record<string, any> {
+  getFormData(): Record<string, unknown> {
     return { ...this._formData }
   }
 
-  resetForm(data?: Record<string, any>): void {
+  resetForm(data?: Record<string, unknown>): void {
     // 不清空对象引用，Vue reactive 才能持续追踪
     const newData = data ? { ...data } : this._collectDefaults()
     // 清除旧 key，写入新值
@@ -364,7 +365,7 @@ export class RendererEngine {
   }
 
   /** 批量设置数据（从 API 加载历史提交数据时使用） */
-  loadData(data: Record<string, any>): void {
+  loadData(data: Record<string, unknown>): void {
     const newData = { ...this._collectDefaults(), ...data }
     for (const key of Object.keys(this._formData)) {
       delete this._formData[key]
@@ -474,7 +475,7 @@ export class RendererEngine {
   /**
    * 从提交数据中过滤掉用户无权编辑的字段（服务端双重保障用）
    */
-  filterSubmissionData(data: Record<string, any>, userRoles: string[]): Record<string, any> {
+  filterSubmissionData(data: Record<string, unknown>, userRoles: string[]): Record<string, unknown> {
     if (!userRoles.length) return data
 
     const allowedKeys = new Set<string>()
@@ -484,7 +485,7 @@ export class RendererEngine {
       }
     })
 
-    const filtered: Record<string, any> = {}
+    const filtered: Record<string, unknown> = {}
     for (const key of Object.keys(data)) {
       if (allowedKeys.has(key)) {
         filtered[key] = data[key]
@@ -495,7 +496,7 @@ export class RendererEngine {
 
   // ---- 子表单 ----
 
-  addSubFormRow(fieldKey: string, data?: Record<string, any>): number {
+  addSubFormRow(fieldKey: string, data?: Record<string, unknown>): number {
     const current = this._formData[fieldKey]
     if (!Array.isArray(current)) {
       this._formData[fieldKey] = []
@@ -520,7 +521,7 @@ export class RendererEngine {
     this.dependencyGraph.clear()
     const newGraph = DependencyGraph.fromSchema(schema)
     newGraph['nodes'].forEach((node, key) => {
-      (this.dependencyGraph as any)._nodes?.set(key, node)
+      ;(this.dependencyGraph as unknown as { _nodes?: Map<string, unknown> })._nodes?.set(key, node)
     })
     // 可以用新 Schema 的默认值补全缺失数据
     this._mergeDefaults()
@@ -532,8 +533,8 @@ export class RendererEngine {
 
   // ---- 私有方法 ----
 
-  private _collectDefaults(): Record<string, any> {
-    const data: Record<string, any> = {}
+  private _collectDefaults(): Record<string, unknown> {
+    const data: Record<string, unknown> = {}
     walkFields(this._schema.fields, (field) => {
       if (field.key && !isLayoutField(field.type)) {
         data[field.key] = field.defaultValue ?? null
@@ -576,11 +577,11 @@ export class RendererEngine {
     }
   }
 
-  private _getSubFormDefaults(fieldKey: string): Record<string, any> {
+  private _getSubFormDefaults(fieldKey: string): Record<string, unknown> {
     const field = findFieldByKey(this._schema.fields, fieldKey)
     if (!field?.children) return {}
 
-    const defaults: Record<string, any> = {}
+    const defaults: Record<string, unknown> = {}
     walkFields(field.children, (child) => {
       if (child.key && !isLayoutField(child.type)) {
         defaults[child.key] = child.defaultValue ?? null
@@ -612,7 +613,7 @@ export class RendererEngine {
       })) as FieldSchema[]
   }
 
-  private _notifyWatchers(fieldKey: string, newVal: any, oldVal: any): void {
+  private _notifyWatchers(fieldKey: string, newVal: unknown, oldVal: unknown): void {
     const callbacks = this._watchers.get(fieldKey)
     if (callbacks) {
       callbacks.forEach((cb) => {

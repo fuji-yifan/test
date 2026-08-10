@@ -9,6 +9,7 @@ const AUDITED_MODELS = new Set([
   'ProcessInstance',
   'TaskInstance',
   'WorkspaceMember',
+  'WorkspaceInvitation',
   'Role',
   'Template',
 ])
@@ -29,6 +30,7 @@ function modelLabel(model: string): string {
     ProcessInstance: '流程',
     TaskInstance: '任务',
     WorkspaceMember: '成员',
+  WorkspaceInvitation: '邀请',
     Role: '角色',
     Template: '模板',
   }
@@ -56,6 +58,16 @@ const modelActionOverride: Record<string, Partial<Record<string, string>>> = {
   FormSubmission: {
     create: '提交表单数据',
     delete: '删除表单数据',
+  },
+  WorkspaceMember: {
+    create: '邀请成员',
+    update: '修改成员角色',
+    delete: '移除成员',
+  },
+  Role: {
+    create: '新建角色',
+    update: '编辑角色权限',
+    delete: '删除角色',
   },
 }
 

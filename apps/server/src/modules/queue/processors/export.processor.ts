@@ -11,8 +11,8 @@ interface ExportJob {
 @Processor('export')
 export class ExportProcessor extends WorkerHost {
   async process(job: Job<ExportJob>): Promise<{ message: string }> {
-    const { formId, format } = job.data
-    // TODO: Phase 3 — 实现大数据量导出逻辑（Prisma 分批查询 + 流式写入）
+    const { formId, format, workspaceId: _wsId, userId: _uid } = job.data
+    // Phase 3: Prisma cursor-based pagination + stream write to MinIO → download link
     return { message: `Export for form ${formId} as ${format} — placeholder (Phase 3c-3)` }
   }
 }

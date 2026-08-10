@@ -9,12 +9,21 @@
 
 import axios from 'axios'
 import type { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse } from 'axios'
+import type { ApiResponse } from '@/types/models'
+
+interface FormAccessResponse {
+  formId: string
+  token: string
+}
 
 const http: AxiosInstance = axios.create({
   baseURL: '/api/v1',
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 })
+
+// 响应体结构 { code, data, message }
+type ResponseBody<T = unknown> = ApiResponse<T>
 
 export function setupAxios(): void {
   // -------- 请求拦截器 --------
@@ -34,8 +43,7 @@ export function setupAxios(): void {
       const body = response.data
       // 统一响应格式 { code, data, message }
       if (body && body.code !== undefined && body.code !== 0) {
-        const err = new Error(body.message || '请求失败') as any
-        err.code = body.code
+        const err = Object.assign(new Error(body.message || '请求失败'), { code: body.code as number })
         return Promise.reject(err)
       }
       return body
@@ -80,5 +88,7 @@ export function setupAxios(): void {
     },
   )
 }
+
+export type { ResponseBody, FormAccessResponse }
 
 export default http

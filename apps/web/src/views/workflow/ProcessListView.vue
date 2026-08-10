@@ -2,9 +2,7 @@
   <div class="process-list-page">
     <div class="page-header">
       <h2>流程管理</h2>
-      <el-button size="small" type="primary" @click="showCreate = true">
-        <el-icon><Plus /></el-icon> 新建流程
-      </el-button>
+      <el-button type="primary" @click="showCreate = true">新建流程</el-button>
     </div>
 
     <!-- 搜索&筛选 -->
@@ -187,7 +185,6 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
 import http from '@/api/client'
 
 const route = useRoute()

@@ -53,13 +53,29 @@ export class AuthService {
     if (count > 0) return
 
     const slug = `ws_${userId.substring(0, 8)}`
-    await this.prisma.workspace.create({
+    const ws = await this.prisma.workspace.create({
       data: {
         name: `${nickname} 的工作空间`,
         slug,
         members: { create: { userId, role: 'owner' } },
+        roles: {
+          create: [
+            { name: '创建者', permissions: ['*'], isSystem: true },
+            { name: '查看者', permissions: [], isSystem: true },
+          ],
+        },
       },
     })
+    // 将创建者关联到 RBAC 创建者角色
+    const workspaceRoles = await this.prisma.role.findMany({
+      where: { workspaceId: ws.id }, select: { id: true, name: true },
+    })
+    const ownerRole = workspaceRoles.find((r) => r.name === '创建者')
+    if (ownerRole) {
+      await this.prisma.userRole.create({
+        data: { userId, roleId: ownerRole.id },
+      })
+    }
   }
 
   async searchUsers(search: string) {

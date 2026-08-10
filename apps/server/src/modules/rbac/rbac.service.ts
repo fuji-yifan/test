@@ -11,15 +11,31 @@ const ROLE_MAP: Record<string, string> = {
 /** 全部权限点集合——用于判断是否等于全权限 */
 const ALL_PERMISSION_KEYS = [
   'form:create', 'form:edit', 'form:publish', 'form:archive', 'form:copy', 'form:delete',
-  'submission:view', 'submission:delete', 'submission:export',
+  'submission:view', 'submission:edit', 'submission:delete', 'submission:export',
   'analytics:view',
   'template:create', 'template:edit', 'template:delete',
-  'workflow:manage', 'workflow:edit', 'workflow:delete',
+  'workflow:manage', 'workflow:edit', 'workflow:delete', 'workflow:start', 'workflow:withdraw', 'workflow:remove',
   'task:approve', 'task:reject', 'task:transfer',
   'member:invite', 'member:role', 'member:remove',
   'role:create', 'role:edit', 'role:delete',
-  'audit:view', 'audit:export',
+  'audit:view', 'audit:export', 'audit:cleanup',
+  'webhook:manage', 'upload:manage',
 ]
+
+const KNOWN_PERMISSIONS = new Set(ALL_PERMISSION_KEYS)
+
+/** 权限 key → 矩阵中的序号，用于排序 */
+const PERMISSION_ORDER = new Map(ALL_PERMISSION_KEYS.map((k, i) => [k, i]))
+
+/** 过滤已从权限矩阵中移除的脏权限，并按矩阵顺序排序 */
+function cleanPermissions(permissions: unknown): string[] {
+  const arr = Array.isArray(permissions) ? permissions as string[] : []
+  if (arr.length === 0) return arr
+  if (arr.includes('*')) return ['*']
+  return arr
+    .filter(p => KNOWN_PERMISSIONS.has(p))
+    .sort((a, b) => (PERMISSION_ORDER.get(a) ?? 999) - (PERMISSION_ORDER.get(b) ?? 999))
+}
 
 @Injectable()
 export class RbacService {
@@ -30,6 +46,10 @@ export class RbacService {
 
   /** 清理脏数据：确保每个成员只有一个 RBAC 角色，且与 WorkspaceMember.role 一致 */
   private async normalizeMemberRoles(workspaceId: string) {
+    // 防御：工作空间已被删除则跳过
+    const ws = await this.prisma.workspace.findUnique({ where: { id: workspaceId }, select: { id: true } })
+    if (!ws) return
+
     const [members, workspaceRoles] = await Promise.all([
       this.prisma.workspaceMember.findMany({ where: { workspaceId }, select: { userId: true, role: true } }),
       this.prisma.role.findMany({ where: { workspaceId }, select: { id: true, name: true, permissions: true, isSystem: true } }),
@@ -60,6 +80,18 @@ export class RbacService {
       ;(legacyViewerRole as any).permissions = []
     }
 
+    // 补建缺失的系统角色（旧空间可能没有自动创建）
+    const hasCreator = workspaceRoles.some(r => r.name === '创建者')
+    const hasViewer = workspaceRoles.some(r => r.name === '查看者')
+    if (!hasCreator) {
+      const r = await this.prisma.role.create({ data: { workspaceId, name: '创建者', permissions: ['*'], isSystem: true } })
+      workspaceRoles.push(r)
+    }
+    if (!hasViewer) {
+      const r = await this.prisma.role.create({ data: { workspaceId, name: '查看者', permissions: [], isSystem: true } })
+      workspaceRoles.push(r)
+    }
+
     const roleIds = workspaceRoles.map((r) => r.id)
     const memberIds = members.map((m) => m.userId)
 
@@ -88,10 +120,23 @@ export class RbacService {
 
   async listRoles(workspaceId: string) {
     await this.normalizeMemberRoles(workspaceId)
-    return this.prisma.role.findMany({
+    const roles = await this.prisma.role.findMany({
       where: { workspaceId },
       include: { users: true },
     })
+    // 过滤并清理已从权限矩阵中删除的脏权限（如 submission:create）
+    for (const role of roles) {
+      const raw = role.permissions
+      const cleaned = cleanPermissions(raw)
+      if (JSON.stringify(raw) !== JSON.stringify(cleaned)) {
+        await this.prisma.role.update({
+          where: { id: role.id },
+          data: { permissions: cleaned },
+        })
+        role.permissions = cleaned
+      }
+    }
+    return roles
   }
 
   async createRole(workspaceId: string, dto: { name: string; permissions: string[] }) {
@@ -191,9 +236,15 @@ export class RbacService {
     const permissions = new Set<string>()
     for (const ur of userRoles) {
       const perms = (ur.role.permissions as string[]) || []
-      perms.forEach((p) => permissions.add(p))
+      if (perms.includes('*')) {
+        return ['*']
+      } else {
+        perms.forEach((p) => { if (KNOWN_PERMISSIONS.has(p)) permissions.add(p) })
+      }
     }
-    return Array.from(permissions)
+    return Array.from(permissions).sort(
+      (a, b) => (PERMISSION_ORDER.get(a) ?? 999) - (PERMISSION_ORDER.get(b) ?? 999),
+    )
   }
 
   /** 获取工作空间权限矩阵（所有角色 × 所有权限点） */
@@ -204,6 +255,11 @@ export class RbacService {
       include: { users: { include: { user: { select: { id: true, email: true, nickname: true } } } } },
     })
 
+    // 过滤已从权限矩阵中删除的脏权限
+    for (const role of roles) {
+      role.permissions = cleanPermissions(role.permissions)
+    }
+
     // 预定义的所有权限点（与审计日志操作对齐）
     const allPermissions = [
       { key: 'form:create', label: '新建表单', group: '表单' },
@@ -213,6 +269,7 @@ export class RbacService {
       { key: 'form:copy', label: '复制表单', group: '表单' },
       { key: 'form:delete', label: '删除表单', group: '表单' },
       { key: 'submission:view', label: '查看表单数据', group: '数据' },
+      { key: 'submission:edit', label: '编辑表单数据', group: '数据' },
       { key: 'submission:delete', label: '删除表单数据', group: '数据' },
       { key: 'submission:export', label: '导出表单数据', group: '数据' },
       { key: 'analytics:view', label: '查看数据分析', group: '数据' },
@@ -222,10 +279,13 @@ export class RbacService {
       { key: 'workflow:manage', label: '新建流程', group: '流程' },
       { key: 'workflow:edit', label: '修改流程', group: '流程' },
       { key: 'workflow:delete', label: '删除流程', group: '流程' },
+      { key: 'workflow:start', label: '启动流程', group: '流程' },
+      { key: 'workflow:withdraw', label: '撤回流程', group: '流程' },
+      { key: 'workflow:remove', label: '删除实例', group: '流程' },
       { key: 'task:approve', label: '通过审批', group: '任务' },
       { key: 'task:reject', label: '驳回审批', group: '任务' },
       { key: 'task:transfer', label: '转交审批', group: '任务' },
-      { key: 'member:invite', label: '添加成员', group: '成员' },
+      { key: 'member:invite', label: '邀请成员', group: '成员' },
       { key: 'member:role', label: '修改成员角色', group: '成员' },
       { key: 'member:remove', label: '移除成员', group: '成员' },
       { key: 'role:create', label: '新建角色', group: '角色' },
@@ -233,6 +293,9 @@ export class RbacService {
       { key: 'role:delete', label: '删除角色', group: '角色' },
       { key: 'audit:view', label: '查看审计日志', group: '日志' },
       { key: 'audit:export', label: '导出审计日志', group: '日志' },
+      { key: 'audit:cleanup', label: '清理审计日志', group: '日志' },
+      { key: 'webhook:manage', label: '管理 Webhook', group: '集成' },
+      { key: 'upload:manage', label: '管理文件', group: '集成' },
     ]
 
     return { roles, allPermissions }
@@ -259,7 +322,7 @@ export class RbacService {
       {
         name: 'workflow_admin',
         label: '流程管理员',
-        permissions: ['workflow:approve', 'workflow:manage'],
+        permissions: ['task:approve', 'task:reject', 'workflow:manage'],
       },
     ]
   }

@@ -60,9 +60,9 @@ export interface FieldSchema {
   /** 条件显隐 */
   hidden?: FieldVisibility
   /** 控件特定属性 */
-  props: Record<string, any>
+  props: Record<string, unknown>
   /** 默认值 */
-  defaultValue?: any
+  defaultValue?: unknown
   /** 校验规则 */
   rules?: ValidationRule[]
   /** 联动规则 */
@@ -84,30 +84,17 @@ export type FieldType =
   | 'radio'
   | 'checkbox'
   | 'date-picker'
-  | 'time-picker'
-  | 'date-time-picker'
   | 'switch'
   | 'rate'
   | 'slider'
-  | 'color-picker'
   // 高级控件
   | 'upload'
   | 'rich-text'
   | 'cascader'
-  | 'tree-select'
-  | 'user-picker'
-  | 'sub-form'
-  | 'lookup'
-  | 'location'
-  | 'signature'
-  | 'barcode'
   // 布局容器
   | 'card'
   | 'collapse'
-  | 'tabs'
   | 'divider'
-  // 扩展
-  | 'custom'
 
 // ==================== 条件显隐 ====================
 export interface FieldVisibility {
@@ -137,7 +124,7 @@ export interface LinkageRule {
 }
 
 export type LinkageAction =
-  | { type: 'setValue'; value: any }
+  | { type: 'setValue'; value: unknown }
   | { type: 'setProps'; props: Record<string, any> }
   | { type: 'setOptions'; options: SelectOption[] }
   | { type: 'setRequired'; required: boolean }
@@ -157,7 +144,7 @@ export interface ValidationRule {
     | 'url'
     | 'custom'
     | 'async'
-  value?: any
+  value?: unknown
   message: string
   /** 自定义校验函数标识（注册在全局校验器） */
   validator?: string
@@ -206,7 +193,7 @@ export interface FormSubmissionMeta {
   ip?: string
   userAgent?: string
   duration?: number
-  [key: string]: any
+  [key: string]: unknown
 }
 
 // ==================== API 响应 ====================

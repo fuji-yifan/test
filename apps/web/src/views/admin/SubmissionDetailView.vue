@@ -86,7 +86,7 @@ import { useRoute } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import http from '@/api/client'
 import type { FormSchema, FieldSchema } from '@furmx/sdk'
-import { isLayoutField } from '@furmx/sdk'
+
 import FormField from '@/views/renderer/components/FormField.vue'
 
 const route = useRoute()

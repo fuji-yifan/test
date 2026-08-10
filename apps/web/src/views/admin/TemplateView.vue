@@ -10,12 +10,7 @@
           clearable
           @change="fetchList"
         />
-        <el-button
-          type="primary"
-          @click="openCreate"
-        >
-          创建模板
-        </el-button>
+        <el-button type="primary" @click="openCreate">创建模板</el-button>
       </div>
     </div>
 
@@ -116,7 +111,7 @@
     <el-dialog
       v-model="previewVisible"
       title="模板预览"
-      width="750px"
+      width="960px"
     >
       <template v-if="previewTpl">
         <el-descriptions
@@ -141,7 +136,7 @@
           表单预览
         </h4>
         <div class="form-preview-box">
-          <FormPreview :schema="previewTpl.schema" />
+          <PreviewPanel :schema="previewTpl.schema" hide-actions hide-title />
         </div>
       </template>
     </el-dialog>
@@ -214,7 +209,6 @@
               :value="f.id"
             >
               <span>{{ f.name }}</span>
-              <span style="color:#999;float:right;font-size:12px">{{ f.publishedVersion ? 'v' + f.publishedVersion : '' }}</span>
             </el-option>
           </el-select>
         </el-form-item>
@@ -224,7 +218,7 @@
           label="表单预览"
         >
           <div class="form-preview-box">
-            <FormPreview :schema="previewSchema" />
+            <PreviewPanel :schema="previewSchema" hide-actions hide-title />
           </div>
           <div
             v-if="editingId"
@@ -257,35 +251,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch, computed, h } from 'vue'
+import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '@/api/client'
-import FormField from '@/views/renderer/components/FormField.vue'
-
-// ---- 表单预览组件（使用真实 FormField，与 PublicFormView 一致） ----
-const FormPreview = {
-  name: 'FormPreview',
-  props: { schema: { type: Object, default: () => ({ fields: [], settings: {} }) } },
-  setup(props: { schema: any }) {
-    const canvasCols = computed(() => (props.schema as any)?.settings?.canvasCols || 24)
-    const gridStyle = computed(() => ({
-      display: 'grid',
-      gridTemplateColumns: `repeat(${canvasCols.value}, 1fr)`,
-      gap: '12px',
-    }))
-    return () => {
-      const s = props.schema as any
-      if (!s?.fields?.length) return h('el-empty', { description: '无表单字段' })
-      return h('div', { style: gridStyle.value },
-        s.fields.map((f: any) =>
-          h(FormField, { field: f, schemaSettings: s.settings || {}, maxCols: canvasCols.value, modelValue: '', key: f.id })
-        )
-      )
-    }
-  },
-}
-
+import PreviewPanel from '@/components/PreviewPanel.vue'
 const CATEGORIES = ['人事', '财务', '行政', '销售', '运营', '项目']
 
 const route = useRoute()
@@ -380,6 +350,7 @@ async function doSave() {
       category: form.category || undefined,
       tags: form.tags,
       schema: previewSchema.value || {},
+      workspaceId: wsId.value,
     }
     if (editingId.value) {
       await http.patch(`/templates/${editingId.value}`, body)

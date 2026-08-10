@@ -7,18 +7,6 @@
       {{ title }}
     </h2>
 
-    <!-- 兼容性警告 -->
-    <el-alert
-      v-if="warnings.length > 0"
-      type="warning"
-      :closable="true"
-      class="compat-warning"
-    >
-      <template #title>
-        该表单旧版本数据已适配当前版本，部分字段可能使用默认值
-      </template>
-    </el-alert>
-
     <el-form
       ref="formRef"
       :model="formData"

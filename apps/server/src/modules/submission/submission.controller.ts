@@ -3,6 +3,7 @@ import { Response } from 'express'
 import { JwtService } from '@nestjs/jwt'
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger'
 import { SubmissionService } from './submission.service'
+import { AuditService } from '../audit/audit.service'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { PermissionGuard, RequiredPermission } from '../../common/guards/permission.guard'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
@@ -10,13 +11,16 @@ import { Public } from '../../common/decorators/public.decorator'
 import { FieldACLInterceptor } from '../../common/interceptors/field-acl.interceptor'
 import { RowLevelInterceptor } from '../../common/interceptors/row-level.interceptor'
 import { getRequestContext } from '../../common/request-context'
+import { PrismaClient } from '@prisma/client'
 
 @ApiTags('Submissions')
 @Controller()
 export class SubmissionController {
   constructor(
     private submissionService: SubmissionService,
+    private auditService: AuditService,
     private jwtService: JwtService,
+    private prisma: PrismaClient,
   ) {}
 
   @Public()
@@ -76,8 +80,23 @@ export class SubmissionController {
   async exportData(
     @Param('formId') formId: string,
     @Query('format') format: 'csv' | 'excel',
+    @CurrentUser('userId') userId: string,
     @Res() res: Response,
   ) {
+    // 记录审计日志
+    try {
+      const form = await this.prisma.form.findUnique({ where: { id: formId }, select: { name: true, workspaceId: true } })
+      if (form) {
+        await this.auditService.log({
+          workspaceId: form.workspaceId,
+          userId,
+          action: '导出表单数据',
+          resourceType: 'Form',
+          resourceId: formId,
+          details: { formName: form.name, format },
+        })
+      }
+    } catch { /* 审计记录失败不阻断导出 */ }
     const result = await this.submissionService.exportSubmissions(formId, format || 'csv')
     res.setHeader('Content-Type', result.contentType)
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(result.filename)}`)

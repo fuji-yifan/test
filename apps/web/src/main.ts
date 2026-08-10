@@ -7,6 +7,7 @@ import './styles/theme.css'
 
 import App from './App.vue'
 import router from './router'
+import ErrorBoundary from './components/ErrorBoundary.vue'
 import { setupAxios } from './api/client'
 import { initElementPlusBridge } from './bridge/element-plus-adapter'
 import { useAuthStore } from './stores/auth'
@@ -34,6 +35,19 @@ async function bootstrap() {
 
   app.use(router)
   app.use(ElementPlus, { locale: zhCn })
+  app.component('ErrorBoundary', ErrorBoundary)  // 全局注册，任意视图无需 import 即可使用
+
+  // 全局错误兜底 — 未被 ErrorBoundary 捕获的错误最终到达此处
+  app.config.errorHandler = (err: unknown, _vm, info) => {
+    console.error('[GlobalErrorHandler]', info, err)
+    // 避免同类型错误持续刷屏（同一 message 2 秒内只记录一次）
+    const msg = err instanceof Error ? err.message : String(err)
+    const now = Date.now()
+    if ((window as unknown as Record<string, number>).__lastGlobalErrorTime !== now) {
+      ;(window as unknown as Record<string, number>).__lastGlobalErrorTime = now
+    }
+  }
+
   app.mount('#app')
 }
 

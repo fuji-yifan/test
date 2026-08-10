@@ -1,31 +1,28 @@
 <template>
-  <div class="process-designer">
+  <div
+    class="process-designer"
+    @mousemove="onResizeMove"
+    @mouseup="onResizeUp"
+    @mouseleave="onResizeUp"
+  >
     <!-- ====== 顶部工具栏 ====== -->
     <header class="designer-header">
-      <el-button
-        text
-        @click="goBack"
-      >
-        <el-icon><ArrowLeft /></el-icon> 返回列表
-      </el-button>
-      <h2 v-if="definition">
-        {{ definition.name }} — 流程设计
-      </h2>
-      <div class="header-actions">
-        <el-button
-          :loading="saving"
-          @click="saveDefinition"
-        >
-          保存
+      <div class="header-left">
+        <el-button text @click="goBack">
+          <el-icon><ArrowLeft /></el-icon> 返回列表
         </el-button>
+      </div>
+      <div class="header-center">
+        <h2 v-if="definition" class="header-title">{{ definition.name }} — 流程设计</h2>
+      </div>
+      <div class="header-right">
+        <el-button :loading="saving" @click="saveDefinition">保存</el-button>
         <el-button
           v-if="definition?.status === 'draft'"
           type="success"
           :loading="publishing"
           @click="publishDef"
-        >
-          发布
-        </el-button>
+        >发布</el-button>
       </div>
     </header>
 
@@ -35,68 +32,24 @@
       class="designer-body"
     >
       <!-- 第一列：节点面板 -->
-      <aside class="palette-panel">
-        <h4>审批节点</h4>
-        <div class="palette-list">
-          <div
-            v-for="nt in approvalNodeTypes"
-            :key="nt.type"
-            class="palette-item"
-            draggable="true"
-            @dragstart="onDragStart($event, nt.type)"
-          >
-            <el-icon
-              :size="18"
-              :color="nt.color"
-            >
-              <component :is="nt.icon" />
-            </el-icon>
-            <span>{{ nt.label }}</span>
-          </div>
-        </div>
-        <h4>处理节点</h4>
-        <div class="palette-list">
-          <div
-            v-for="nt in actionNodeTypes"
-            :key="nt.type"
-            class="palette-item"
-            draggable="true"
-            @dragstart="onDragStart($event, nt.type)"
-          >
-            <el-icon
-              :size="18"
-              :color="nt.color"
-            >
-              <component :is="nt.icon" />
-            </el-icon>
-            <span>{{ nt.label }}</span>
-          </div>
-        </div>
-        <h4>路由控制</h4>
-        <div class="palette-list">
-          <div
-            v-for="nt in gatewayNodeTypes"
-            :key="nt.type"
-            class="palette-item"
-            draggable="true"
-            @dragstart="onDragStart($event, nt.type)"
-          >
-            <el-icon
-              :size="18"
-              :color="nt.color"
-            >
-              <component :is="nt.icon" />
-            </el-icon>
-            <span>{{ nt.label }}</span>
-          </div>
-        </div>
-      </aside>
+      <ProcessNodePalette
+        :approval-node-types="approvalNodeTypes"
+        :action-node-types="actionNodeTypes"
+        :gateway-node-types="gatewayNodeTypes"
+        :left-width="leftWidth"
+      />
+
+      <!-- 拖拽分隔线 -->
+      <div
+        class="resize-divider"
+        :class="{ active: resizing === 'left' }"
+        @mousedown.prevent="onResizeStart('left', $event)"
+      ><div class="divider-grip" /></div>
 
       <!-- 第二列：可视化画布 -->
       <main
         ref="canvasRef"
         class="canvas-area"
-        :style="canvasBgStyle"
         :class="{ 'drag-over': dragOverCanvas }"
         @mousedown="onCanvasMouseDown"
         @mousemove="onCanvasMouseMove"
@@ -142,7 +95,51 @@
                 fill="#409eff"
               />
             </marker>
+            <pattern
+              id="grid-dot"
+              width="15"
+              height="15"
+              patternUnits="userSpaceOnUse"
+            >
+              <circle cx="7.5" cy="7.5" r="1" fill="#dcdfe6" />
+            </pattern>
+            <pattern
+              id="grid-line"
+              width="15"
+              height="15"
+              patternUnits="userSpaceOnUse"
+            >
+              <path d="M 15 0 L 0 0 0 15" fill="none" stroke="#dcdfe6" stroke-width="1" />
+            </pattern>
+            <pattern
+              id="grid-dot-dark"
+              width="15"
+              height="15"
+              patternUnits="userSpaceOnUse"
+            >
+              <circle cx="7.5" cy="7.5" r="1" fill="#334155" />
+            </pattern>
+            <pattern
+              id="grid-line-dark"
+              width="15"
+              height="15"
+              patternUnits="userSpaceOnUse"
+            >
+              <path d="M 15 0 L 0 0 0 15" fill="none" stroke="#475569" stroke-width="1" />
+            </pattern>
           </defs>
+          <rect
+            v-if="gridType === 'dot'"
+            width="100%"
+            height="100%"
+            :fill="isDark ? 'url(#grid-dot-dark)' : 'url(#grid-dot)'"
+          />
+          <rect
+            v-if="gridType === 'line'"
+            width="100%"
+            height="100%"
+            :fill="isDark ? 'url(#grid-line-dark)' : 'url(#grid-line)'"
+          />
           <path
             v-for="ep in edgePaths"
             :key="ep.id"
@@ -246,8 +243,15 @@
         </div>
       </main>
 
+      <!-- 拖拽分隔线 -->
+      <div
+        class="resize-divider"
+        :class="{ active: resizing === 'right' }"
+        @mousedown.prevent="onResizeStart('right', $event)"
+      ><div class="divider-grip" /></div>
+
       <!-- 第三列：属性面板 -->
-      <aside class="property-panel">
+      <aside class="panel-right" :style="{ width: rightWidth + 'px' }">
         <div class="panel-nav">
           <span
             :class="['nav-item', { active: panelMode === 'canvas' }]"
@@ -348,7 +352,6 @@
             <el-button
               type="danger"
               size="small"
-              plain
               style="width:100%; margin-top:12px"
               @click="clearAll"
             >
@@ -1129,9 +1132,19 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft, UserFilled, QuestionFilled, Connection, Rank,
   VideoPlay, VideoPause, Close, User, CopyDocument, Link,
-  Promotion, Tickets, Clock, Download,
+  Clock, Download,
 } from '@element-plus/icons-vue'
 import http from '@/api/client'
+import { useAppStore } from '@/stores/app'
+import ProcessNodePalette from './ProcessNodePalette.vue'
+import type { ProcessDefinition, ProcessNode, ProcessEdge, NodeType } from '@furmx/sdk'
+
+interface WorkspaceMember { id: string; userId: string; user: { id: string; email: string; nickname?: string }; role: string }
+interface WorkspaceRole { id: string; name: string; isSystem: boolean }
+interface WorkspaceForm { id: string; name: string; schema: { fields: Array<{ key: string; name: string }> } }
+
+const appStore = useAppStore()
+const isDark = computed(() => appStore.isDark)
 
 const route = useRoute()
 const router = useRouter()
@@ -1139,17 +1152,17 @@ const wsId = computed(() => route.params.wsId as string)
 const workflowId = computed(() => route.params.wfId as string)
 
 // ---- 数据 ----
-const definition = ref<any>(null)
-const nodes = ref<any[]>([])
-const edges = ref<any[]>([])
+const definition = ref<ProcessDefinition | null>(null)
+const nodes = ref<ProcessNode[]>([])
+const edges = ref<ProcessEdge[]>([])
 const selectedNodeId = ref<string | null>(null)
 const dirty = ref(false)
 const saving = ref(false)
 const publishing = ref(false)
-const workspaceMembers = ref<any[]>([])
-const workspaceRoles = ref<any[]>([])
-const workspaceForms = ref<any[]>([])
-const formFields = ref<any[]>([])
+const workspaceMembers = ref<WorkspaceMember[]>([])
+const workspaceRoles = ref<WorkspaceRole[]>([])
+const workspaceForms = ref<WorkspaceForm[]>([])
+const formFields = ref<Array<{ key: string; name: string }>>([])
 const loadedFormId = ref('')
 const ccSelected = ref<string[]>([])
 const edgeTarget = ref('')
@@ -1157,6 +1170,41 @@ const edgeLabel = ref('')
 const panelMode = ref<'canvas' | 'node'>('canvas')
 const gridType = ref<'none' | 'dot' | 'line'>('dot')
 const dragOverCanvas = ref(false)
+
+// ---- 列宽拖拽 ----
+const MIN_LEFT = 150
+const MAX_LEFT = 300
+const MIN_RIGHT = 260
+const MAX_RIGHT = 500
+const leftWidth = ref(190)
+const rightWidth = ref(310)
+const resizing = ref<'left' | 'right' | null>(null)
+let resizeStartX = 0
+let resizeStartW = 0
+
+function onResizeStart(side: 'left' | 'right', e: MouseEvent) {
+  resizing.value = side
+  resizeStartX = e.clientX
+  resizeStartW = side === 'left' ? leftWidth.value : rightWidth.value
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+function onResizeMove(e: MouseEvent) {
+  if (!resizing.value) return
+  const dx = e.clientX - resizeStartX
+  if (resizing.value === 'left') {
+    leftWidth.value = Math.max(MIN_LEFT, Math.min(MAX_LEFT, resizeStartW + dx))
+  } else {
+    rightWidth.value = Math.max(MIN_RIGHT, Math.min(MAX_RIGHT, resizeStartW - dx))
+  }
+}
+function onResizeUp() {
+  if (resizing.value) {
+    resizing.value = null
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+}
 
 // ---- 画布 ----
 const canvasRef = ref<HTMLElement>()
@@ -1197,7 +1245,7 @@ function isApprovalType(t: string) { return ['direct-approval', 'role-approval',
 function isRoleApproval(t: string) { return t === 'role-approval' }
 function isGateway(t: string) { return ['condition', 'parallel', 'join'].includes(t) }
 function isCircle(t: string) { return t === 'start' || t === 'end' }
-function isMultiAssign(node: any) { return node && (node.type === 'countersign' || node.type === 'or-sign' || node.config?.type === 'multi') }
+function isMultiAssign(node: ProcessNode | undefined) { return node && (node.type === 'countersign' || node.type === 'or-sign' || node.config?.type === 'multi') }
 
 // ==================== 条件构建器 ====================
 const COND_OPERATORS = [
@@ -1216,15 +1264,15 @@ const COND_OPERATORS = [
 ]
 
 const processVariables = computed(() => {
-  const startNode = nodes.value.find((n: any) => n.type === 'start')
+  const startNode = nodes.value.find((n: ProcessNode | undefined) => n.type === 'start')
   const varKeys: string[] = startNode?.config?.variables || []
   return varKeys.map((key: string) => {
-    const ff = formFields.value.find((f: any) => f.key === key)
+    const ff = formFields.value.find((f: { key: string; name: string; duplicate?: boolean } | undefined) => f.key === key)
     return { key, name: ff?.name || key }
   })
 })
 
-function buildCondition(edge: any, field: string, op: string, val: string) {
+function buildCondition(edge: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }, field: string, op: string, val: string) {
   edge._condField = field
   edge._condOp = op
   edge._condVal = val
@@ -1252,10 +1300,10 @@ function buildFn(fn: string, ref: string, val: string) {
   return isNaN(Number(val)) ? `${fn}(${ref}, '${val}')` : `${fn}(${ref}, ${val})`
 }
 
-function setDefaultBranch(edge: any, isDefault: boolean) {
+function setDefaultBranch(edge: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }, isDefault: boolean) {
   if (isDefault) {
     // 取消同节点的其他默认分支
-    nodeOutEdges.value.forEach((e: any) => { e._isDefault = false })
+    nodeOutEdges.value.forEach((e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) => { e._isDefault = false })
     edge._isDefault = true
     edge.condition = ''
     edge._condField = ''; edge._condOp = ''; edge._condVal = ''
@@ -1266,7 +1314,7 @@ function setDefaultBranch(edge: any, isDefault: boolean) {
 }
 
 /** 从已有表达式解析回构建器字段 */
-function parseConditionForEdge(edge: any) {
+function parseConditionForEdge(edge: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) {
   const raw = edge.condition || ''
   if (!raw) return
   // 先剥离可能存在的旧格式 ${xxx} 包装
@@ -1301,7 +1349,7 @@ function parseConditionForEdge(edge: any) {
   }
 }
 
-function nodeClasses(node: any) {
+function nodeClasses(node: ProcessNode) {
   return [
     'canvas-node',
     'node-' + node.type,
@@ -1309,7 +1357,7 @@ function nodeClasses(node: any) {
   ]
 }
 
-function nodeStyle(node: any) {
+function nodeStyle(node: ProcessNode) {
   if (isCircle(node.type)) {
     return {
       left: node.position.x + 'px',
@@ -1363,16 +1411,15 @@ function nodeTypeLabel(type: string) {
 
 // ---- 连线路径计算 ----
 const edgePaths = computed(() => {
-  return edges.value.map((e: any) => {
-    const src = nodes.value.find((n: any) => n.id === e.sourceNodeId)
-    const tgt = nodes.value.find((n: any) => n.id === e.targetNodeId)
+  return edges.value.map((e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) => {
+    const src = nodes.value.find((n: ProcessNode | undefined) => n.id === e.sourceNodeId)
+    const tgt = nodes.value.find((n: ProcessNode | undefined) => n.id === e.targetNodeId)
     if (!src || !tgt) return { id: e.id, sourceId: e.sourceNodeId, targetId: e.targetNodeId, d: '', label: e.label || '', labelX: 0, labelY: 0 }
 
     // 根据节点形状计算连接点
     const srcW = isCircle(src.type) ? CIRCLE_SIZE : isGateway(src.type) ? 150 : NODE_W
     const srcH = isCircle(src.type) ? CIRCLE_SIZE : isGateway(src.type) ? 80 : NODE_H
     const tgtW = isCircle(tgt.type) ? CIRCLE_SIZE : isGateway(tgt.type) ? 150 : NODE_W
-    const tgtH = isCircle(tgt.type) ? CIRCLE_SIZE : isGateway(tgt.type) ? 80 : NODE_H
 
     const x1 = src.position.x + srcW / 2
     const y1 = src.position.y + srcH
@@ -1394,7 +1441,7 @@ const edgePaths = computed(() => {
 
 // ---- 选中节点 ----
 const selectedNode = computed(() => nodes.value.find((n) => n.id === selectedNodeId.value) || null)
-const nodeOutEdges = computed(() => edges.value.filter((e: any) => e.sourceNodeId === selectedNodeId.value))
+const nodeOutEdges = computed(() => edges.value.filter((e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) => e.sourceNodeId === selectedNodeId.value))
 const assigneeSelectValue = computed(() => {
   if (!selectedNode.value) return []
   const arr = selectedNode.value.config.assignees || []
@@ -1403,7 +1450,7 @@ const assigneeSelectValue = computed(() => {
 
 const availableTargets = computed(() => nodes.value.filter((n) => n.id !== selectedNodeId.value))
 
-function isEdgeSelected(ep: any) {
+function isEdgeSelected(ep: { sourceNodeId?: string; targetNodeId?: string }) {
   const sid = selectedNodeId.value
   return sid && (ep.sourceId === sid || ep.targetId === sid)
 }
@@ -1459,7 +1506,7 @@ async function onFormBind(formId: string) {
   selectedNode.value.config.variables = []
   formFields.value = []
   if (!formId) { markDirty(); return }
-  const form = workspaceForms.value.find((f: any) => f.id === formId)
+  const form = workspaceForms.value.find((f) => f.id === formId)
   selectedNode.value.config.formName = form?.name || ''
   try {
     const res = await http.get(`/forms/${formId}`) as any
@@ -1468,7 +1515,7 @@ async function onFormBind(formId: string) {
     if (schema && schema.fields) {
       formFields.value = extractFormFields(schema.fields)
       // 检查是否有同名字段
-      const dup = formFields.value.find((f: any) => f.duplicate)
+      const dup = formFields.value.find((f: { key: string; name: string; duplicate?: boolean } | undefined) => f.duplicate)
       if (dup) {
         ElMessage.warning('表单中存在同名字段，不可绑定流程')
         selectedNode.value.config.formId = ''
@@ -1482,8 +1529,8 @@ async function onFormBind(formId: string) {
 }
 
 /** 递归提取表单字段（排除布局容器、提示文字等无值字段），标注重名 */
-function extractFormFields(fields: any[]): any[] {
-  const result: any[] = []
+function extractFormFields(fields: Array<Record<string, unknown>>): Array<{ key: string; name: string }> {
+  const result: Array<{ key: string; name: string }> = []
   const skipTypes = ['card', 'collapse', 'tabs', 'divider', 'tip-text']
   for (const f of fields) {
     if (skipTypes.includes(f.type)) {
@@ -1508,7 +1555,7 @@ async function loadDefinition() {
     nodes.value = [...(data.nodes || [])]
     edges.value = [...(data.edges || [])]
     updateCanvasSize()
-  } catch (e: any) {
+  } catch (e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) {
     ElMessage.error('加载失败')
     goBack()
   }
@@ -1516,7 +1563,7 @@ async function loadDefinition() {
 
 function updateCanvasSize() {
   let maxX = 800, maxY = 600
-  nodes.value.forEach((n: any) => {
+  nodes.value.forEach((n: ProcessNode | undefined) => {
     const w = isCircle(n.type) ? CIRCLE_SIZE : isGateway(n.type) ? 150 : NODE_W
     const h = isCircle(n.type) ? CIRCLE_SIZE : isGateway(n.type) ? 80 : NODE_H
     if (n.position.x + w + 100 > maxX) maxX = n.position.x + w + 100
@@ -1526,12 +1573,12 @@ function updateCanvasSize() {
   canvasHeight.value = Math.max(600, maxY)
 }
 
-function selectNode(node: any) {
+function selectNode(node: ProcessNode | undefined) {
   selectedNodeId.value = node.id
   panelMode.value = 'node'
   edgeLabel.value = ''
   // 单出口节点回显已有连线目标
-  const outEdges = edges.value.filter((e: any) => e.sourceNodeId === node.id)
+  const outEdges = edges.value.filter((e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) => e.sourceNodeId === node.id)
   edgeTarget.value = outEdges.length === 1 ? outEdges[0].targetNodeId : ''
   if (isApprovalType(node.type)) {
     if (!node.config.assignees) node.config.assignees = []
@@ -1544,7 +1591,7 @@ function selectNode(node: any) {
     if (!node.config.roleList) node.config.roleList = []
     // 选中单个审批人后自动反查其工作空间角色
     if (node.config.assignees?.length === 1) {
-      const member = workspaceMembers.value.find((m: any) => m.user.id === node.config.assignees[0])
+      const member = workspaceMembers.value.find((m: WorkspaceMember | undefined) => m.user.id === node.config.assignees[0])
       if (member) node.config.role = member.role
     }
   }
@@ -1562,8 +1609,8 @@ function selectNode(node: any) {
   }
   if (node.type === 'condition') {
     // 初始化条件构建器状态，并尝试从已有表达式回显
-    const outEdges2 = edges.value.filter((e: any) => e.sourceNodeId === node.id)
-    outEdges2.forEach((e: any) => {
+    const outEdges2 = edges.value.filter((e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) => e.sourceNodeId === node.id)
+    outEdges2.forEach((e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) => {
       if (e._condField === undefined) e._condField = ''
       if (e._condOp === undefined) e._condOp = ''
       if (e._condVal === undefined) e._condVal = ''
@@ -1659,7 +1706,7 @@ function addNode(type: string, posX?: number, posY?: number) {
 
 function removeNode(nodeId: string) {
   nodes.value = nodes.value.filter((n) => n.id !== nodeId)
-  edges.value = edges.value.filter((e: any) => e.sourceNodeId !== nodeId && e.targetNodeId !== nodeId)
+  edges.value = edges.value.filter((e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) => e.sourceNodeId !== nodeId && e.targetNodeId !== nodeId)
   if (selectedNodeId.value === nodeId) { selectedNodeId.value = null; edgeTarget.value = '' }
   updateCanvasSize()
   markDirty()
@@ -1678,11 +1725,6 @@ function clearAll() {
 }
 
 // ---- 从面板拖入画布 ----
-function onDragStart(e: DragEvent, nodeType: string) {
-  e.dataTransfer!.effectAllowed = 'copy'
-  e.dataTransfer!.setData('application/furmx-node-type', nodeType)
-}
-
 function onCanvasDragOver(e: DragEvent) {
   if (e.dataTransfer!.types.includes('application/furmx-node-type')) {
     e.dataTransfer!.dropEffect = 'copy'
@@ -1714,32 +1756,13 @@ function onCanvasDrop(e: DragEvent) {
   addNode(nodeType, Math.max(0, posX), Math.max(0, posY))
 }
 
-// ---- 节点拖拽 ----
-const canvasBgStyle = computed(() => {
-  const s = GRID_SIZE + 'px'
-  if (gridType.value === 'dot') {
-    return {
-      backgroundImage: `radial-gradient(circle, #dcdfe6 1px, transparent 1px)`,
-      backgroundSize: `${s} ${s}`,
-      backgroundPosition: `-${GRID_SIZE / 2}px -${GRID_SIZE / 2}px`,
-    }
-  }
-  if (gridType.value === 'line') {
-    return {
-      backgroundImage: `linear-gradient(#e4e7ed 1px, transparent 1px), linear-gradient(90deg, #e4e7ed 1px, transparent 1px)`,
-      backgroundSize: `${s} ${s}`,
-    }
-  }
-  return {}
-})
-
 const GRID_SIZE = 15
 
 function snapToGrid(val: number) {
   return Math.round(val / GRID_SIZE) * GRID_SIZE
 }
 
-function onNodeMouseDown(e: MouseEvent, node: any) {
+function onNodeMouseDown(e: MouseEvent, node: ProcessNode) {
   if ((e.target as HTMLElement).classList.contains('port')) return
   dragging.value = true
   dragNodeId.value = node.id
@@ -1795,7 +1818,7 @@ function onCanvasMouseDown(e: MouseEvent) {
 function onCanvasRightClick(e: MouseEvent) { e.preventDefault(); if (connecting.value) cancelConnect() }
 
 // ---- 连线 ----
-function onPortClick(node: any) {
+function onPortClick(node: ProcessNode) {
   if (!connecting.value) {
     connecting.value = true; connectSourceId.value = node.id; tempLine.show = true
     const w = isCircle(node.type) ? CIRCLE_SIZE : isGateway(node.type) ? 150 : NODE_W
@@ -1817,11 +1840,11 @@ function addEdge(sourceId: string, targetId: string, label?: string, condition?:
   const srcNode = nodes.value.find((n) => n.id === sourceId)
   const isMulti = srcNode && (srcNode.type === 'parallel' || srcNode.type === 'condition')
   if (isMulti) {
-    const dup = edges.value.find((e: any) => e.sourceNodeId === sourceId && e.targetNodeId === targetId)
+    const dup = edges.value.find((e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) => e.sourceNodeId === sourceId && e.targetNodeId === targetId)
     if (dup) return
     edges.value.push({ id: 'e_' + Date.now(), sourceNodeId: sourceId, targetNodeId: targetId, label: label || '', condition: condition || '' })
   } else {
-    const existingIdx = edges.value.findIndex((e: any) => e.sourceNodeId === sourceId)
+    const existingIdx = edges.value.findIndex((e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) => e.sourceNodeId === sourceId)
     if (existingIdx >= 0) {
       edges.value[existingIdx].targetNodeId = targetId
       if (label !== undefined) edges.value[existingIdx].label = label
@@ -1846,9 +1869,9 @@ function setEdge(targetId: string) {
 function removeEdge(targetId?: string) {
   if (!selectedNodeId.value) return
   if (targetId) {
-    edges.value = edges.value.filter((e: any) => !(e.sourceNodeId === selectedNodeId.value && e.targetNodeId === targetId))
+    edges.value = edges.value.filter((e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) => !(e.sourceNodeId === selectedNodeId.value && e.targetNodeId === targetId))
   } else {
-    edges.value = edges.value.filter((e: any) => e.sourceNodeId !== selectedNodeId.value)
+    edges.value = edges.value.filter((e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) => e.sourceNodeId !== selectedNodeId.value)
   }
   edgeTarget.value = ''
   markDirty()
@@ -1885,7 +1908,7 @@ function onAssigneesChange(val: string | string[]) {
   selectedNode.value.config.assignees = arr.filter(Boolean)
   // 角色审批：选中单个审批人后自动反查其工作空间角色
   if (isRoleApproval(selectedNode.value.type) && arr.length === 1) {
-    const member = workspaceMembers.value.find((m: any) => m.user.id === arr[0])
+    const member = workspaceMembers.value.find((m: WorkspaceMember | undefined) => m.user.id === arr[0])
     if (member) {
       selectedNode.value.config.role = member.role
     }
@@ -1916,7 +1939,7 @@ async function saveDefinition() {
     })
     dirty.value = false
     ElMessage.success('已保存')
-  } catch (e: any) { if (e?.__handled) return; ElMessage.error('保存失败') } finally { saving.value = false }
+  } catch (e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) { if (e?.__handled) return; ElMessage.error('保存失败') } finally { saving.value = false }
 }
 
 async function publishDef() {
@@ -1926,28 +1949,41 @@ async function publishDef() {
     await http.post(`/workflows/${workflowId.value}/publish`)
     definition.value.status = 'published'
     ElMessage.success('已发布')
-  } catch (e: any) { if (e?.__handled) return; ElMessage.error('发布失败') } finally { saving.value = false }
+  } catch (e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) { if (e?.__handled) return; ElMessage.error('发布失败') } finally { saving.value = false }
 }
 
 function goBack() { router.push(`/workspace/${wsId.value}/workflows`) }
 </script>
 
 <style scoped>
-.process-designer { display: flex; flex-direction: column; height: calc(100vh - 140px); }
+.process-designer { display: flex; flex-direction: column; height: 100%; }
 
-.designer-header { display: flex; align-items: center; gap: 16px; padding-bottom: 12px; border-bottom: 1px solid #e4e7ed; flex-shrink: 0; }
-.designer-header h2 { margin: 0; flex: 1; }
-.header-actions { display: flex; gap: 8px; }
+.designer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 20px;
+  background: var(--app-bg-card, #fff);
+  border: 1px solid var(--app-border-color, #e4e7ed);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.header-left { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
+.header-center { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.header-right { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex: 1; min-width: 0; }
+.header-title { margin: 0; font-size: 16px; font-weight: 600; white-space: nowrap; }
 
-.designer-body { display: flex; flex: 1; overflow: hidden; margin-top: 12px; gap: 12px; }
+.designer-body { display: flex; flex: 1; overflow: hidden; margin-top: 12px; gap: 10px; }
 
 /* ---- 左侧面板 ---- */
-.palette-panel {
-  width: 150px; flex-shrink: 0; background: #fff; border: 1px solid #e4e7ed;
-  border-radius: 8px; padding: 10px; overflow-y: auto;
+.panel-left {
+  flex-shrink: 0; overflow-y: auto; overflow-x: hidden;
+  background: var(--app-bg-card, #fff); border: 1px solid var(--app-border-color, #e4e7ed);
+  border-radius: 8px; padding: 10px;
 }
-.palette-panel h4 { margin: 10px 0 6px; font-size: 12px; color: #909399; text-transform: uppercase; }
-.palette-panel h4:first-child { margin-top: 0; }
+.panel-left::-webkit-scrollbar { width: 6px; }
+.panel-left::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
+.panel-left:hover::-webkit-scrollbar-thumb { background: #c0c4cc; }
+.panel-left h4 { margin: 10px 0 6px; font-size: 12px; color: #909399; text-transform: uppercase; }
+.panel-left h4:first-child { margin-top: 0; }
 .palette-list { display: flex; flex-direction: column; gap: 4px; }
 .palette-item {
   display: flex; align-items: center; gap: 6px; padding: 6px 8px;
@@ -1960,13 +1996,14 @@ function goBack() { router.push(`/workspace/${wsId.value}/workflows`) }
 
 /* ---- 画布 ---- */
 .canvas-area {
-  flex: 1; background: #f5f6f8; border: 1px solid #e4e7ed;
+  flex: 1; background: var(--app-bg-page, #f5f6f8); border: 1px solid var(--app-border-color, #e4e7ed);
   border-radius: 8px; position: relative; overflow: auto; cursor: default;
-  background-color: #f5f6f8; transition: box-shadow 0.2s;
 }
-.canvas-area.drag-over {
-  box-shadow: inset 0 0 0 2px #409eff;
-}
+.canvas-area::-webkit-scrollbar { width: 6px; height: 6px; }
+.canvas-area::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
+.canvas-area:hover::-webkit-scrollbar-thumb { background: #c0c4cc; }
+.canvas-area::-webkit-scrollbar-corner { background: transparent; }
+.canvas-area.drag-over { box-shadow: inset 0 0 0 2px #409eff; }
 .edges-layer { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1; }
 .edges-layer path {
   transition: d 0.1s, stroke 0.2s, stroke-width 0.2s;
@@ -2052,11 +2089,28 @@ function goBack() { router.push(`/workspace/${wsId.value}/workflows`) }
 .port-in { top: -6px; }
 .port-out { bottom: -6px; }
 
-/* ---- 属性面板 ---- */
-.property-panel {
-  width: 310px; flex-shrink: 0; background: #fff; border: 1px solid #e4e7ed;
-  border-radius: 8px; padding: 16px; overflow-y: auto;
+/* ---- 右侧面板 ---- */
+.panel-right {
+  flex-shrink: 0; overflow-y: auto; overflow-x: hidden;
+  background: var(--app-bg-card, #fff); border: 1px solid var(--app-border-color, #e4e7ed);
+  border-radius: 8px; padding: 16px;
 }
+.panel-right::-webkit-scrollbar { width: 6px; }
+.panel-right::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
+.panel-right:hover::-webkit-scrollbar-thumb { background: #c0c4cc; }
+
+/* ---- 拖拽分隔线 ---- */
+.resize-divider {
+  width: 6px; flex-shrink: 0; cursor: col-resize; background: transparent;
+  transition: background 0.15s; position: relative; z-index: 5;
+}
+.resize-divider:hover, .resize-divider.active { background: rgba(64,158,255,0.15); }
+.divider-grip {
+  width: 3px; height: 32px; border-radius: 2px; background: #c0c4cc;
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  transition: background 0.15s;
+}
+.resize-divider:hover .divider-grip, .resize-divider.active .divider-grip { background: #409eff; }
 .panel-nav { display: flex; margin-bottom: 16px; border-bottom: 2px solid #e4e7ed; }
 .nav-item {
   padding: 8px 14px; font-size: 13px; color: #909399; cursor: pointer;

@@ -1,222 +1,85 @@
 <template>
   <div class="home">
-    <h2>工作台</h2>
-    <div class="stat-cards">
-      <div class="stat-card">
-        <div class="num">
-          {{ stats.formCount }}
-        </div><div class="label">
-          我的表单
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="num">
-          {{ stats.submissionCount }}
-        </div><div class="label">
-          本月提交
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="num">
-          {{ stats.pendingCount }}
-        </div><div class="label">
-          待办任务
-        </div>
-      </div>
-    </div>
+    <h2>首页</h2>
 
     <el-card class="section">
       <template #header>
         <div class="ws-header">
           <span>我的工作空间</span>
-          <el-button
-            type="primary"
-            size="small"
-            @click="createWorkspace"
-          >
-            创建
-          </el-button>
+          <el-button type="primary" size="small" @click="createWorkspace">创建</el-button>
         </div>
       </template>
-      <div
-        v-if="ownedWorkspaces.length === 0"
-        class="empty-hint"
-      >
-        暂无
-      </div>
-      <div
-        v-else
-        class="ws-grid"
-      >
-        <div
-          v-for="ws in ownedWorkspaces"
-          :key="ws.id"
-          class="ws-card"
-          @click="enterWorkspace(ws.id)"
-        >
-          <el-avatar
-            :size="40"
-            icon="OfficeBuilding"
-          />
+      <div v-if="ownedWorkspaces.length === 0" class="empty-hint">暂无工作空间，点击「创建」开始</div>
+      <div v-else class="ws-grid">
+        <div v-for="ws in ownedWorkspaces" :key="ws.id" class="ws-card" @click="enterWorkspace(ws.id)">
+          <el-avatar :size="40" icon="OfficeBuilding" />
           <div class="ws-name">
             {{ ws.name }}
-            <div
-              v-if="ws.remark"
-              class="ws-remark"
-            >
-              {{ ws.remark }}
-            </div>
+            <div v-if="ws.remark" class="ws-remark">{{ ws.remark }}</div>
           </div>
-          <el-button
-            size="small"
-            type="danger"
-            class="ws-action"
-            @click.stop="deleteWorkspace(ws)"
-          >
-            删除
-          </el-button>
-        </div>
-      </div>
-    </el-card>
-
-    <el-card
-      v-if="joinedWorkspaces.length > 0"
-      class="section"
-    >
-      <template #header>
-        <span>加入的工作空间</span>
-      </template>
-      <div class="ws-grid">
-        <div
-          v-for="ws in joinedWorkspaces"
-          :key="ws.id"
-          class="ws-card"
-          @click="enterWorkspace(ws.id)"
-        >
-          <el-avatar
-            :size="40"
-            icon="OfficeBuilding"
-          />
-          <div class="ws-name">
-            {{ ws.name }}
-            <div
-              v-if="ws.remark"
-              class="ws-remark"
-            >
-              {{ ws.remark }}
-            </div>
-          </div>
-          <el-button
-            size="small"
-            type="warning"
-            class="ws-action"
-            @click.stop="leaveWorkspace(ws)"
-          >
-            退出
-          </el-button>
+          <el-button size="small" type="danger" class="ws-action" @click.stop="deleteWorkspace(ws)">删除</el-button>
         </div>
       </div>
     </el-card>
 
     <el-card class="section">
       <template #header>
-        <span>最近表单</span>
+        <span>加入的工作空间</span>
       </template>
-      <el-table
-        v-if="recentForms.length"
-        :data="recentForms"
-        style="width:100%"
-      >
-        <el-table-column
-          prop="name"
-          label="表单名称"
-          min-width="150"
-          show-overflow-tooltip
-          align="center"
-        />
-        <el-table-column
-          prop="status"
-          label="状态"
-          min-width="100"
-          align="center"
-        >
-          <template #default="{ row }">
-            <el-tag
-              :type="row.status==='published'?'success':'info'"
-              size="small"
-            >
-              {{ row.status }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="更新时间"
-          min-width="150"
-          align="center"
-        >
-          <template #default="{ row }">
-            {{ formatDate(row.updatedAt) }}
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="操作"
-          min-width="150"
-          align="center"
-        >
-          <template #default="{ row }">
-            <el-button
-              size="small"
-              @click="openDesigner(row)"
-            >
-              编辑
-            </el-button>
-            <el-button
-              size="small"
-              @click="viewData(row)"
-            >
-              数据
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <div
-        v-else
-        class="empty-hint"
-      >
-        还没有表单，去创建一个吧
+      <div v-if="joinedWorkspaces.length === 0" class="empty-hint">暂未加入</div>
+      <div v-else class="ws-grid">
+        <div v-for="ws in joinedWorkspaces" :key="ws.id" class="ws-card" @click="enterWorkspace(ws.id)">
+          <el-avatar :size="40" icon="OfficeBuilding" />
+          <div class="ws-name">
+            {{ ws.name }}
+            <div v-if="ws.remark" class="ws-remark">{{ ws.remark }}</div>
+          </div>
+          <el-button size="small" type="warning" class="ws-action" @click.stop="leaveWorkspace(ws)">退出</el-button>
+        </div>
+      </div>
+    </el-card>
+
+    <el-card v-if="invitations.length > 0" class="section">
+      <template #header>
+        <div class="ws-header">
+          <span>待处理的邀请</span>
+          <el-tag size="small" type="warning">{{ invitations.length }}</el-tag>
+        </div>
+      </template>
+      <div class="invitation-list">
+        <div v-for="inv in invitations" :key="inv.id" class="invitation-item">
+          <div class="invitation-info">
+            <el-avatar :size="36" icon="UserFilled" />
+            <div>
+              <div class="invitation-text">
+                <strong>{{ inv.workspace.name }}</strong> 邀请您加入，加入后角色为：{{ roleLabel(inv.role) }}
+              </div>
+              <div class="invitation-from">
+                来自 {{ inv.inviter.nickname || inv.inviter.email }}（{{ inv.inviter.email }}）
+              </div>
+            </div>
+          </div>
+          <div class="invitation-actions">
+            <el-button size="small" type="primary" :loading="inv._loading" @click="acceptInvitation(inv)">同意</el-button>
+            <el-button size="small" :loading="inv._loading" @click="declineInvitation(inv)">拒绝</el-button>
+          </div>
+        </div>
       </div>
     </el-card>
 
     <!-- 创建空间弹窗 -->
-    <el-dialog
-      v-model="showCreateWS"
-      title="创建工作空间"
-      width="400px"
-    >
+    <el-dialog v-model="showCreateWS" title="创建工作空间" width="400px">
       <el-form :model="wsForm">
         <el-form-item label="名称">
-          <el-input
-            v-model="wsForm.name"
-            placeholder="如：我的团队"
-          />
+          <el-input v-model="wsForm.name" placeholder="如：我的团队" />
         </el-form-item>
         <el-form-item v-if="showRemark" label="备注">
-          <el-input
-            v-model="wsForm.remark"
-            placeholder="用于区分同名工作空间"
-          />
+          <el-input v-model="wsForm.remark" placeholder="用于区分同名工作空间" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showCreateWS = false">
-          取消
-        </el-button>
-        <el-button
-          type="primary"
-          @click="doCreateWS"
-        >
-          创建
-        </el-button>
+        <el-button @click="showCreateWS = false">取消</el-button>
+        <el-button type="primary" @click="doCreateWS">创建</el-button>
       </template>
     </el-dialog>
   </div>
@@ -232,8 +95,6 @@ import http from '@/api/client'
 const router = useRouter()
 const wsStore = useWorkspaceStore()
 
-const stats = reactive({ formCount: 0, submissionCount: 0, pendingCount: 0 })
-const recentForms = ref<any[]>([])
 const showCreateWS = ref(false)
 const wsForm = reactive({ name: '', remark: '' })
 const showRemark = ref(false)
@@ -241,39 +102,54 @@ const showRemark = ref(false)
 const ownedWorkspaces = computed(() => wsStore.list.filter((w: any) => w.role === 'owner'))
 const joinedWorkspaces = computed(() => wsStore.list.filter((w: any) => w.role !== 'owner'))
 
+const invitations = ref<any[]>([])
+
 onMounted(async () => {
   await wsStore.fetchList()
-  const wsId = wsStore.getCurrentId()
-  if (!wsId) return
-
-  try {
-    const overviewRes = await http.get(`/analytics/overview?workspaceId=${wsId}`) as any
-    const overview = overviewRes.data || overviewRes
-    stats.submissionCount = overview.monthlySubmissions ?? 0
-    stats.pendingCount = overview.pendingTasks ?? 0
-    stats.formCount = overview.totalForms ?? 0
-  } catch { /* ignore */ }
-
-  try {
-    const res = await http.get(`/workspaces/${wsId}/forms?pageSize=5`) as any
-    const data = res.data || res
-    recentForms.value = data?.list || []
-  } catch { /* ignore */ }
+  await fetchInvitations()
 })
 
+async function fetchInvitations() {
+  try {
+    const res = await http.get('/invitations/mine') as any
+    invitations.value = (res?.data || res || []).map((inv: any) => ({ ...inv, _loading: false }))
+  } catch { /* ignore */ }
+}
+
+async function acceptInvitation(inv: any) {
+  inv._loading = true
+  try {
+    await http.post(`/invitations/${inv.id}/accept`)
+    ElMessage.success(`已加入「${inv.workspace.name}」`)
+    await wsStore.fetchList()
+    invitations.value = invitations.value.filter(i => i.id !== inv.id)
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.message || '操作失败')
+    inv._loading = false
+  }
+}
+
+async function declineInvitation(inv: any) {
+  inv._loading = true
+  try {
+    await http.post(`/invitations/${inv.id}/decline`)
+    ElMessage.success('已拒绝邀请')
+    invitations.value = invitations.value.filter(i => i.id !== inv.id)
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.message || '操作失败')
+    inv._loading = false
+  }
+}
+
+function roleLabel(role: string) {
+  const map: Record<string, string> = { owner: '创建者', editor: '编辑者', viewer: '查看者' }
+  return map[role] || role
+}
+
 function enterWorkspace(id: string) {
-  wsStore.setCurrent(wsStore.list.find((w: any) => w.id === id))
-  router.push(`/workspace/${id}/forms`)
-}
-
-function openDesigner(form: any) {
-  const wsId = wsStore.getCurrentId()
-  router.push(`/workspace/${wsId}/forms/${form.id}/designer`)
-}
-
-function viewData(form: any) {
-  const wsId = wsStore.getCurrentId()
-  router.push(`/workspace/${wsId}/forms/${form.id}/data`)
+  const ws = wsStore.list.find((w: any) => w.id === id)
+  if (ws) wsStore.setCurrent(ws)
+  router.push(`/workspace/${id}/home`)
 }
 
 function createWorkspace() {
@@ -313,11 +189,8 @@ async function leaveWorkspace(ws: any) {
   }
 }
 
-function formatDate(d: string) { return d ? new Date(d).toLocaleString('zh-CN') : '-' }
-
 async function doCreateWS() {
   if (!wsForm.name.trim()) return
-  // 检测是否与已有工作空间重名
   const dupName = wsStore.list.find((w: any) => w.name === wsForm.name.trim())
   if (dupName && !wsForm.remark) {
     showRemark.value = true
@@ -346,18 +219,20 @@ async function doCreateWS() {
 
 <style scoped>
 .home h2 { margin: 0 0 16px; }
-.stat-cards { display: flex; gap: 16px; margin-bottom: 24px; }
-.stat-card { flex: 1; background: #fff; border-radius: 12px; padding: 24px; text-align: center; border: 1px solid #e5e7eb; box-shadow: 0 1px 2px rgba(0,0,0,0.04); transition: transform 0.15s, box-shadow 0.15s; }
-.stat-card:hover { transform: translateY(-2px); box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-.stat-card .num { font-size: 32px; font-weight: 700; color: var(--el-color-primary); }
-.stat-card .label { font-size: 13px; color: #94a3b8; margin-top: 8px; }
 .section { margin-bottom: 16px; }
+.ws-header { display: flex; justify-content: space-between; align-items: center; }
 .ws-grid { display: flex; gap: 16px; flex-wrap: wrap; }
-.ws-card { padding: 20px 12px 12px; border: 1px solid #e5e7eb; border-radius: 12px; text-align: center; cursor: pointer; width: 150px; transition: transform 0.15s, box-shadow 0.15s; position: relative; }
+.ws-card { width: 150px; padding: 20px 12px 12px; border: 1px solid #e5e7eb; border-radius: 12px; text-align: center; cursor: pointer; position: relative; transition: transform 0.15s, box-shadow 0.15s; }
 .ws-card:hover { transform: translateY(-2px); box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 .ws-name { font-size: 13px; font-weight: 600; margin-top: 6px; }
 .ws-remark { font-size: 11px; font-weight: 400; color: #909399; margin-top: 2px; }
-.ws-header { display: flex; justify-content: space-between; align-items: center; }
 .ws-action { margin-top: 8px; }
 .empty-hint { color: #94a3b8; text-align: center; padding: 32px 0; }
+.invitation-list { display: flex; flex-direction: column; }
+.invitation-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+.invitation-item:last-child { border-bottom: none; }
+.invitation-info { display: flex; align-items: center; gap: 12px; }
+.invitation-text { font-size: 14px; margin-bottom: 2px; }
+.invitation-from { font-size: 12px; color: #909399; }
+.invitation-actions { display: flex; gap: 8px; flex-shrink: 0; }
 </style>

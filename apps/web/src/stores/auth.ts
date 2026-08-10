@@ -23,6 +23,12 @@ export interface RegisterParams {
   nickname?: string
 }
 
+interface AuthApiResponse {
+  accessToken: string
+  refreshToken?: string
+  user: UserInfo
+}
+
 export const useAuthStore = defineStore('auth', () => {
   // ---- state ----
   const user = ref<UserInfo | null>(null)
@@ -39,8 +45,8 @@ export const useAuthStore = defineStore('auth', () => {
   async function login(params: LoginParams) {
     loading.value = true
     try {
-      const res = await http.post('/auth/login', params) as any
-      const data = res.data || res
+      const res = await http.post('/auth/login', params)
+      const data = (res as { data?: AuthApiResponse }).data || (res as AuthApiResponse)
       token.value = data.accessToken
       user.value = data.user
       localStorage.setItem('access_token', data.accessToken)
@@ -50,8 +56,9 @@ export const useAuthStore = defineStore('auth', () => {
       // 获取用户详情
       await fetchProfile()
       return true
-    } catch (e: any) {
-      throw new Error(e.response?.data?.message || e.message || '登录失败')
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } }; message?: string }
+      throw new Error(err.response?.data?.message || err.message || '登录失败')
     } finally {
       loading.value = false
     }
@@ -61,16 +68,17 @@ export const useAuthStore = defineStore('auth', () => {
   async function register(params: RegisterParams) {
     loading.value = true
     try {
-      const res = await http.post('/auth/register', params) as any
-      const data = res.data || res
+      const res = await http.post('/auth/register', params)
+      const data = (res as { data?: AuthApiResponse }).data || (res as AuthApiResponse)
       token.value = data.accessToken
       user.value = data.user
       localStorage.setItem('access_token', data.accessToken)
       // 尝试获取详细信息，失败不影响注册结果（已经有基础用户数据）
       try { await fetchProfile() } catch { /* 忽略，已有 token */ }
       return true
-    } catch (e: any) {
-      throw new Error(e.response?.data?.message || e.message || '注册失败')
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } }; message?: string }
+      throw new Error(err.response?.data?.message || err.message || '注册失败')
     } finally {
       loading.value = false
     }
@@ -80,8 +88,8 @@ export const useAuthStore = defineStore('auth', () => {
   async function fetchProfile() {
     if (!token.value) return
     try {
-      const res = await http.get('/auth/me') as any
-      const data = res.data || res
+      const res = await http.get('/auth/me')
+      const data = (res as { data?: UserInfo }).data || (res as UserInfo)
       user.value = data
     } catch {
       // token 过期 → 清除

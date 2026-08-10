@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useWorkspaceStore } from '@/stores/workspace'
 
 // ---- 路由表 ----
 
@@ -49,8 +50,15 @@ const routes: RouteRecordRaw[] = [
   // ======== 工作空间内页面 ========
   {
     path: '/workspace/:wsId',
-    meta: { layout: 'default', requiresAuth: true },
+    meta: { layout: 'default', requiresAuth: true, requiresWorkspace: true },
     children: [
+      // 工作空间首页
+      {
+        path: 'home',
+        name: 'WorkspaceHome',
+        component: () => import('@/views/home/WorkspaceHomeView.vue'),
+        meta: { title: '工作台' },
+      },
       // 模板设计器（独立于表单，用 templateId query 传参）
       {
         path: 'template-designer',
@@ -153,7 +161,7 @@ const routes: RouteRecordRaw[] = [
     path: '/instance/:id',
     name: 'InstanceViewer',
     component: () => import('@/views/workflow/InstanceViewer.vue'),
-    meta: { layout: 'default', title: '流程进度', requiresAuth: true },
+    meta: { layout: 'default', title: '流程进度', requiresAuth: true, requiresWorkspace: true },
   },
 
   // ======== 通知 ========
@@ -169,13 +177,13 @@ const routes: RouteRecordRaw[] = [
     path: '/my-tasks',
     name: 'MyTasks',
     component: () => import('@/views/workflow/TaskListView.vue'),
-    meta: { layout: 'default', title: '我的待办', requiresAuth: true },
+    meta: { layout: 'default', title: '我的待办', requiresAuth: true, requiresWorkspace: true },
   },
   {
     path: '/my-processes',
     name: 'MyProcesses',
     component: () => import('@/views/workflow/MyProcessesView.vue'),
-    meta: { layout: 'default', title: '我的流程', requiresAuth: true },
+    meta: { layout: 'default', title: '我的流程', requiresAuth: true, requiresWorkspace: true },
   },
 
   // ======== 预览页（前端渲染，无需保存） ========
@@ -229,7 +237,7 @@ const router = createRouter({
 
 // ---- 全局前置守卫 ----
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   // 设置页面标题
   document.title = (to.meta.title as string) || 'FurmX'
 
@@ -238,6 +246,24 @@ router.beforeEach((to, _from, next) => {
     const auth = useAuthStore()
     if (!auth.isAuthenticated) {
       return next({ name: 'Login', query: { redirect: to.fullPath } })
+    }
+
+    // 需要工作空间的页面：无工作空间时退回工作台并弹窗提示
+    if (to.meta.requiresWorkspace) {
+      const wsStore = useWorkspaceStore()
+      if (wsStore.list.length === 0) {
+        await wsStore.fetchList()
+      }
+      if (wsStore.list.length === 0) {
+        next({ name: 'Home', replace: true })
+        // 动态导入避免循环依赖
+        const { ElMessageBox } = await import('element-plus')
+        ElMessageBox.alert('请先创建并选择一个工作空间，即可访问全部功能模块。', '无可用工作空间', {
+          confirmButtonText: '知道了',
+          type: 'warning',
+        })
+        return
+      }
     }
   }
 

@@ -18,7 +18,7 @@ import {
 // ==================== 类型定义 ====================
 
 type EngineEvent = 'field:added' | 'field:removed' | 'field:moved' | 'schema:changed' | 'selection:changed'
-type EventHandler = (...args: any[]) => void
+type EventHandler = (...args: unknown[]) => void
 
 interface DragSource {
   type: 'palette' | 'canvas'
@@ -210,7 +210,7 @@ export class DragDropManager {
 // ==================== DesignerEngine ====================
 
 interface FieldTypeConfig {
-  defaultProps: Record<string, any>
+  defaultProps: Record<string, unknown>
   /** 默认栅格列宽 (1-24) */
   defaultCol: number
   /** 最小栅格列宽，防止内容溢出 */
@@ -236,7 +236,6 @@ const fieldConfigs: Record<string, FieldTypeConfig> = {
   // 布局容器
   card:           { defaultProps: { header: '', shadow: 'always' },                 defaultCol: 24, minCol: 24 },
   collapse:       { defaultProps: { accordion: false },                             defaultCol: 24, minCol: 24 },
-  tabs:           { defaultProps: { tabList: ['标签1', '标签2'], defaultActive: '0' }, defaultCol: 24, minCol: 24 },
   divider:        { defaultProps: { direction: 'horizontal' },                      defaultCol: 24, minCol: 24 },
 }
 
@@ -324,7 +323,7 @@ export class DesignerEngine {
     this._emit('schema:changed', this._schema)
   }
 
-  updateFieldProps(fieldId: string, props: Record<string, any>): void {
+  updateFieldProps(fieldId: string, props: Record<string, unknown>): void {
     const field = findFieldById(this._schema.fields, fieldId)
     if (field) {
       Object.assign(field.props, props)
@@ -434,14 +433,14 @@ export class DesignerEngine {
     return {
       id: generateFieldId(),
       key: `field_${Math.random().toString(36).substring(2, 10)}`,
-      type: type as any,
+      type: type as FieldSchema['type'],
       name: type,
       col: Math.max(cfg.minCol, cfg.defaultCol),
       props: { ...cfg.defaultProps },
     }
   }
 
-  private _emit(event: EngineEvent, ...args: any[]): void {
+  private _emit(event: EngineEvent, ...args: unknown[]): void {
     const handlers = this._eventHandlers.get(event)
     if (handlers) {
       handlers.forEach((h) => { try { h(...args) } catch (e) { console.warn(`[DesignerEngine] handler error:`, e) } })

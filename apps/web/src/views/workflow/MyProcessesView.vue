@@ -150,8 +150,6 @@ import http from '@/api/client'
 
 const route = useRoute()
 const router = useRouter()
-const wsId = computed(() => route.params.wsId as string)
-
 const list = ref<any[]>([])
 const total = ref(0)
 const page = ref(1)

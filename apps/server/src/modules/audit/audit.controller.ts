@@ -4,6 +4,7 @@ import { Response } from 'express'
 import { AuditService } from './audit.service'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { PermissionGuard, RequiredPermission } from '../../common/guards/permission.guard'
+import { CurrentUser } from '../../common/decorators/current-user.decorator'
 
 @ApiTags('Audit')
 @ApiBearerAuth()
@@ -43,17 +44,24 @@ export class AuditController {
   async exportCsv(
     @Param('wsId') wsId: string,
     @Query() query: { action?: string; resourceType?: string; startDate?: string; endDate?: string },
+    @CurrentUser('userId') userId: string,
     @Res() res: Response,
   ) {
+    try { await this.auditService.log({ workspaceId: wsId, userId, action: '导出审计日志', resourceType: 'AuditLog' }) } catch { /* 记录失败不影响导出 */ }
     const csv = await this.auditService.exportCsv(wsId, query)
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', 'attachment; filename=audit-logs.csv')
-    res.send('\uFEFF' + csv) // BOM for Excel UTF-8
+    res.send('\uFEFF' + csv)
   }
 
   @Delete('cleanup')
-  @RequiredPermission('audit:export')
-  cleanup(@Param('wsId') wsId: string, @Query('days') days: number) {
+  @RequiredPermission('audit:cleanup')
+  async cleanup(
+    @Param('wsId') wsId: string,
+    @Query('days') days: number,
+    @CurrentUser('userId') userId: string,
+  ) {
+    try { await this.auditService.log({ workspaceId: wsId, userId, action: '清理审计日志', resourceType: 'AuditLog', details: { days: +days || 7 } }) } catch { /* 记录失败不影响清理 */ }
     return this.auditService.cleanup(wsId, +days || 7)
   }
 

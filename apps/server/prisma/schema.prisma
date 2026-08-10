@@ -22,8 +22,9 @@ model Workspace {
   updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at")
   deletedAt  DateTime? @map("deleted_at")
 
-  forms     Form[]
-  members   WorkspaceMember[]
+  forms       Form[]
+  members     WorkspaceMember[]
+  invitations WorkspaceInvitation[]
   roles     Role[]
   auditLogs AuditLog[]
 
@@ -42,8 +43,10 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
 
-  memberships  WorkspaceMember[]
-  roles        UserRole[]
+  memberships      WorkspaceMember[]
+  roles            UserRole[]
+  sentInvitations  WorkspaceInvitation[] @relation("Inviter")
+  receivedInvitations WorkspaceInvitation[] @relation("Invitee")
   createdForms Form[]           @relation("FormCreator")
   updatedForms Form[]           @relation("FormUpdater")
   submissions  FormSubmission[]
@@ -66,6 +69,24 @@ model WorkspaceMember {
   @@map("workspace_members")
 }
 
+// ==================== 工作空间邀请 ====================
+model WorkspaceInvitation {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  workspaceId String   @map("workspace_id") @db.VarChar(36)
+  inviterId   String   @map("inviter_id") @db.VarChar(36)
+  inviteeId   String   @map("invitee_id") @db.VarChar(36)
+  role        String   @default("editor") @db.VarChar(30)
+  status      String   @default("pending") @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  inviter   User      @relation("Inviter", fields: [inviterId], references: [id], onDelete: Cascade)
+  invitee   User      @relation("Invitee", fields: [inviteeId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, inviteeId])
+  @@map("workspace_invitations")
+}
 // ==================== 角色 & 权限 ====================
 model Role {
   id          String   @id @default(uuid()) @db.VarChar(36)

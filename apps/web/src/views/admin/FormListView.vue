@@ -3,12 +3,6 @@
     <div class="page-header">
       <h2>表单管理</h2>
       <div class="header-actions">
-        <el-button
-          type="primary"
-          @click="createForm"
-        >
-          新建表单
-        </el-button>
         <el-input
           v-model="search"
           placeholder="搜索表单..."
@@ -57,6 +51,7 @@
             value="unbound"
           />
         </el-select>
+        <el-button type="primary" @click="createForm">新建表单</el-button>
       </div>
     </div>
 
@@ -77,9 +72,35 @@
       />
     </el-tabs>
 
+    <!-- 骨架屏 -->
+    <div
+      v-if="loading"
+      class="form-grid"
+    >
+      <div
+        v-for="n in 6"
+        :key="'sk-'+n"
+        class="form-card skeleton-card"
+      >
+        <el-skeleton animated>
+          <template #template>
+            <div style="padding: 24px">
+              <el-skeleton-item variant="text" style="width: 60%; height: 22px" />
+              <el-skeleton-item variant="text" style="width: 90%; margin-top: 12px" />
+              <el-skeleton-item variant="text" style="width: 40%; margin-top: 8px" />
+              <div style="display: flex; justify-content: space-between; margin-top: 20px">
+                <el-skeleton-item variant="button" style="width: 60px; height: 28px" />
+                <el-skeleton-item variant="button" style="width: 60px; height: 28px" />
+              </div>
+            </div>
+          </template>
+        </el-skeleton>
+      </div>
+    </div>
+
     <!-- 卡片视图 -->
     <div
-      v-if="filteredList.length"
+      v-else-if="filteredList.length"
       class="form-grid"
     >
       <div
@@ -277,6 +298,47 @@
       v-model:visible="showLink"
       :form-id="linkFormId"
     />
+
+    <!-- 跨工作空间复制 -->
+    <el-dialog
+      v-model="showCopyDialog"
+      title="复制表单到其他工作空间"
+      width="460px"
+    >
+      <el-form label-width="80px">
+        <el-form-item label="源空间">
+          <el-tag>{{ wsStore.current?.name || '当前空间' }}</el-tag>
+        </el-form-item>
+        <el-form-item label="目标空间">
+          <el-select
+            v-model="copyTargetWsId"
+            placeholder="选择目标工作空间"
+            style="width:100%"
+          >
+            <el-option
+              v-for="ws in otherWorkspaces"
+              :key="ws.id"
+              :label="ws.name"
+              :value="ws.id"
+            >
+              <span>{{ ws.name }}</span>
+              <span style="color:#909399;font-size:12px;margin-left:8px">{{ ws.role === 'owner' ? '创建者' : ws.role === 'editor' ? '编辑者' : '查看者' }}</span>
+            </el-option>
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showCopyDialog = false">取消</el-button>
+        <el-button
+          type="primary"
+          :disabled="!copyTargetWsId"
+          :loading="copying"
+          @click="doCopyForm"
+        >
+          确认复制
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -284,8 +346,11 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import http from '@/api/client'
+import type { Form, Workspace } from '@/types/models'
+import { usePagedList, useConfirmAction } from '@/composables'
+import { useWorkspaceStore } from '@/stores/workspace'
 import PublishLinkDialog from '@/components/PublishLinkDialog.vue'
 
 // ==================== 6 大表单分类 ====================
@@ -295,11 +360,14 @@ const FORM_CATEGORIES = ['人事', '财务', '行政', '销售', '运营', '项�
 const route = useRoute()
 const router = useRouter()
 const wsId = computed(() => route.params.wsId as string)
+const { confirm } = useConfirmAction()
 
-const list = ref<any[]>([])
-const total = ref(0)
-const page = ref(1)
-const pageSize = 12
+// 分页列表 — usePagedList 接管 loading/list/total/page/fetch
+const { list, total, page, loading, fetch: _fetch } = usePagedList<Form>(
+  (params) => http.get(`/workspaces/${wsId.value}/forms`, { params }),
+  12,
+)
+
 const search = ref('')
 const statusFilter = ref('')
 const activeCategory = ref('')
@@ -308,8 +376,18 @@ const creating = ref(false)
 const createFormData = reactive({ name: '', description: '', category: '' })
 const showLink = ref(false)
 const linkFormId = ref('')
-const boundWorkflows = ref<Record<string, any[]>>({})
+const boundWorkflows = ref<Record<string, unknown[]>>({})
 const workflowFilter = ref('')
+
+// 跨工作空间复制
+const wsStore = useWorkspaceStore()
+const showCopyDialog = ref(false)
+const copyTargetWsId = ref('')
+const copyingForm = ref<Form | null>(null)
+const copying = ref(false)
+const otherWorkspaces = computed(() =>
+  (wsStore.list as Workspace[]).filter((w) => w.id !== wsId.value),
+)
 
 const filteredList = computed(() => {
   if (!workflowFilter.value) return list.value
@@ -317,31 +395,24 @@ const filteredList = computed(() => {
   return list.value.filter(f => bound ? !!boundWorkflows.value[f.id]?.length : !boundWorkflows.value[f.id]?.length)
 })
 
-// ==================== 数据加载 ====================
-async function fetchList() {
-  try {
-    const params: any = { page: page.value, pageSize }
-    if (statusFilter.value) params.status = statusFilter.value
-    if (activeCategory.value) params.category = activeCategory.value
-    if (search.value) params.keyword = search.value
-    const res = await http.get(`/workspaces/${wsId.value}/forms`, { params }) as any
-    const data = res.data || res
-    list.value = data?.list || []
-    total.value = data?.pagination?.total || 0
-  } catch (e: any) {
-    ElMessage.error(e.response?.data?.message || '获取表单列表失败')
-  }
+// 将筛选参数传入 fetch
+function fetchList() {
+  const extra: Record<string, string | number> = {}
+  if (statusFilter.value) extra.status = statusFilter.value
+  if (activeCategory.value) extra.category = activeCategory.value
+  if (search.value) extra.keyword = search.value
+  return _fetch(extra)
 }
 
 async function fetchBindings() {
   try {
-    const res = await http.get(`/workspaces/${wsId.value}/workflow-bindings`) as any
-    boundWorkflows.value = res.data || res || {}
+    const res = await http.get(`/workspaces/${wsId.value}/workflow-bindings`)
+    boundWorkflows.value = (res as { data?: Record<string, unknown[]> }).data || (res as Record<string, unknown[]>) || {}
   } catch { /* ignore */ }
 }
 
-onMounted(() => { fetchList(); fetchBindings() })
-watch([page, statusFilter], fetchList)
+onMounted(() => { fetchList(); fetchBindings(); wsStore.fetchList() })
+watch([page, statusFilter], () => fetchList())
 watch(() => route.params.wsId, () => { page.value = 1; fetchList(); fetchBindings() })
 
 function onCategoryChange() { page.value = 1; fetchList() }
@@ -366,37 +437,61 @@ async function doCreate() {
     createFormData.description = ''
     createFormData.category = ''
     await fetchList()
-  } catch (e: any) {
-    const msg = e.response?.data?.message || e.message || '创建失败'
+  } catch (e: unknown) {
+    const err = e as { response?: { data?: { message?: string } }; message?: string }
+    const msg = err.response?.data?.message || err.message || '创建失败'
     ElMessage.error('创建失败: ' + msg)
   } finally {
     creating.value = false
   }
 }
 
-function openDesigner(f: any) { router.push(`/workspace/${wsId.value}/forms/${f.id}/designer`) }
-function viewData(f: any) { router.push(`/workspace/${wsId.value}/forms/${f.id}/data`) }
-function goSettings(f: any) { router.push(`/workspace/${wsId.value}/forms/${f.id}/settings`) }
+function openDesigner(f: Form) { router.push(`/workspace/${wsId.value}/forms/${f.id}/designer`) }
+function viewData(f: Form) { router.push(`/workspace/${wsId.value}/forms/${f.id}/data`) }
+function goSettings(f: Form) { router.push(`/workspace/${wsId.value}/forms/${f.id}/settings`) }
 function goWorkflowDesigner(wfId: string) { router.push(`/workspace/${wsId.value}/workflows/${wfId}/designer`) }
-async function copyForm(f: any) { await http.post(`/workspaces/${wsId.value}/forms/${f.id}/fork`); fetchList() }
-async function publishForm(f: any) {
+function copyForm(f: Form) {
+  copyingForm.value = f
+  copyTargetWsId.value = ''
+  showCopyDialog.value = true
+}
+
+async function doCopyForm() {
+  if (!copyingForm.value || !copyTargetWsId.value) return
+  copying.value = true
+  try {
+    await http.post(`/workspaces/${copyTargetWsId.value}/forms/${copyingForm.value.id}/fork`)
+    showCopyDialog.value = false
+    ElMessage.success('已复制到目标空间')
+  } catch (e: unknown) {
+    ElMessage.error((e as { response?: { data?: { message?: string } } }).response?.data?.message || '复制失败')
+  } finally {
+    copying.value = false
+  }
+}
+async function publishForm(f: Form) {
   await http.post(`/forms/${f.id}/publish`)
   fetchList()
   linkFormId.value = f.id
   showLink.value = true
 }
-function showPublishLink(f: any) {
+function showPublishLink(f: Form) {
   linkFormId.value = f.id
   showLink.value = true
 }
-async function archiveForm(f: any) { await http.post(`/forms/${f.id}/archive`); fetchList() }
-async function deleteForm(f: any) {
-  try {
-    await ElMessageBox.confirm(`确定删除表单「${f.name}」？删除后无法恢复。`, '删除确认', { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' })
-    await http.delete(`/forms/${f.id}`)
-    ElMessage.success('已删除')
-    fetchList()
-  } catch { /* 取消 */ }
+async function archiveForm(f: Form) { await http.post(`/forms/${f.id}/archive`); fetchList() }
+function deleteForm(f: Form) {
+  confirm(
+    () => http.delete(`/forms/${f.id}`),
+    {
+      title: '删除确认',
+      message: `确定删除表单「${f.name}」？删除后无法恢复。`,
+      confirmText: '删除',
+      successMsg: '已删除',
+      type: 'warning',
+    },
+    () => fetchList(),
+  )
 }
 
 function statusLabel(s: string) { return s === 'published' ? '已发布' : s === 'archived' ? '已归档' : '草稿' }
@@ -408,10 +503,10 @@ function formatDate(d: string) { return d ? new Date(d).toLocaleDateString('zh-C
 .page-header h2 { margin: 0; }
 .header-actions { display: flex; gap: 12px; }
 .search-input { width: 200px; }
-
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
 .form-card { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); display: flex; flex-direction: column; justify-content: space-between; transition: box-shadow 0.2s; }
 .form-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.skeleton-card { pointer-events: none; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
 .card-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .card-title-row h4 { margin: 0; font-size: 16px; flex: 1; }
 .workflow-badge { cursor: pointer; flex-shrink: 0; }

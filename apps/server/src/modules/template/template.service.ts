@@ -8,14 +8,9 @@ export class TemplateService {
   async list(query: { page?: number; pageSize?: number; category?: string; keyword?: string }) {
     const page = Number(query.page) || 1
     const pageSize = Number(query.pageSize) || 20
+    // 先按 category 过滤，keyword 在客户端做（因为 tags 是 JSON 数组无法用 Prisma contains）
     const where: any = { status: { in: ['approved', 'pending'] } }
     if (query.category) where.category = query.category
-    if (query.keyword) {
-      where.OR = [
-        { name: { contains: query.keyword } },
-        { description: { contains: query.keyword } },
-      ]
-    }
 
     const [list, total] = await Promise.all([
       this.prisma.template.findMany({
@@ -27,9 +22,20 @@ export class TemplateService {
       this.prisma.template.count({ where }),
     ])
 
+    // 客户端过滤：同时搜 name、description、category、tags
+    let filteredList = list
+    if (query.keyword) {
+      const kw = query.keyword
+      filteredList = list.filter((t: any) => {
+        if (t.name?.includes(kw) || t.description?.includes(kw) || t.category?.includes(kw)) return true
+        const tags: string[] = Array.isArray(t.tags) ? t.tags : (typeof t.tags === 'string' ? JSON.parse(t.tags) : [])
+        return tags.some((tag: string) => tag.includes(kw))
+      })
+    }
+
     return {
-      list,
-      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+      list: filteredList,
+      pagination: { page, pageSize, total: filteredList.length, totalPages: Math.ceil(filteredList.length / pageSize) },
     }
   }
 
@@ -43,8 +49,9 @@ export class TemplateService {
     name: string; description?: string; schema: any
     category?: string; tags?: string[]
   }) {
+    const { name, description, schema, category, tags } = dto
     return this.prisma.template.create({
-      data: { ...dto, authorId: userId },
+      data: { name, description, schema, category, tags, authorId: userId },
     })
   }
 
@@ -52,7 +59,11 @@ export class TemplateService {
     name?: string; description?: string; schema?: any
     category?: string; tags?: string[]; status?: string
   }) {
-    return this.prisma.template.update({ where: { id }, data: dto })
+    const { name, description, schema, category, tags, status } = dto
+    return this.prisma.template.update({
+      where: { id },
+      data: { name, description, schema, category, tags, status },
+    })
   }
 
   async remove(id: string) {

@@ -66,16 +66,21 @@
           class="form-fields"
           :style="gridStyle"
         >
-          <FormField
-            v-for="field in schema.fields"
-            :key="field.id"
-            :field="field"
-            :schema-settings="schema.settings"
-            :model-value="formData[field.key]"
-            :max-cols="schema.settings.canvasCols || 24"
-            :required="isRequired(field)"
-            @update:model-value="(v) => { if (field.key) formData[field.key] = v }"
-          />
+          <ErrorBoundary
+            title="表单渲染异常"
+            message="当前表单部分字段加载失败，请刷新重试"
+          >
+            <FormField
+              v-for="field in schema.fields"
+              :key="field.id"
+              :field="field"
+              :schema-settings="schema.settings"
+              :model-value="formData[field.key]"
+              :max-cols="schema.settings.canvasCols || 24"
+              :required="isRequired(field)"
+              @update:model-value="(v) => { if (field.key) formData[field.key] = v }"
+            />
+          </ErrorBoundary>
         </div>
       </div>
 
@@ -225,6 +230,7 @@ import { UserFilled, Message, Lock, User } from '@element-plus/icons-vue'
 import http from '@/api/client'
 import type { FormSchema, FieldSchema } from '@furmx/sdk'
 import { isLayoutField } from '@furmx/sdk'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import FormField from './components/FormField.vue'
 
 const FORM_TOKEN_KEY = 'form_access_token'

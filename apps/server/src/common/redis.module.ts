@@ -8,24 +8,30 @@ import Redis from 'ioredis'
     {
       provide: 'REDIS_CLIENT',
       useFactory: (config: ConfigService) => {
+        const host = config.get<string>('REDIS_HOST')
+        // 未配置 Redis 时直接跳过，不尝试连接
+        if (!host) {
+          return null
+        }
+
         const logger = new Logger('RedisModule')
         const redis = new Redis({
-          host: config.get('REDIS_HOST', 'localhost'),
+          host,
           port: config.get<number>('REDIS_PORT', 6379),
           maxRetriesPerRequest: null,
           enableOfflineQueue: false,
           lazyConnect: true,
           retryStrategy() {
-            return null // 不重试
+            return null
           },
         })
 
         redis.on('error', () => {
-          // 静默吞掉，避免 Unhandled error
+          // 静默吞掉连接错误
         })
 
         redis.connect().catch(() => {
-          logger.warn('Redis 不可用，缓存功能跳过')
+          logger.warn('Redis 不可用，缓存功能禁用')
         })
 
         return redis

@@ -72,11 +72,13 @@ import FieldControl from './FieldControl.vue'
 const props = withDefaults(defineProps<{
   field: FieldSchema
   schemaSettings: FormSettings
-  modelValue?: any
+  modelValue?: unknown
   maxCols?: number
   required?: boolean
 }>(), {
+  modelValue: undefined,
   maxCols: 24,
+  required: false,
 })
 
 const emit = defineEmits<{ 'update:modelValue': [v: any] }>()

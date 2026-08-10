@@ -16,7 +16,10 @@
     "clean": "turbo run clean",
     "db:migrate": "turbo run db:migrate --filter=@furmx/server",
     "db:seed": "turbo run db:seed --filter=@furmx/server",
-    "db:studio": "turbo run db:studio --filter=@furmx/server"
+    "db:studio": "turbo run db:studio --filter=@furmx/server",
+    "dev:agent": "turbo run dev --filter=@furmx/agent",
+    "build:agent": "turbo run build --filter=@furmx/agent",
+    "start:agent": "cd apps/agent && node dist/main"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",

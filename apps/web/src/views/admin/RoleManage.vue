@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="page-header">
-      <h2>角色权限管理</h2>
+      <h2>角色权限</h2>
       <el-button
         type="primary"
         @click="openCreate"
@@ -10,9 +10,21 @@
       </el-button>
     </div>
 
+    <!-- 骨架屏：矩阵 + 列表 -->
+    <template v-if="loading">
+      <el-card class="section-card">
+        <template #header><span>权限矩阵</span></template>
+        <el-skeleton :rows="3" animated />
+      </el-card>
+      <el-card class="section-card">
+        <template #header><span>角色列表</span></template>
+        <el-skeleton :rows="4" animated />
+      </el-card>
+    </template>
+
     <!-- 权限矩阵 -->
     <el-card
-      v-if="matrix.roles && matrix.roles.length"
+      v-if="!loading && matrix.roles && matrix.roles.length"
       class="section-card"
     >
       <template #header>
@@ -91,7 +103,10 @@
     </el-card>
 
     <!-- 角色列表 -->
-    <el-card class="section-card">
+    <el-card
+      v-if="!loading"
+      class="section-card"
+    >
       <template #header>
         <span>角色列表</span>
       </template>
@@ -190,7 +205,7 @@
                 <el-checkbox
                   :model-value="isGroupAllChecked(group)"
                   :indeterminate="isGroupIndeterminate(group)"
-                  @change="(v: any) => toggleGroup(group, v)"
+                  @change="(v: boolean) => toggleGroup(group, v)"
                 >
                   <span class="group-name">{{ group.group }}</span>
                 </el-checkbox>
@@ -200,7 +215,7 @@
                   v-for="p in group.perms"
                   :key="p.key"
                   :model-value="form.permissions.includes(p.key)"
-                  @change="(v: any) => togglePerm(p.key, v)"
+                  @change="(v: boolean) => togglePerm(p.key, v)"
                 >
                   {{ p.label }}
                 </el-checkbox>
@@ -215,7 +230,7 @@
                 <el-checkbox
                   :model-value="isGroupAllChecked(group)"
                   :indeterminate="isGroupIndeterminate(group)"
-                  @change="(v: any) => toggleGroup(group, v)"
+                  @change="(v: boolean) => toggleGroup(group, v)"
                 >
                   <span class="group-name">{{ group.group }}</span>
                 </el-checkbox>
@@ -225,7 +240,7 @@
                   v-for="p in group.perms"
                   :key="p.key"
                   :model-value="form.permissions.includes(p.key)"
-                  @change="(v: any) => togglePerm(p.key, v)"
+                  @change="(v: boolean) => togglePerm(p.key, v)"
                 >
                   {{ p.label }}
                 </el-checkbox>
@@ -256,15 +271,22 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check } from '@element-plus/icons-vue'
 import http from '@/api/client'
 import { useWorkspaceStore } from '@/stores/workspace'
+import type { Role } from '@/types/models'
+
+interface PermissionMatrix {
+  roles: Role[]
+  allPermissions: { key: string; label: string; group: string }[]
+}
 
 const route = useRoute()
 const wsStore = useWorkspaceStore()
 const wsId = computed(() => route.params.wsId as string)
 const isOwner = computed(() => wsStore.current?.role === 'owner')
-const roles = ref<any[]>([])
-const matrix = ref<any>({})
+const loading = ref(true)
+const roles = ref<Role[]>([])
+const matrix = ref<PermissionMatrix>({ roles: [], allPermissions: [] })
 const showDialog = ref(false)
-const editingRole = ref<any>(null)
+const editingRole = ref<Role | null>(null)
 const form = reactive({ name: '', permissions: [] as string[] })
 
 const permGroups = [
@@ -291,7 +313,7 @@ const permGroups = [
     { key: 'task:transfer', label: '转交审批' },
   ]},
   { group: '成员', perms: [
-    { key: 'member:invite', label: '添加成员' }, { key: 'member:role', label: '修改成员角色' },
+    { key: 'member:invite', label: '邀请成员' }, { key: 'member:role', label: '修改成员角色' },
     { key: 'member:remove', label: '移除成员' },
   ]},
   { group: '角色', perms: [
@@ -301,6 +323,7 @@ const permGroups = [
   { group: '日志', perms: [
     { key: 'audit:view', label: '查看审计日志' },
     { key: 'audit:export', label: '导出审计日志' },
+    { key: 'audit:cleanup', label: '清理审计日志' },
   ]},
 ]
 const mainGroups = computed(() => permGroups.slice(0, 7))
@@ -314,7 +337,7 @@ watch(() => matrix.value.allPermissions, (perms) => {
   if (perms) { const m = { ...permLabelMapBase }; for (const p of perms) m[p.key] = p.label; permLabelMap.value = m }
 })
 
-function hasPerm(role: any, key: string) {
+function hasPerm(role: Role, key: string) {
   const perms = role.permissions || []
   return perms.includes('*') || perms.includes(key)
 }
@@ -335,11 +358,12 @@ function togglePerm(key: string, checked: boolean) {
 
 async function fetchData() {
   const [r, m] = await Promise.all([
-    http.get(`/workspaces/${wsId.value}/roles`) as any,
-    http.get(`/workspaces/${wsId.value}/roles/matrix`) as any,
+    http.get(`/workspaces/${wsId.value}/roles`),
+    http.get(`/workspaces/${wsId.value}/roles/matrix`),
   ])
-  roles.value = (r.data || r)?.list || r.data || r || []
-  matrix.value = m.data || m || {}
+  roles.value = (r as { data: Role[] }).data ?? []
+  matrix.value = (m as { data: PermissionMatrix }).data ?? { roles: [], allPermissions: [] }
+  loading.value = false
 }
 
 onMounted(fetchData)
@@ -352,7 +376,7 @@ function openCreate() {
   showDialog.value = true
 }
 
-function openEdit(role: any) {
+function openEdit(role: Role) {
   editingRole.value = role
   form.name = role.name
   form.permissions = [...(role.permissions || [])]
@@ -376,10 +400,13 @@ async function doSave() {
     editingRole.value = null
     form.name = ''; form.permissions = []
     fetchData()
-  } catch (e: any) { if (e?.__handled) return; ElMessage.error(e.response?.data?.message || '保存失败') }
+  } catch (e: unknown) {
+    if (e instanceof Error && (e as { __handled?: boolean }).__handled) return
+    ElMessage.error((e as { response?: { data?: { message?: string } } }).response?.data?.message || '保存失败')
+  }
 }
 
-async function toggleMatrixPerm(role: any, permKey: string) {
+async function toggleMatrixPerm(role: Role, permKey: string) {
   const perms = [...(role.permissions || [])]
   if (perms.includes('*')) return // 全部权限不允许直接修改
   const idx = perms.indexOf(permKey)
@@ -392,10 +419,13 @@ async function toggleMatrixPerm(role: any, permKey: string) {
     await http.patch(`/workspaces/${wsId.value}/roles/${role.id}`, { permissions: perms })
     role.permissions = perms
     ElMessage.success('权限已更新')
-  } catch (e: any) { if (e?.__handled) return; ElMessage.error(e.response?.data?.message || '更新失败') }
+  } catch (e: unknown) {
+    if (e instanceof Error && (e as { __handled?: boolean }).__handled) return
+    ElMessage.error((e as { response?: { data?: { message?: string } } }).response?.data?.message || '更新失败')
+  }
 }
 
-async function deleteRole(row: any) {
+async function deleteRole(row: Role) {
   try {
     await ElMessageBox.confirm(`确定删除角色「${row.name}」？`, '删除确认', {
       confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning',

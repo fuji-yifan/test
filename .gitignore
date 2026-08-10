@@ -41,6 +41,9 @@ logs/
 coverage/
 .nyc_output/
 
+# Lint results
+lint_result.txt
+
 # Misc
 *.tsbuildinfo
 .cache/

@@ -2,47 +2,98 @@
   <div class="json-preview">
     <div class="toolbar">
       <span>JSON Schema 预览</span>
-      <el-button
-        size="small"
-        @click="applyJson"
-      >
-        应用修改
-      </el-button>
+      <div class="toolbar-actions">
+        <el-button
+          size="small"
+          @click="downloadJson"
+        >
+          下载
+        </el-button>
+        <el-button
+          size="small"
+          @click="applyJson"
+        >
+          应用修改
+        </el-button>
+      </div>
     </div>
     <textarea
       v-model="jsonText"
       class="json-editor"
       spellcheck="false"
     />
-    <div
-      v-if="errorMsg"
-      class="json-error"
-    >
-      {{ errorMsg }}
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import { useDesignerStore } from '../stores/designer'
 
 const store = useDesignerStore()
 const jsonText = ref('')
-const errorMsg = ref('')
 
 function syncFromStore() {
   jsonText.value = JSON.stringify(store.schema, null, 2)
 }
 
-function applyJson() {
+/** 校验 JSON 文本，返回解析结果，失败时弹窗并返回 null */
+function validateJson(): Record<string, unknown> | null {
+  let parsed: unknown
   try {
-    const parsed = JSON.parse(jsonText.value)
-    store.loadSchema(parsed)
-    errorMsg.value = ''
-  } catch (e: any) {
-    errorMsg.value = 'JSON 格式错误: ' + e.message
+    parsed = JSON.parse(jsonText.value)
+  } catch (e: unknown) {
+    ElMessageBox.alert(
+      e instanceof Error ? e.message : String(e),
+      'JSON 格式错误',
+      { confirmButtonText: '知道了', type: 'error' },
+    )
+    return null
   }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    ElMessageBox.alert(
+      'Schema 必须是 JSON 对象，不能是数组或基本类型',
+      '格式错误',
+      { confirmButtonText: '知道了', type: 'warning' },
+    )
+    return null
+  }
+  if (!('fields' in (parsed as Record<string, unknown>))) {
+    ElMessageBox.alert(
+      'Schema 中缺少必需的 "fields" 数组',
+      '格式错误',
+      { confirmButtonText: '知道了', type: 'warning' },
+    )
+    return null
+  }
+  if (!Array.isArray((parsed as Record<string, unknown>).fields)) {
+    ElMessageBox.alert(
+      'Schema 中的 "fields" 必须是数组类型',
+      '格式错误',
+      { confirmButtonText: '知道了', type: 'warning' },
+    )
+    return null
+  }
+
+  return parsed as Record<string, unknown>
+}
+
+function applyJson() {
+  const parsed = validateJson()
+  if (parsed) store.loadSchema(parsed)
+}
+
+function downloadJson() {
+  const parsed = validateJson()
+  if (!parsed) return
+  const blob = new Blob([JSON.stringify(parsed, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `schema_${store.schema.id || 'export'}.json`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 watch(() => store.schema, syncFromStore, { deep: true })
@@ -50,7 +101,7 @@ onMounted(syncFromStore)
 </script>
 
 <style scoped>
-.json-preview { padding: 16px; }
+.json-preview { padding: 16px; display: flex; flex-direction: column; height: 100%; }
 .toolbar {
   display: flex;
   justify-content: space-between;
@@ -58,10 +109,12 @@ onMounted(syncFromStore)
   margin-bottom: 12px;
   font-size: 14px;
   font-weight: 600;
+  flex-shrink: 0;
 }
+.toolbar-actions { display: flex; gap: 8px; }
 .json-editor {
   width: 100%;
-  height: calc(100vh - 160px);
+  flex: 1;
   font-family: 'Menlo', 'Consolas', monospace;
   font-size: 12px;
   padding: 12px;
@@ -71,9 +124,4 @@ onMounted(syncFromStore)
   outline: none;
 }
 .json-editor:focus { border-color: #409eff; }
-.json-error {
-  margin-top: 8px;
-  color: #f56c6c;
-  font-size: 13px;
-}
 </style>
