@@ -5,15 +5,15 @@ import { ContextService } from '../../../context/context.service'
 
 @Injectable()
 @Tool({
-  name: 'flow_publish',
-  description: '将流程定义正式发布保存到平台。需要用户确认。',
+  name: 'flow_save',
+  description: '保存流程定义到平台。',
   inputSchema: z.object({
     name: z.string().describe('流程名称'),
     description: z.string().optional().describe('流程描述'),
     nodes: z.array(z.record(z.unknown())),
     edges: z.array(z.record(z.unknown())),
   }),
-  riskLevel: 'medium',
+  riskLevel: 'low',
 })
 export class FlowPublishTool {
   constructor(private contextService: ContextService) {}

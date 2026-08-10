@@ -269,6 +269,10 @@ export abstract class BaseAgent {
     if (this.getServerTools().includes(toolCall.function.name)) {
       args.token = session.metadata?.userToken || ''
       args.workspaceId = session.workspaceId || (session.metadata?.workspaceId as string) || ''
+      // 自动注入已有表单 ID（修改已有表单时避免创建新表单）
+      if (toolCall.function.name === 'form_save' && !args.formId && session.metadata?.savedFormId) {
+        args.formId = session.metadata.savedFormId
+      }
     }
 
     // SSE: tool_start

@@ -19,7 +19,7 @@ export class ContextService {
 
   /** 发起服务端 API 调用，30s 超时 */
   private async fetch<T>(path: string, token: string, opts?: RequestInit): Promise<T> {
-    this.logger.log(`[API] ${opts?.method || 'GET'} ${path} token=${token ? token.slice(0, 15) + '...' : '(empty)'}`)
+    this.logger.log(`[API] ${opts?.method || 'GET'} ${path}`)
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 30000)
 
@@ -36,8 +36,13 @@ export class ContextService {
       }
 
       const json = await res.json()
-      // 适配 ApiResponse 包装格式 { code: 0, data, message }
       return json.data ?? json
+    } catch (err: any) {
+      // 网络层错误（server 未启动等）转换为友好消息
+      if (err.name === 'TypeError' || err.message?.includes('fetch failed') || err.cause?.code === 'ECONNREFUSED') {
+        throw new Error(`后端服务未启动或不可达（${this.serverBaseURL}）`)
+      }
+      throw err
     } finally {
       clearTimeout(timeout)
     }
@@ -88,10 +93,25 @@ export class ContextService {
 
   async saveFormDraft(token: string, data: Record<string, unknown>, workspaceId?: string): Promise<any> {
     if (!workspaceId) {
-      return { error: '保存失败：缺少工作空间 ID，请确保已进入工作空间后再操作' }
+      return { error: '保存失败：缺少工作空间 ID' }
     }
     const wsId = workspaceId
-    // Step 1: 创建表单（server 只接受 name + description）
+    const existingFormId = data.formId as string | undefined
+
+    // 更新已有表单
+    if (existingFormId) {
+      const updateData: Record<string, unknown> = {}
+      if (data.schema) updateData.schema = data.schema
+      if (data.category) updateData.category = data.category
+      if (data.tags) updateData.tags = data.tags
+      await this.fetch(`/api/v1/forms/${existingFormId}`, token, {
+        method: 'PATCH',
+        body: JSON.stringify(updateData),
+      })
+      return { ...updateData, id: existingFormId }
+    }
+
+    // 创建新表单
     const created: any = await this.fetch(`/api/v1/workspaces/${wsId}/forms`, token, {
       method: 'POST',
       body: JSON.stringify({ name: data.name, description: data.description }),
@@ -99,12 +119,10 @@ export class ContextService {
     const formId = created?.id
     if (!formId) return created
 
-    // Step 2: 更新 schema、category、tags、settings
     const updateData: Record<string, unknown> = {}
     if (data.schema) updateData.schema = data.schema
     if (data.category) updateData.category = data.category
     if (data.tags) updateData.tags = data.tags
-    if ((data as any).settings) updateData.settings = (data as any).settings
 
     if (Object.keys(updateData).length > 0) {
       await this.fetch(`/api/v1/forms/${formId}`, token, {
@@ -124,9 +142,26 @@ export class ContextService {
   }
 
   async saveProcessDraft(token: string, data: Record<string, unknown>): Promise<any> {
-    return this.fetch('/api/v1/workflow/process-definitions', token, {
+    const wsId = data.workspaceId || 'default'
+    // 规范化节点：补 position、label→name、格点对齐
+    const rawNodes = (data.nodes as any[]) || []
+    const normalizedNodes = rawNodes.map((n, i) => ({
+      id: n.id,
+      type: n.type,
+      name: n.label || n.name || n.id,
+      position: { x: 200, y: 80 + i * 120 },
+      config: n.config || {},
+    }))
+    // 规范化边：source→sourceNodeId, target→targetNodeId
+    const rawEdges = (data.edges as any[]) || []
+    const normalizedEdges = rawEdges.map((e) => ({
+      id: e.id,
+      sourceNodeId: e.source || e.sourceNodeId,
+      targetNodeId: e.target || e.targetNodeId,
+    }))
+    return this.fetch(`/api/v1/workspaces/${wsId}/workflows`, token, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, nodes: normalizedNodes, edges: normalizedEdges }),
     })
   }
 

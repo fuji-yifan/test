@@ -113,7 +113,8 @@ export class HubController {
       // 发送 session 事件
       sse.writeEvent(SseEventType.SESSION, { sessionId: session.id })
 
-      // 处理确认操作（参考上一轮暂停的 confirmCallId）
+      // 处理确认操作
+      let confirmHandled = false
       if (body.confirmCallId && session.metadata?.pendingConfirms) {
         const confirms = session.metadata.pendingConfirms as any[]
         const target = confirms.find((c) => c.callId === body.confirmCallId)
@@ -129,17 +130,24 @@ export class HubController {
             pendingConfirms: confirms.filter((c) => c.callId !== body.confirmCallId),
             lastConfirmAction: 'confirmed',
           })
+          sse.writeEvent(SseEventType.MESSAGE, {
+            role: 'assistant',
+            content: result.ok
+              ? `✅ ${target.tool} 执行成功`
+              : `❌ ${target.tool} 执行失败：${result.summary || ''}`,
+          })
+          confirmHandled = true
         }
       }
 
-      // ========== 编排循环：支持多步骤计划 ==========
-      await this.runOrchestrationLoop(session, body.message, body.scenario, sse, req)
+      // 编排循环（纯确认消息跳过，避免死循环）
+      if (!confirmHandled) {
+        await this.runOrchestrationLoop(session, body.message, body.scenario, sse, req)
+      }
 
     } catch (err: any) {
-      sse.writeEvent(SseEventType.ERROR, {
-        code: 'FATAL',
-        message: err.message,
-      })
+      try { sse.writeEvent(SseEventType.ERROR, { code: 'FATAL', message: err.message || '未知错误' }) } catch {}
+      try { sse.writeEvent(SseEventType.DONE, { sessionId: session?.id, stopReason: 'error', usage: { inputTokens: 0, outputTokens: 0 } }) } catch {}
     } finally {
       if (session) {
         await this.sessionService.unlock(session.id).catch(() => {})

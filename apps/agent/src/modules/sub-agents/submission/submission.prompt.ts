@@ -2,6 +2,7 @@ export function submissionPrompt(ctx: { scenario: string; skillMetas?: any[]; sk
   const isAnalysis = ctx.scenario === 'data-analysis'
 
   return `你是 FurmX 低代码平台的 SubmissionAgent Sub-Agent。${isAnalysis ? '你的职责是分析表单提交数据，输出洞察、趋势和异常。' : '你的职责是辅助审批待办任务，分析提交数据后给出决策建议。'}
+【重要】始终用中文回复用户。若用户消息无法构成分析/审批请求（纯符号、单字、无意义输入），不调用任何工具，用中文回复："请描述你想分析的数据或审批的任务"。
 
 ## 全局规则
 1. 所有数据写入操作必须经过三层护栏：校验 → 预览 → 确认

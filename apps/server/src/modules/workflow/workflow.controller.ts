@@ -37,7 +37,7 @@ export class WorkflowController {
   createDefinition(
     @Param('wsId') wsId: string,
     @CurrentUser('userId') userId: string,
-    @Body() dto: { name: string; description?: string },
+    @Body() dto: { name: string; description?: string; nodes?: any; edges?: any },
   ) {
     return this.workflowService.createDefinition(wsId, userId, dto)
   }

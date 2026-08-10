@@ -49,10 +49,12 @@ export function useAgentChat(options: UseAgentChatOptions) {
     return localStorage.getItem('access_token') || ''
   }
 
-  async function sendMessage(text: string, confirmCallId?: string) {
+  async function sendMessage(text: string, confirmCallId?: string, scenarioOverride?: string) {
     if (!text.trim() && !confirmCallId) return
     isLoading.value = true
     error.value = null
+
+    const scenario = scenarioOverride || options.scenario
 
     // 添加用户消息
     const userMsg: AgentMessage = {
@@ -78,7 +80,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
     // 构建动态上下文（含设计器当前 schema 等）
     const dynamicContext = options.getContext ? options.getContext() : {}
     const body: Record<string, unknown> = {
-      scenario: options.scenario,
+      scenario,
       message: text,
       stream: true,
       context: { workspaceId: options.workspaceId, ...dynamicContext },
@@ -142,7 +144,10 @@ export function useAgentChat(options: UseAgentChatOptions) {
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        error.value = err.message || 'Agent request failed'
+        const msg = err.message || ''
+        error.value = msg.includes('Failed to fetch') || msg.includes('NetworkError')
+          ? '网络连接失败，请检查 Agent(3002) 和 Server(3000) 是否都已启动'
+          : msg || '请求失败'
         // 移除空的 assistant 占位消息
         const last = getLastAssistant()
         if (last && !last.content && !last.toolCalls?.length) {
@@ -238,12 +243,9 @@ export function useAgentChat(options: UseAgentChatOptions) {
         break
 
       case 'error':
-        error.value = data.message
-        {
-          const msg = getLastAssistant()
-          if (msg) {
-            msg.content += `\n\n[错误] ${data.code}: ${data.message}`
-          }
+        // RETRY/DEGRADE 是内部修正不显示，只显示最终失败
+        if (data.code !== 'RETRY' && data.code !== 'RETRYING' && data.code !== 'DEGRADE') {
+          error.value = data.message
         }
         break
 

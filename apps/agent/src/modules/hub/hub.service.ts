@@ -67,7 +67,6 @@ export class HubService {
     }
 
     // 1. 页面场景即为当前 Agent 身份
-    //    只有消息中出现"明确矛盾"的跨领域意图时才切换
     const pageAgent = scenarioMap[scenario] || 'form-designer'
 
     // 检测消息中的"跨页面"意图（用户在A页面说B页面的事）
@@ -92,22 +91,7 @@ export class HubService {
   private detectCrossIntent(userMessage: string, pageAgent: string): OrchestrationResult | null {
     const lower = userMessage.toLowerCase()
 
-    // 在非模板页面说"搜索模板"
-    if (pageAgent !== 'template' && /搜索.*模板|查找.*模板|有什么模板|找.*模板/.test(userMessage)) {
-      return { targetAgent: 'template', targetScenario: 'template-creator', context: { userMessage }, isCrossDomain: false }
-    }
-
-    // 在非流程页面说"创建审批流"
-    if (pageAgent !== 'workflow' && /创建.*审批|设计.*流程|搭建.*流程|配置.*审批/.test(userMessage)) {
-      return { targetAgent: 'workflow', targetScenario: 'workflow-node', context: { userMessage }, isCrossDomain: false }
-    }
-
-    // 在非表单页面说"设计一个XX表/表单"
-    if (pageAgent !== 'form-designer' && /设计.*[表表单]|创建.*表单|做一个.*[表表单]/.test(userMessage)) {
-      return { targetAgent: 'form-designer', targetScenario: 'form-builder', context: { userMessage }, isCrossDomain: false }
-    }
-
-    // 跨领域：模板 → 表单 → 流程
+    // 跨领域优先（比单领域更具体）：模板 + 审批/流程 + 创建/基于
     if ((lower.includes('模板') || lower.includes('template')) &&
         (lower.includes('审批') || lower.includes('流程')) &&
         (lower.includes('创建') || lower.includes('基于'))) {
@@ -127,6 +111,21 @@ export class HubService {
           ],
         },
       }
+    }
+
+    // 在非模板页面说"搜索模板"
+    if (pageAgent !== 'template' && /搜索.*模板|查找.*模板|有什么模板|找.*模板/.test(userMessage)) {
+      return { targetAgent: 'template', targetScenario: 'template-creator', context: { userMessage }, isCrossDomain: false }
+    }
+
+    // 在非流程页面说"创建审批流"（排除已被跨领域捕获的消息）
+    if (pageAgent !== 'workflow' && /创建.*审批|设计.*流程|搭建.*流程|配置.*审批/.test(userMessage)) {
+      return { targetAgent: 'workflow', targetScenario: 'workflow-node', context: { userMessage }, isCrossDomain: false }
+    }
+
+    // 在非表单页面说"设计一个XX表/表单"
+    if (pageAgent !== 'form-designer' && /设计.*[表表单]|创建.*表单|做一个.*[表表单]/.test(userMessage)) {
+      return { targetAgent: 'form-designer', targetScenario: 'form-builder', context: { userMessage }, isCrossDomain: false }
     }
 
     return null
@@ -297,11 +296,9 @@ export class HubService {
     const currentStepId = metadata.currentStepId as string
     const completedSteps: string[] = metadata.completedSteps || []
 
-    // 找到下一个待执行的步骤
+    // 找到下一个待执行的步骤（依赖已满足且未完成）
     const nextStep = plan.steps.find((s) => {
       if (completedSteps.includes(s.id)) return false
-      if (s.id === currentStepId) return false
-      // 检查依赖是否全部完成
       return s.dependsOn.every((depId) => completedSteps.includes(depId))
     })
 

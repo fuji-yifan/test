@@ -17,7 +17,7 @@ export class WorkflowAgent extends BaseAgent {
     name: 'Workflow Agent',
     toolNames: [
       'flow_create', 'flow_validate', 'flow_bind_form',
-      'flow_preview', 'flow_publish',
+      'flow_preview', 'flow_save',
     ],
     maxIterations: parseInt(process.env.MAX_ITERATIONS || '8', 10),
     maxRetries: parseInt(process.env.MAX_RETRIES || '2', 10),
@@ -47,7 +47,7 @@ export class WorkflowAgent extends BaseAgent {
   }
 
   protected getServerTools(): string[] {
-    return ['flow_publish', 'flow_bind_form']
+    return ['flow_save', 'flow_bind_form']
   }
 
   protected async onToolSuccess(

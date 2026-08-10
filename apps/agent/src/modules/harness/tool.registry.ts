@@ -183,31 +183,71 @@ export class ToolRegistry implements OnModuleInit {
    * - 参数名大小写/下划线差异
    */
   private fixupArgs(name: string, args: Record<string, unknown>): Record<string, unknown> {
-    // form_assemble_schema: 如果 args 中有数组但不是 fields，尝试提取
+    // form_assemble_schema: 处理 DeepSeek 各种传参格式
     if (name === 'form_assemble_schema') {
-      if (!args.fields) {
-        // 查找 args 中的数组值作为 fields
+      if (!args.fields || !Array.isArray(args.fields)) {
+        // args 中有数组值 → 作为 fields
         for (const [key, val] of Object.entries(args)) {
-          if (Array.isArray(val)) {
-            return { fields: val, formTitle: args.formTitle || args.form_title, labelPosition: args.labelPosition || args.label_position }
+          if (Array.isArray(val) && val.length > 0) {
+            return { fields: val, formTitle: args.formTitle || (args as any).form_title, labelPosition: args.labelPosition || (args as any).label_position }
           }
         }
-        // DeepSeek 有时把整个结构拍平：{ field1: {...}, field2: {...} }
-        // 给 LLM 返回明确错误让它修正
+        // args 中嵌套了 schema 对象 → 提取 fields
+        for (const [key, val] of Object.entries(args)) {
+          if (val && typeof val === 'object' && !Array.isArray(val) && Array.isArray((val as any).fields)) {
+            return { ...args, fields: (val as any).fields, formTitle: args.formTitle || (val as any).formTitle || (val as any).settings?.formTitle }
+          }
+        }
+        // 空参数 → 返回空 fields 让 LLM 看到错误
+        if (!args.fields) {
+          return { ...args, fields: [] }
+        }
       }
     }
 
-    // form_validate_schema: 如果 args 整体看起来像 schema 对象但没有 schema 键
+    // form_validate_schema: DeepSeek 经常不按 schema 传参，尝试各种可能的格式
     if (name === 'form_validate_schema') {
-      if (!args.schema && !args.schema_json) {
-        // 检查 args 本身是否就是 schema（含 fields 数组）
-        if (args.fields || args.version || args.settings) {
-          return { schema: args }
+      // 已正确传参
+      if (args.schema && typeof args.schema === 'object') return args
+      // schema 作为 JSON 字符串传入
+      if (typeof args.schema === 'string') {
+        try { return { schema: JSON.parse(args.schema) } } catch {}
+      }
+      // args 本身就是 schema（有 fields/version/settings）
+      if (args.fields || args.version || args.settings) {
+        return { schema: args }
+      }
+      // args 中某个值是对象且包含 fields → 作为 schema
+      for (const [key, val] of Object.entries(args)) {
+        if (val && typeof val === 'object' && !Array.isArray(val) && ((val as any).fields || (val as any).version)) {
+          return { schema: val as Record<string, unknown> }
         }
       }
-      // 统一 schema_json → schema
-      if ((args as any).schema_json && !args.schema) {
-        return { ...args, schema: (args as any).schema_json }
+      // 完全没有可识别的内容 → 返回包含 args 的 schema 让 validate 自己报错
+      if (Object.keys(args).length === 0 || (Object.keys(args).length === 1 && args.token)) {
+        return { schema: args } // 空 schema，validate 会报告 missing fields
+      }
+    }
+
+    // flow_create / flow_validate: DeepSeek 有时把 nodes/edges 拍平到顶层
+    if ((name === 'flow_create' || name === 'flow_validate') && !args.nodes) {
+      // 尝试从 args 中提取节点和边
+      const extractedNodes: any[] = []
+      const extractedEdges: any[] = []
+      for (const [key, val] of Object.entries(args)) {
+        if (Array.isArray(val)) {
+          const first = val[0]
+          if (first && typeof first === 'object') {
+            if ('source' in first && 'target' in first) {
+              extractedEdges.push(...val)
+            } else if ('type' in first && ('id' in first || 'label' in first)) {
+              extractedNodes.push(...val)
+            }
+          }
+        }
+      }
+      if (extractedNodes.length > 0) {
+        return { ...args, nodes: extractedNodes, edges: extractedEdges.length > 0 ? extractedEdges : (args.edges || []) }
       }
     }
 

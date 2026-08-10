@@ -80,20 +80,24 @@ export class WorkflowService {
     }
   }
 
-  async createDefinition(workspaceId: string, userId: string, dto: { name: string; description?: string }) {
+  async createDefinition(workspaceId: string, userId: string, dto: { name: string; description?: string; nodes?: any; edges?: any }) {
     const defaultNodes: ProcessNode[] = [
       { id: 'start', type: 'start', name: '开始', position: { x: 200, y: 50 }, config: {} },
       { id: 'end', type: 'end', name: '结束', position: { x: 200, y: 400 }, config: {} },
     ]
     const defaultEdges = [{ id: 'e1', sourceNodeId: 'start', targetNodeId: 'end' }]
 
+    // 使用 Agent 传入的节点/边，否则使用默认值
+    const nodes = dto.nodes?.length ? dto.nodes : defaultNodes
+    const edges = dto.edges?.length ? dto.edges : defaultEdges
+
     return this.prisma.processDefinition.create({
       data: {
         workspaceId,
         name: dto.name,
         description: dto.description || '',
-        nodes: defaultNodes as any,
-        edges: defaultEdges as any,
+        nodes: nodes as any,
+        edges: edges as any,
         settings: { allowWithdraw: true, allowUrge: true, urgeTimeout: 48 } as any,
         createdBy: userId,
       },

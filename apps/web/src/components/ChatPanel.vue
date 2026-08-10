@@ -2,11 +2,11 @@
 import { ref, watch, nextTick, computed, markRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAgentChat } from '@/composables/useAgentChat'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { marked } from 'marked'
 import {
   DocumentCopy, ScaleToOriginal, Files, Message, PieChart, Close,
-  ArrowDown, ArrowUp, ArrowLeft, Link, ChatSquare, ChatLineSquare, Postcard,
+  ArrowDown, ArrowUp, ArrowLeft, Link, ChatSquare, ChatLineSquare, Postcard, ChromeFilled,
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -30,8 +30,15 @@ const SCENARIO_MAP: Record<string, { icon: any; label: string }> = {
   'approval-assist':  { icon: markRaw(Message),           label: '审批辅助助手' },
   'data-analysis':    { icon: markRaw(PieChart),          label: '数据分析助手' },
 }
-const scenarioIcon = computed(() => SCENARIO_MAP[props.scenario]?.icon || markRaw(DocumentCopy))
-const scenarioLabel = computed(() => SCENARIO_MAP[props.scenario]?.label || 'AI 助手')
+const AGENT_LABEL: Record<string, string> = {
+  'form-designer': '表单设计助手', 'workflow': '流程编排助手',
+  'template': '模板市场助手', 'submission': '数据分析助手', 'hub': '编排中',
+}
+// 动态显示当前工作的 Agent
+const activeAgentLabel = computed(() => {
+  if (!status.value) return null
+  return AGENT_LABEL[status.value.agent] || status.value.agent
+})
 
 const inputText = ref('')
 const messagesEl = ref<HTMLDivElement>()
@@ -87,15 +94,24 @@ const { messages, isLoading, status, error, sendMessage, cancel, clearMessages }
   scenario: props.scenario,
   workspaceId: props.workspaceId,
   onConfirmRequired: (callId, tool, summary) => {
-    ElMessage({ message: `Agent 要执行 ${tool}`, type: 'warning', duration: 0, showClose: true })
-    sendMessage(`确认执行 ${tool}`, callId)
+    const label: Record<string, string> = {
+      flow_save: '保存流程', form_save: '保存表单', data_confirm: '确认写入', data_rollback: '回滚数据',
+    }
+    const action = label[tool] || tool
+    ElMessageBox.confirm(
+      `即将${action}，确认继续吗？`,
+      '操作确认',
+      { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' }
+    ).then(() => {
+      sendMessage(`确认执行 ${tool}`, callId)
+    }).catch(() => { /* 用户取消 */ })
   },
 })
 
 function handleSend() {
   if (!inputText.value.trim()) return
   const text = inputText.value
-  sendMessage(text)
+  sendMessage(text, undefined, props.scenario)
   inputText.value = ''
   if (messages.value.length <= 1) saveThread(text)
 }
@@ -103,7 +119,7 @@ function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
 }
 function newChat() {
-  const first = messages.value.find((m) => m.role === 'user')
+  const first = messages.value.find((m: any) => m.role === 'user')
   if (first) saveThread(first.content)
   clearMessages()
   showHistory.value = false
@@ -142,7 +158,7 @@ watch(() => props.visible, (v) => { if (v) loadThreads() })
 watch(() => messages.value.length, () => nextTick(() => { if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight }))
 watch(() => isLoading.value, (l, was) => {
   if (was && !l && messages.value.length > 0) {
-    const first = messages.value.find((m) => m.role === 'user')?.content || ''
+    const first = messages.value.find((m: any) => m.role === 'user')?.content || ''
     if (first) localStorage.setItem(MSG_PREFIX + first, JSON.stringify(messages.value.slice(-50)))
   }
 })
@@ -156,12 +172,18 @@ watch(() => isLoading.value, (l, was) => {
         <div class="float-header">
           <div class="float-header-left">
             <div class="header-avatar">
-              <el-icon :size="18"><component :is="scenarioIcon" /></el-icon>
+              <el-icon :size="20"><ChromeFilled /></el-icon>
             </div>
-            <div>
-              <div class="float-title">{{ scenarioLabel }}</div>
-              <div class="float-subtitle" v-if="status">{{ status.phase === 'executing' ? '正在处理...' : '在线' }}</div>
-              <div class="float-subtitle online" v-else>在线</div>
+            <span class="float-title">Agent - X</span>
+            <div class="agent-badge" :class="{ active: activeAgentLabel }">
+              <template v-if="activeAgentLabel">
+                <span class="agent-badge-dot" />
+                <span>{{ activeAgentLabel }}</span>
+              </template>
+              <template v-else>
+                <span class="agent-badge-dot-idle" />
+                <span class="agent-badge-idle">空闲中</span>
+              </template>
             </div>
           </div>
           <div class="float-header-right">
@@ -193,40 +215,27 @@ watch(() => isLoading.value, (l, was) => {
 
           <!-- 聊天区域 -->
           <div v-else class="chat-content">
-            <!-- 状态栏 -->
-            <div v-if="status && status.phase === 'executing'" class="agent-status-bar">
-              <span class="status-dot" />
-              <span>{{ status.agent || 'Agent' }} 工作中</span>
-              <span v-if="status.todo?.length" class="status-todo">
-                <span v-for="t in status.todo.filter((x: any) => x.status === 'in_progress')" :key="t.id">{{ t.text }}</span>
-              </span>
-            </div>
-
             <div ref="messagesEl" class="messages-container">
               <!-- 空状态 -->
               <div v-if="messages.length === 0" class="empty-state">
-                <p class="empty-greeting">你好，我是 {{ scenarioLabel }}</p>
-                <p class="empty-hint">我可以帮助你：</p>
+                <p class="empty-greeting">你好，我是 Agent - X 智能助手</p>
+                <p class="empty-hint">我可以根据当前页面帮你：</p>
                 <ul v-if="scenario === 'form-builder'">
                   <li>用自然语言描述需求，自动生成表单结构</li>
                   <li>支持多种控件：文本、数字、下拉、日期、单选等</li>
-                  <li>自动校验字段类型和规则</li>
-                  <li>一键保存到平台，支持多轮修改</li>
+                  <li>自动校验字段类型和规则，一键保存</li>
                 </ul>
                 <ul v-else-if="scenario === 'template-creator'">
                   <li>按分类或关键词搜索模板市场</li>
-                  <li>查看模板详情与字段结构</li>
-                  <li>基于模板快速创建表单</li>
+                  <li>查看模板详情，基于模板快速创建表单</li>
                 </ul>
                 <ul v-else-if="scenario === 'workflow-node'">
                   <li>描述审批流程，自动生成节点和连线</li>
-                  <li>支持审批、条件分支、并行等节点</li>
-                  <li>校验 DAG 合法性</li>
+                  <li>支持审批、条件分支、并行等节点，校验 DAG 合法性</li>
                 </ul>
-                <ul v-else-if="scenario === 'approval-assist' || scenario === 'data-analysis'">
-                  <li>分析表单提交数据</li>
-                  <li>统计趋势与异常检测</li>
-                  <li>输出可视化建议</li>
+                <ul v-else>
+                  <li>设计表单、编排流程、搜索模板、分析数据</li>
+                  <li>跨领域任务自动切换对应助手协作完成</li>
                 </ul>
               </div>
 
@@ -383,14 +392,31 @@ watch(() => isLoading.value, (l, was) => {
   flex-shrink: 0;
 }
 .header-avatar {
-  width: 36px; height: 36px; border-radius: 10px;
+  width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0;
   background: #409eff;
   display: flex; align-items: center; justify-content: center; color: #fff;
 }
 .float-header-left { display: flex; align-items: center; gap: 10px; }
-.float-title { font-size: 15px; font-weight: 700; color: #1a1a2e; }
-.float-subtitle { font-size: 11px; color: #909399; }
-.float-subtitle.online { color: #67c23a; }
+.float-title { font-size: 15px; font-weight: 700; color: #1a1a2e; white-space: nowrap; }
+.agent-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 12px; min-height: 22px;
+  background: #f5f7fa; font-size: 11px; color: #909399; font-weight: 500;
+  transition: background .3s, color .3s;
+}
+.agent-badge.active {
+  background: #ecf5ff; color: #409eff;
+}
+.agent-badge-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: #409eff;
+  animation: badge-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes badge-pulse { 0%,100% { opacity: 1; transform: scale(1) } 50% { opacity: 0.4; transform: scale(1.3) } }
+.agent-badge-dot-idle {
+  width: 6px; height: 6px; border-radius: 50%; background: #c0c4cc; flex-shrink: 0;
+}
+.agent-badge-idle { opacity: 0.7; }
 .float-header-right { display: flex; align-items: center; gap: 2px; }
 .float-header-right .el-button { color: #6b8299; }
 
@@ -407,9 +433,9 @@ watch(() => isLoading.value, (l, was) => {
 .history-back:hover { background: #f0f2f5; color: #409eff; }
 .history-card { padding: 10px 12px; border: 1px solid #ebeef5; border-radius: 10px; margin-bottom: 8px; cursor: pointer; transition: 0.15s; }
 .history-card:hover { background: #f5f7fa; border-color: #c6d9f1; }
-.history-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-.history-card-title { font-size: 13px; font-weight: 600; color: #303133; }
-.history-card-scenario { font-size: 11px; color: #409eff; background: #ecf5ff; padding: 1px 8px; border-radius: 10px; }
+.history-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; gap: 8px; }
+.history-card-title { font-size: 13px; font-weight: 600; color: #303133; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.history-card-scenario { font-size: 11px; color: #409eff; background: #ecf5ff; padding: 1px 8px; border-radius: 10px; white-space: nowrap; flex-shrink: 0; }
 .history-card-meta { font-size: 11px; color: #909399; display: flex; align-items: center; justify-content: space-between; }
 .delete-icon { color: #c0c4cc; cursor: pointer; flex-shrink: 0; padding: 4px; border-radius: 4px; }
 .delete-icon:hover { color: #f56c6c; background: #fef0f0; }
@@ -417,19 +443,6 @@ watch(() => isLoading.value, (l, was) => {
 
 /* ===== 聊天区 ===== */
 .chat-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-
-/* 状态栏 */
-.agent-status-bar {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 16px; background: #fafbfc; border-bottom: 1px solid #f0f0f0;
-  font-size: 12px; color: #606266;
-}
-.status-dot {
-  width: 7px; height: 7px; border-radius: 50%; background: #409eff;
-  animation: status-pulse 1.5s ease-in-out infinite;
-}
-@keyframes status-pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.3 } }
-.status-todo { color: #909399; margin-left: auto; }
 
 /* 消息容器 */
 .messages-container { flex: 1; overflow-y: auto; padding: 16px 18px; }

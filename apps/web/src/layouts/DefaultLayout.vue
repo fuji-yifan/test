@@ -138,7 +138,7 @@
             @click="chatVisible = true"
           >
             <el-icon class="ai-btn-icon"><ChatDotRound /></el-icon>
-            AgentX
+            Agent - X
           </el-button>
           <!-- 用户 -->
           <el-dropdown trigger="click">
