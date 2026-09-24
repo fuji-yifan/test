@@ -361,3 +361,35 @@ model TaskInstance {
   @@index([instanceId])
   @@map("task_instances")
 }
+
+// ==================== LangGraph 检查点 ====================
+// LangGraph 的 thread 状态持久化。由 apps/agent 的 MysqlCheckpointSaver 读写，
+// server 侧不直接使用；放在这里是为了让表结构走统一的 Prisma migration 管理。
+model GraphCheckpoint {
+  threadId           String   @map("thread_id") @db.VarChar(255)
+  checkpointNs       String   @map("checkpoint_ns") @db.VarChar(128) @default("")
+  checkpointId       String   @map("checkpoint_id") @db.VarChar(64)
+  parentCheckpointId String?  @map("parent_checkpoint_id") @db.VarChar(64)
+  checkpointType     String   @map("checkpoint_type") @db.VarChar(64)
+  checkpoint         String   @db.LongText
+  metadata           String   @db.LongText
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@id([threadId, checkpointNs, checkpointId])
+  @@map("graph_checkpoints")
+}
+
+model GraphCheckpointWrite {
+  threadId     String   @map("thread_id") @db.VarChar(255)
+  checkpointNs String   @map("checkpoint_ns") @db.VarChar(128) @default("")
+  checkpointId String   @map("checkpoint_id") @db.VarChar(64)
+  taskId       String   @map("task_id") @db.VarChar(64)
+  idx          Int
+  channel      String   @db.VarChar(255)
+  type         String   @db.VarChar(64)
+  value        String   @db.LongText
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@id([threadId, checkpointNs, checkpointId, taskId, idx])
+  @@map("graph_checkpoint_writes")
+}

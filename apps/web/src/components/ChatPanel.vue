@@ -1,15 +1,12 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, computed, markRaw } from 'vue'
-import { useRouter } from 'vue-router'
-import { useAgentChat } from '@/composables/useAgentChat'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAgentChat, type ConfirmOption } from '@/composables/useAgentChat'
 import { marked } from 'marked'
+import PreviewPanel from '@/components/PreviewPanel.vue'
 import {
-  DocumentCopy, ScaleToOriginal, Files, Message, PieChart, Close,
+  DocumentCopy, ScaleToOriginal, Files, PieChart, Close,
   ArrowDown, ArrowUp, ArrowLeft, Link, ChatSquare, ChatLineSquare, Postcard, ChromeFilled,
 } from '@element-plus/icons-vue'
-
-const router = useRouter()
 
 const props = defineProps<{
   visible: boolean
@@ -20,14 +17,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:visible', v: boolean): void
-  (e: 'insert-schema', schema: Record<string, unknown>): void
 }>()
 
 const SCENARIO_MAP: Record<string, { icon: any; label: string }> = {
   'form-builder':     { icon: markRaw(DocumentCopy),      label: '表单设计助手' },
   'workflow-node':    { icon: markRaw(Files),             label: '流程编排助手' },
   'template-creator': { icon: markRaw(ScaleToOriginal),   label: '模板市场助手' },
-  'approval-assist':  { icon: markRaw(Message),           label: '审批辅助助手' },
   'data-analysis':    { icon: markRaw(PieChart),          label: '数据分析助手' },
 }
 const AGENT_LABEL: Record<string, string> = {
@@ -44,14 +39,20 @@ const inputText = ref('')
 const messagesEl = ref<HTMLDivElement>()
 const showHistory = ref(false)
 
-// 最后一条 assistant 消息是否还在等待首 token
-const isLastMsgEmpty = computed(() => {
-  if (!isLoading.value) return false
-  const last = messages.value[messages.value.length - 1]
-  return last && last.role === 'assistant' && !last.content && !last.toolCalls?.length
-})
 const expandedTools = ref<Record<string, boolean>>({})
 const expandedPreview = ref<Record<string, boolean>>({})
+
+// 表单预览弹窗：卡片本身只显示一行摘要，真实渲染放到弹窗里（和模板市场一致）
+const previewVisible = ref(false)
+const previewSchema = ref<any>(null)
+const previewTitle = computed(() => previewSchema.value?.settings?.formTitle || '表单结构')
+// 入参可以是整条 message（result.schema），也可以是多表清单里的一个 entry（schema）
+function openFormPreview(payload: any) {
+  const schema = payload?.schema ?? payload?.result?.schema
+  if (!schema) return
+  previewSchema.value = schema
+  previewVisible.value = true
+}
 
 // 历史对话
 interface ChatThread { id: string; title: string; scenario: string; messageCount: number; updatedAt: number }
@@ -90,23 +91,34 @@ function restoreThread(t: ChatThread) {
 }
 loadThreads()
 
-const { messages, isLoading, status, error, sendMessage, cancel, clearMessages } = useAgentChat({
-  scenario: props.scenario,
-  workspaceId: props.workspaceId,
-  onConfirmRequired: (callId, tool, summary) => {
-    const label: Record<string, string> = {
-      flow_save: '保存流程', form_save: '保存表单', data_confirm: '确认写入', data_rollback: '回滚数据',
-    }
-    const action = label[tool] || tool
-    ElMessageBox.confirm(
-      `即将${action}，确认继续吗？`,
-      '操作确认',
-      { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' }
-    ).then(() => {
-      sendMessage(`确认执行 ${tool}`, callId)
-    }).catch(() => { /* 用户取消 */ })
-  },
+const { messages, isLoading, status, error, sendMessage, cancel, clearMessages, activeMessageId } = useAgentChat({
+  // 传取值函数而不是值：这两个 prop 随路由变化，而这个组合式只在 setup 时调一次，
+  // 传值会把首次渲染（往往还没进工作空间路由）的空值定格住，之后一直发空 workspaceId。
+  scenario: () => props.scenario,
+  workspaceId: () => props.workspaceId,
 })
+
+/**
+ * 人机协作检查点的选项。langgraph 引擎由后端下发 options（含「加入当前空间」这类
+ * 自定义文案）；legacy 的风险确认没有 options，回退成确认/取消。
+ */
+function confirmOptions(tc: any): ConfirmOption[] {
+  if (tc.options?.length) return tc.options
+  return [
+    { value: 'continue', label: '确认', style: 'primary' },
+    { value: 'abort', label: '取消', style: 'danger' },
+  ]
+}
+
+function answerConfirm(tc: any, option: ConfirmOption) {
+  // 回执复用 /agent/chat；message 只作聊天记录展示，后端以 confirmAction 为准
+  sendMessage(option.label, tc.callId, undefined, option.value)
+}
+
+const RISK_LABEL: Record<string, string> = { low: '低', medium: '中', high: '高', critical: '极高' }
+function riskLabel(risk?: string): string {
+  return risk ? RISK_LABEL[risk] || risk : ''
+}
 
 function handleSend() {
   if (!inputText.value.trim()) return
@@ -126,23 +138,18 @@ function newChat() {
 }
 function handleClose() { emit('update:visible', false) }
 function toggleTools(id: string) { expandedTools.value[id] = !expandedTools.value[id] }
-function togglePreview(id: string) { expandedPreview.value[id] = !expandedPreview.value[id] }
 
-async function copySchemaJson(schema: Record<string, unknown>) {
-  try { await navigator.clipboard.writeText(JSON.stringify(schema, null, 2)); ElMessage.success('已复制') }
-  catch { ElMessage.error('复制失败') }
+/**
+ * 预览卡片的开合：默认跟随「有没有待答复的检查点」——待答复时摊开给你看依据，
+ * 做出选择后自动收起。用户手动点过就完全交给用户（undefined 表示还没碰过）。
+ */
+function isPreviewOpen(msg: any): boolean {
+  const manual = expandedPreview.value[msg.id]
+  if (manual !== undefined) return manual
+  return (msg.toolCalls || []).some((t: any) => t.status === 'confirming')
 }
-function handleInsertSchema() {
-  const lastMsg = messages.value[messages.value.length - 1]
-  const r = lastMsg?.result
-  if (r?.formId && props.workspaceId) {
-    router.push(`/workspace/${props.workspaceId}/forms/${r.formId}/designer`)
-    ElMessage.success('已跳转到设计器')
-  } else if (r?.schema) {
-    emit('insert-schema', r.schema)
-    ElMessage.success('已插入设计器')
-  }
-}
+function togglePreview(msg: any) { expandedPreview.value[msg.id] = !isPreviewOpen(msg) }
+
 function fmtTime(ts: number): string {
   const d = new Date(ts), now = Date.now(), diff = now - ts
   if (diff < 60000) return '刚刚'
@@ -233,6 +240,11 @@ watch(() => isLoading.value, (l, was) => {
                   <li>描述审批流程，自动生成节点和连线</li>
                   <li>支持审批、条件分支、并行等节点，校验 DAG 合法性</li>
                 </ul>
+                <ul v-else-if="scenario === 'data-analysis'">
+                  <li>根据表单数据进行统计分析</li>
+                  <li>统计趋势、异常检测，推荐图表类型</li>
+                  <li>数据写入前先预览确认</li>
+                </ul>
                 <ul v-else>
                   <li>设计表单、编排流程、搜索模板、分析数据</li>
                   <li>跨领域任务自动切换对应助手协作完成</li>
@@ -251,9 +263,31 @@ watch(() => isLoading.value, (l, was) => {
                 <div v-else class="agent-msg">
                     <!-- 内容区 -->
                     <div v-if="msg.content" class="msg-content" v-html="renderMarkdown(msg.content)" />
-                    <!-- 纯打字动画（首 token 未到） -->
-                    <div v-else-if="isLoading && msg === messages[messages.length - 1]" class="typing-row">
+                    <!-- 打字动画：锚在内容位置（本轮正在写的那条），所以它落在工具卡片上方 -->
+                    <div v-if="isLoading && msg.id === activeMessageId" class="typing-row">
                       <span class="typing-dot" /><span class="typing-dot" /><span class="typing-dot" />
+                    </div>
+
+                    <!-- 人机协作检查点：待用户选择。不放进折叠区，否则会被默认收起 -->
+                    <div
+                      v-for="tc in (msg.toolCalls || []).filter((t: any) => t.status === 'confirming')"
+                      :key="'confirm-' + tc.callId"
+                      class="confirm-card"
+                    >
+                      <div class="confirm-prompt">{{ tc.prompt || tc.summary || '需要你的确认' }}</div>
+                      <div v-if="tc.tool" class="confirm-meta">
+                        即将执行 <code>{{ tc.tool }}</code>
+                        <span v-if="riskLabel(tc.risk)" class="confirm-risk">风险 {{ riskLabel(tc.risk) }}</span>
+                      </div>
+                      <div class="confirm-actions">
+                        <el-button
+                          v-for="opt in confirmOptions(tc)"
+                          :key="opt.value"
+                          size="small"
+                          :type="opt.style"
+                          @click="answerConfirm(tc, opt)"
+                        >{{ opt.label }}</el-button>
+                      </div>
                     </div>
 
                     <!-- 工具调用（可折叠） -->
@@ -274,27 +308,33 @@ watch(() => isLoading.value, (l, was) => {
                       </div>
                     </div>
 
-                    <!-- 预览卡片（可折叠） -->
-                    <div v-if="msg.result" class="collapsible-wrap">
-                      <div class="collapse-toggle" @click="togglePreview(msg.id)">
-                        <span class="collapse-toggle-text"><el-icon :size="14"><Postcard /></el-icon>预览卡片</span>
-                        <el-icon :size="12"><component :is="expandedPreview[msg.id] ? ArrowUp : ArrowDown" /></el-icon>
+                    <!-- 表单预览卡片：一表一行，点击弹出该表的真实预览（只有一张时就是一行） -->
+                    <div
+                      v-if="msg.result?.schema"
+                      class="preview-summary-list"
+                    >
+                      <div
+                        v-for="f in (msg.result.forms?.length ? msg.result.forms : [msg.result])"
+                        :key="f.key || f.schema?.settings?.formTitle || 'form'"
+                        class="preview-summary"
+                        @click="openFormPreview(f)"
+                      >
+                        <el-icon :size="14"><Postcard /></el-icon>
+                        <span class="preview-summary-title">{{ f.title || f.schema?.settings?.formTitle || '表单结构' }}</span>
+                        <span class="preview-summary-meta">{{ (f.fieldCount ?? f.schema?.fields?.length) || 0 }} 个字段</span>
+                        <span v-if="f.formId" class="preview-summary-tag">已保存</span>
+                        <span class="preview-summary-cta">点击预览 ›</span>
                       </div>
-                      <div v-if="expandedPreview[msg.id]" class="collapse-body">
-                        <div v-if="msg.result.schema" class="preview-card form-preview">
-                          <div class="card-title">{{ msg.result.schema.settings?.formTitle || '表单结构' }}</div>
-                          <el-table :data="msg.result.schema.fields || []" size="small" stripe>
-                            <el-table-column prop="name" label="字段" width="100" />
-                            <el-table-column prop="type" label="类型" width="90" />
-                            <el-table-column label="必填" width="55"><template #default="{ row }">{{ row.rules?.find((r: any) => r.type === 'required') ? '是' : '-' }}</template></el-table-column>
-                            <el-table-column label="列宽" width="55"><template #default="{ row }">{{ row.col }}</template></el-table-column>
-                          </el-table>
-                          <div class="card-actions">
-                            <el-button size="small" type="primary" @click="handleInsertSchema">插入设计器</el-button>
-                            <el-button size="small" @click="copySchemaJson(msg.result.schema)">复制 JSON</el-button>
-                          </div>
-                        </div>
-                        <div v-else-if="msg.result.nodes" class="preview-card flow-preview">
+                    </div>
+
+                    <!-- 预览卡片（可折叠） -->
+                    <div v-else-if="msg.result" class="collapsible-wrap">
+                      <div class="collapse-toggle" @click="togglePreview(msg)">
+                        <span class="collapse-toggle-text"><el-icon :size="14"><Postcard /></el-icon>预览卡片</span>
+                        <el-icon :size="12"><component :is="isPreviewOpen(msg) ? ArrowUp : ArrowDown" /></el-icon>
+                      </div>
+                      <div v-if="isPreviewOpen(msg)" class="collapse-body">
+                        <div v-if="msg.result.nodes" class="preview-card flow-preview">
                           <div class="card-title">流程定义</div>
                           <div class="flow-nodes">
                             <div v-for="(n, i) in msg.result.nodes" :key="i" class="flow-node"><span :class="['node-badge', n.type]">{{ n.type }}</span> {{ n.label || n.id }}</div>
@@ -322,10 +362,6 @@ watch(() => isLoading.value, (l, was) => {
                       </div>
                     </div>
 
-                    <!-- 加载中：文字下方的持续打字动画 -->
-                    <div v-if="isLoading && msg.content && msg === messages[messages.length - 1]" class="typing-row">
-                      <span class="typing-dot" /><span class="typing-dot" /><span class="typing-dot" />
-                    </div>
                     <div class="msg-time">{{ fmtTime(msg.timestamp) }}</div>
                 </div>
               </div>
@@ -370,6 +406,19 @@ watch(() => isLoading.value, (l, was) => {
         </div>
       </div>
     </transition>
+
+    <!-- 真实表单预览弹窗。ChatPanel 浮窗是 z-index 3000，弹窗必须更高才不被盖住 -->
+    <el-dialog
+      v-model="previewVisible"
+      :title="previewTitle"
+      width="900px"
+      append-to-body
+      :z-index="3200"
+    >
+      <div class="form-preview-box">
+        <PreviewPanel v-if="previewSchema" :schema="previewSchema" hide-actions hide-title />
+      </div>
+    </el-dialog>
   </Teleport>
 </template>
 
@@ -507,6 +556,14 @@ watch(() => isLoading.value, (l, was) => {
 .msg-content :deep(strong) { font-weight: 700; color: #1a1a2e; }
 .msg-content :deep(blockquote) { border-left: 3px solid #409eff; padding-left: 10px; margin: 6px 0; color: #606266; }
 
+/* ===== 人机协作检查点（常显，不折叠） ===== */
+.confirm-card { margin-top: 8px; padding: 10px 12px; border-radius: 8px; background: #fdf6ec; border: 1px solid #f5dab1; }
+.confirm-prompt { font-size: 13px; color: #303133; line-height: 1.5; }
+.confirm-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: #909399; }
+.confirm-meta code { font-size: 11px; background: #f4e3c8; color: #8a6d3b; padding: 1px 5px; border-radius: 4px; }
+.confirm-risk { color: #b88230; }
+.confirm-actions { display: flex; gap: 8px; margin-top: 8px; }
+
 /* ===== 工具调用 & 预览卡片（可折叠） ===== */
 .collapsible-wrap { margin-top: 8px; overflow: hidden; }
 .collapse-toggle { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #909399; cursor: pointer; padding: 2px 0; user-select: none; }
@@ -533,9 +590,29 @@ watch(() => isLoading.value, (l, was) => {
   background: #fff; border: 1px solid #e4e7ed; border-radius: 10px; padding: 12px;
   overflow: hidden;
 }
-.preview-card :deep(.el-table) { width: 100% !important; }
 .card-title { font-weight: 600; margin-bottom: 8px; font-size: 13px; color: #303133; }
-.card-actions { margin-top: 10px; display: flex; gap: 8px; }
+
+/* 表单摘要行：整行可点，点开弹真实预览。多张表时按列表纵向排列 */
+.preview-summary-list { display: flex; flex-direction: column; gap: 6px; }
+.preview-summary {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 8px; padding: 8px 12px; border-radius: 10px;
+  background: #fff; border: 1px solid #e4e7ed;
+  font-size: 12px; color: #303133; cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.preview-summary-list .preview-summary { margin-top: 0; }
+.preview-summary:hover { border-color: #409eff; background: #f5f9ff; }
+.preview-summary-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-summary-meta { color: #909399; flex-shrink: 0; }
+.preview-summary-tag {
+  flex-shrink: 0; padding: 0 6px; border-radius: 6px; line-height: 16px;
+  font-size: 11px; color: #67c23a; background: #f0f9eb;
+}
+.preview-summary-cta { margin-left: auto; color: #409eff; flex-shrink: 0; }
+
+/* 弹窗里的真实渲染容器 */
+.form-preview-box { max-height: 60vh; overflow: auto; }
 
 .flow-nodes { display: flex; flex-wrap: wrap; gap: 6px; }
 .flow-node { font-size: 12px; display: flex; align-items: center; gap: 6px; }

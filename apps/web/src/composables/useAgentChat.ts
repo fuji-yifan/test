@@ -6,12 +6,31 @@ type SseEventType =
   | 'tool_start' | 'tool_result' | 'confirm_required'
   | 'message' | 'error' | 'done'
 
+export interface ConfirmOption {
+  value: string
+  label: string
+  style?: 'primary' | 'default' | 'danger'
+}
+
+export interface AgentToolCall {
+  callId: string
+  tool: string
+  status: string
+  summary?: string
+  /** 人机协作检查点的问题文案（只有 langgraph 引擎下发） */
+  prompt?: string
+  /** 检查点的风险等级，用于在卡片上披露「批准的是什么」 */
+  risk?: string
+  /** 检查点的可选项；legacy 的风险确认不带，前端回退成确认/取消 */
+  options?: ConfirmOption[]
+}
+
 interface AgentMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
   result?: unknown
-  toolCalls?: { callId: string; tool: string; status: string; summary?: string }[]
+  toolCalls?: AgentToolCall[]
   timestamp: number
 }
 
@@ -23,13 +42,25 @@ interface AgentStatus {
   todo: { id: string; text: string; status: string }[]
 }
 
+/**
+ * 值或取值函数。
+ *
+ * scenario / workspaceId 都随路由变化，而 useAgentChat 只在组件 setup 时调一次，
+ * 直接收值会把首次渲染那一刻的值定格住 —— 那时如果还没进工作空间路由，
+ * 定格的空串会一直发下去（后端因此拿不到 workspaceId，form_save 会失败）。
+ */
+type Resolvable<T> = T | (() => T)
+
+function resolve<T>(v: Resolvable<T>): T {
+  return typeof v === 'function' ? (v as () => T)() : v
+}
+
 interface UseAgentChatOptions {
-  scenario: string
-  workspaceId: string
+  scenario: Resolvable<string>
+  workspaceId: Resolvable<string>
   getContext?: () => Record<string, unknown>
   onMessage?: (msg: AgentMessage) => void
   onStatus?: (status: AgentStatus) => void
-  onConfirmRequired?: (callId: string, tool: string, summary: string) => void
 }
 
 export function useAgentChat(options: UseAgentChatOptions) {
@@ -40,6 +71,8 @@ export function useAgentChat(options: UseAgentChatOptions) {
   const error = ref<string | null>(null)
   let abortController: AbortController | null = null
   let currentAssistantMsg: AgentMessage | null = null
+  /** 正在被写入的那条消息——打字动画要锚在它身上，而不是数组最后一条 */
+  const activeMessageId = ref<string | null>(null)
 
   function nanoid() {
     return Math.random().toString(36).slice(2, 10)
@@ -49,33 +82,58 @@ export function useAgentChat(options: UseAgentChatOptions) {
     return localStorage.getItem('access_token') || ''
   }
 
-  async function sendMessage(text: string, confirmCallId?: string, scenarioOverride?: string) {
+  async function sendMessage(
+    text: string,
+    confirmCallId?: string,
+    scenarioOverride?: string,
+    confirmAction?: string,
+  ) {
     if (!text.trim() && !confirmCallId) return
     isLoading.value = true
     error.value = null
 
-    const scenario = scenarioOverride || options.scenario
+    // 乐观收掉检查点卡片：图侧续跑不一定再为该 callId 发 tool_result
+    if (confirmCallId) markConfirmAnswered(confirmCallId, confirmAction)
 
-    // 添加用户消息
-    const userMsg: AgentMessage = {
-      id: nanoid(),
-      role: 'user',
-      content: text,
-      timestamp: Date.now(),
+    const scenario = scenarioOverride || resolve(options.scenario)
+
+    // 检查点回执是「续跑」不是「新的一轮」：不追加用户气泡、也不另起助手消息，
+    // 直接把 currentAssistantMsg 指回持有该 chip 的那条消息——delta/tool/message
+    // 事件都走 target() 落点，所以原地续写不用改各个 handler。
+    const owner = confirmCallId ? findMessageByToolCall(confirmCallId) : null
+    let createdPlaceholder = false
+
+    if (owner) {
+      currentAssistantMsg = owner
+    } else {
+      // 添加用户消息
+      const userMsg: AgentMessage = {
+        id: nanoid(),
+        role: 'user',
+        content: text,
+        timestamp: Date.now(),
+      }
+      messages.value = [...messages.value, userMsg]
+
+      // 创建 assistant 占位消息
+      currentAssistantMsg = {
+        id: nanoid(),
+        role: 'assistant',
+        content: '',
+        toolCalls: [],
+        timestamp: Date.now(),
+      }
+      messages.value = [...messages.value, currentAssistantMsg]
+      createdPlaceholder = true
     }
-    messages.value = [...messages.value, userMsg]
+    activeMessageId.value = currentAssistantMsg?.id ?? null
 
-    // 创建 assistant 占位消息
-    currentAssistantMsg = {
-      id: nanoid(),
-      role: 'assistant',
-      content: '',
-      toolCalls: [],
-      timestamp: Date.now(),
-    }
-    messages.value = [...messages.value, currentAssistantMsg]
-
-    abortController = new AbortController()
+    // 上一轮还没结束就发了新消息（例如用户先「停止」再发、或流被挂住时重发）：
+    // 先把它断掉。不这么做的话浏览器会留着僵尸请求，和服务端的新一轮抢同一个
+    // 会话，服务端只能回「会话正在执行中」。新消息开始 = 上一段作废。
+    abortController?.abort()
+    const controller = new AbortController()
+    abortController = controller
     const token = getToken()
     // 构建动态上下文（含设计器当前 schema 等）
     const dynamicContext = options.getContext ? options.getContext() : {}
@@ -83,10 +141,11 @@ export function useAgentChat(options: UseAgentChatOptions) {
       scenario,
       message: text,
       stream: true,
-      context: { workspaceId: options.workspaceId, ...dynamicContext },
+      context: { workspaceId: resolve(options.workspaceId), ...dynamicContext },
     }
     if (sessionId.value) body.sessionId = sessionId.value
     if (confirmCallId) body.confirmCallId = confirmCallId
+    if (confirmAction) body.confirmAction = confirmAction
 
     try {
       const response = await fetch('/agent-api/api/v1/agent/chat', {
@@ -96,7 +155,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(body),
-        signal: abortController.signal,
+        signal: controller.signal,
       })
 
       if (!response.ok) {
@@ -148,15 +207,21 @@ export function useAgentChat(options: UseAgentChatOptions) {
         error.value = msg.includes('Failed to fetch') || msg.includes('NetworkError')
           ? '网络连接失败，请检查 Agent(3002) 和 Server(3000) 是否都已启动'
           : msg || '请求失败'
-        // 移除空的 assistant 占位消息
-        const last = getLastAssistant()
-        if (last && !last.content && !last.toolCalls?.length) {
-          messages.value = messages.value.filter((m) => m.id !== last.id)
+        // 移除空的 assistant 占位消息：只管本轮新建的那条，续跑轮没有占位、
+        // 持有的消息上还挂着检查点卡片，误删会把用户正在看的那条一起清掉。
+        if (createdPlaceholder && currentAssistantMsg
+            && !currentAssistantMsg.content && !currentAssistantMsg.toolCalls?.length) {
+          messages.value = messages.value.filter((m) => m.id !== currentAssistantMsg!.id)
         }
       }
     } finally {
-      isLoading.value = false
-      abortController = null
+      // 只清理自己那一份：被新一轮抢占的旧请求退出时，不能把新请求的
+      // loading 状态、打字动画锚点和取消句柄一起抹掉。
+      if (abortController === controller) {
+        isLoading.value = false
+        activeMessageId.value = null
+        abortController = null
+      }
       persistToLocal()
     }
   }
@@ -179,14 +244,14 @@ export function useAgentChat(options: UseAgentChatOptions) {
 
       case 'delta':
         if (currentAssistantMsg && data.content) {
-          const msg = getLastAssistant()
+          const msg = target()
           if (msg) msg.content += data.content
         }
         break
 
       case 'tool_start':
         if (currentAssistantMsg) {
-          const msg = getLastAssistant()
+          const msg = target()
           if (msg) {
             msg.toolCalls = msg.toolCalls || []
             msg.toolCalls.push({
@@ -200,23 +265,19 @@ export function useAgentChat(options: UseAgentChatOptions) {
 
       case 'tool_result':
         {
-          const msg = getLastAssistant()
-          if (msg?.toolCalls) {
-            const tc = msg.toolCalls.find((t) => t.callId === data.callId)
-            if (tc) {
-              tc.status = data.ok ? 'done' : 'error'
-              tc.summary = data.summary
-            }
+          // 工具调用可能属于上一轮的消息（确认后才会执行），所以跨消息查找。
+          // 优先找还在 running 的那条，避免命中已被答复的检查点卡片。
+          const tc = findToolCall(data.callId, 'running') || findToolCall(data.callId)
+          if (tc) {
+            tc.status = data.ok ? 'done' : 'error'
+            tc.summary = data.summary
           }
         }
         break
 
       case 'confirm_required':
-        if (options.onConfirmRequired) {
-          options.onConfirmRequired(data.callId, data.tool, data.summary)
-        }
         {
-          const msg = getLastAssistant()
+          const msg = target()
           if (msg) {
             msg.toolCalls = msg.toolCalls || []
             msg.toolCalls.push({
@@ -224,14 +285,19 @@ export function useAgentChat(options: UseAgentChatOptions) {
               tool: data.tool,
               status: 'confirming',
               summary: data.summary,
+              prompt: data.prompt,
+              risk: data.risk,
+              options: data.options,
             })
+            // 检查点的依据：待审产物复用预览卡片渲染（只有 langgraph 下发）
+            if (data.artifact) msg.result = data.artifact
           }
         }
         break
 
       case 'message':
         {
-          const msg = getLastAssistant()
+          const msg = target()
           if (msg) {
             msg.content = data.content
             msg.result = data.result
@@ -256,6 +322,31 @@ export function useAgentChat(options: UseAgentChatOptions) {
     }
   }
 
+  /** 跨消息查找某个工具调用（确认/续跑会让同一次调用横跨两条消息） */
+  function findToolCall(callId: string, status?: string): AgentToolCall | null {
+    for (const msg of messages.value) {
+      const hit = msg.toolCalls?.find((t) => t.callId === callId && (!status || t.status === status))
+      if (hit) return hit
+    }
+    return null
+  }
+
+  /** 持有某个 chip 的那条消息——检查点回执要续写到它上面，而不是另起一条 */
+  function findMessageByToolCall(callId: string): AgentMessage | null {
+    for (const msg of messages.value) {
+      if (msg.toolCalls?.some((t) => t.callId === callId)) return msg
+    }
+    return null
+  }
+
+  /** 用户答完检查点后立刻收掉按钮，不必等后端回话 */
+  function markConfirmAnswered(callId: string, action?: string): void {
+    const tc = findToolCall(callId, 'confirming')
+    if (!tc) return
+    tc.status = 'done'
+    tc.summary = tc.options?.find((o) => o.value === action)?.label || '已答复'
+  }
+
   /** 从响应式数组中获取最后一条 assistant 消息（确保响应式更新） */
   function getLastAssistant(): AgentMessage | null {
     const msgs = messages.value
@@ -263,6 +354,16 @@ export function useAgentChat(options: UseAgentChatOptions) {
       if (msgs[i].role === 'assistant') return msgs[i]
     }
     return null
+  }
+
+  /**
+   * 本轮事件该落到哪条消息。
+   *
+   * 续跑轮持有卡片的那条往往不是数组最后一条（例如从历史里恢复的旧线程，
+   * 末尾已经挂着别的助手消息），按最后一条落点会让文字跑到卡片下面的新气泡里。
+   */
+  function target(): AgentMessage | null {
+    return currentAssistantMsg ?? getLastAssistant()
   }
 
   function cancel() {
@@ -273,7 +374,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
     }
   }
 
-  const LS_KEY = () => `agent_chat_${options.scenario}`
+  const LS_KEY = () => `agent_chat_${resolve(options.scenario)}`
 
   function persistToLocal() {
     try {
@@ -349,7 +450,8 @@ export function useAgentChat(options: UseAgentChatOptions) {
 
   function tryParseResult(content: string): Record<string, unknown> | undefined {
     try {
-      const match = content.match(/\{[\s\S]*"schema"[\s\S]*\}/)
+      // 非贪婪：历史内容里可能串了多段 JSON，贪婪匹配会把后面的一起吞进来导致解析失败
+      const match = content.match(/\{[\s\S]*?"schema"[\s\S]*?\}/)
       return match ? JSON.parse(match[0]) : undefined
     } catch { return undefined }
   }
@@ -357,6 +459,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
   return {
     messages: messages as any,
     isLoading: readonly(isLoading),
+    activeMessageId: readonly(activeMessageId),
     status: readonly(status),
     sessionId: readonly(sessionId),
     error: readonly(error),

@@ -4,7 +4,7 @@
   "private": true,
   "description": "轻量化低代码表单平台 — Vue 3 + NestJS Monorepo",
   "scripts": {
-    "dev": "turbo run dev --filter=@furmx/server --filter=@furmx/web",
+    "dev": "turbo run dev --filter=@furmx/server --filter=@furmx/web --filter=@furmx/agent",
     "dev:server": "turbo run dev --filter=@furmx/server",
     "dev:web": "turbo run dev --filter=@furmx/web",
     "build": "turbo run build",

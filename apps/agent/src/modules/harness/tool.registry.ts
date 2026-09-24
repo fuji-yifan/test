@@ -188,18 +188,34 @@ export class ToolRegistry implements OnModuleInit {
       if (!args.fields || !Array.isArray(args.fields)) {
         // args 中有数组值 → 作为 fields
         for (const [key, val] of Object.entries(args)) {
+          // removeFields 也是数组，但它不是 fields —— 别把要删的 key 当成字段定义
+          if (key === 'removeFields') continue
           if (Array.isArray(val) && val.length > 0) {
-            return { fields: val, formTitle: args.formTitle || (args as any).form_title, labelPosition: args.labelPosition || (args as any).label_position }
+            // target / existingSchema 是编排层的寻址与注入通道，removeFields 是删除清单，
+            // 拍平时都必须原样带上，否则寻址、合并、删除会同时失效
+            // （DeepSeek 偶发拍平参数时就会踩到）。
+            return {
+              fields: val,
+              formTitle: args.formTitle || (args as any).form_title,
+              labelPosition: args.labelPosition || (args as any).label_position,
+              target: args.target,
+              removeFields: args.removeFields ?? (args as any).remove_fields,
+              existingSchema: args.existingSchema,
+            }
           }
         }
         // args 中嵌套了 schema 对象 → 提取 fields
         for (const [key, val] of Object.entries(args)) {
+          // existingSchema 也是「带 fields 的对象」，但它是编排层注入的当前草稿 ——
+          // 把它当嵌套 schema 会把整张表回填成 fields，于是「只删两个字段」的调用
+          // 变成「整表重写」（实测 summary 会多出「修改 N 个字段」这种假变更）。
+          if (key === 'existingSchema') continue
           if (val && typeof val === 'object' && !Array.isArray(val) && Array.isArray((val as any).fields)) {
             return { ...args, fields: (val as any).fields, formTitle: args.formTitle || (val as any).formTitle || (val as any).settings?.formTitle }
           }
         }
-        // 空参数 → 返回空 fields 让 LLM 看到错误
-        if (!args.fields) {
+        // 空参数 → 返回空 fields 让 LLM 看到错误（只给 removeFields 是合法调用，不塞空 fields）
+        if (!args.fields && !args.removeFields) {
           return { ...args, fields: [] }
         }
       }

@@ -49,11 +49,29 @@ export interface ToolResultPayload {
   summary: string
 }
 
+/** 人机协作检查点的一个可选答复项（langgraph 引擎下发，legacy 不发） */
+export interface ConfirmOption {
+  value: string
+  label: string
+  style?: 'primary' | 'default' | 'danger'
+}
+
 export interface ConfirmRequiredPayload {
   callId: string
   tool: string
   risk: 'low' | 'medium' | 'high' | 'critical'
   summary: string
+  /**
+   * 以下字段只有 langgraph 引擎会带：
+   * legacy 是「工具风险确认」，问题文案与按钮都由前端硬编码；
+   * langgraph 是声明式检查点，文案、选项、以及「要审的产物」必须由后端下发。
+   * 前端以 options 是否存在来区分两种引擎。
+   */
+  prompt?: string
+  kind?: 'checkpoint' | 'tool_confirm'
+  options?: ConfirmOption[]
+  /** 本次检查点要审的产物（与 message.result 同构，前端复用预览卡片渲染） */
+  artifact?: Record<string, unknown>
 }
 
 export interface MessagePayload {

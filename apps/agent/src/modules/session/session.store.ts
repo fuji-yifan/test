@@ -161,12 +161,13 @@ export class SessionStore {
     const db = await this.getDb()
     if (db) {
       db.run(
-        'UPDATE sessions SET messages=?, metadata=?, locked=?, scenario=?, updated_at=? WHERE id=?',
+        'UPDATE sessions SET messages=?, metadata=?, locked=?, scenario=?, workspace_id=?, updated_at=? WHERE id=?',
         [
           JSON.stringify(session.messages),
           JSON.stringify(session.metadata),
           session.locked ? 1 : 0,
           session.scenario,
+          session.workspaceId,
           session.updatedAt,
           id,
         ],

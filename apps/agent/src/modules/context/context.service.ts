@@ -50,6 +50,10 @@ export class ContextService {
 
   // ---- 便捷方法 ----
 
+  async listForms(token: string, workspaceId: string): Promise<any> {
+    return this.fetch(`/api/v1/workspaces/${workspaceId}/forms`, token)
+  }
+
   async getForm(token: string, formId: string): Promise<any> {
     return this.fetch(`/api/v1/forms/${formId}`, token)
   }
