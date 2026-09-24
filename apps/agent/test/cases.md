@@ -26,7 +26,7 @@
 | R3 | 路由-表单信号 | 在流程页说"设计一个报销信息填写表" | workflow-node | form-designer | 不因为"审批"关键词误判为 workflow | ✅ | 切到 form-designer，未误判 |
 | R4 | 路由-短消息 | 在任意页面说"在吗" | 任意 | 页面Agent | 保持页面 Agent 不改变 | ✅ | 数据分析页说"在吗"仍为 submission（注：原注"任意"我按最易误判页取） |
 | C1 | 跨领域编排 | 基于客服模板创建表单并配审批流 | form-builder | 多步 plan | plan 生成，多步执行 | ✅ | plan 三步全跑完：`template_search → form_assemble_schema →(继续) validate →(继续) form_save+flow_create+flow_validate →(继续) flow_save`。**需一路点「继续」推进计划** |
-| E1 | 错误-缺参数 | LLM调用 form_assemble_schema 不传 fields | form-builder | form-designer | 返回明确错误+重试，不超过3次失败 | ➖ | 无法从外部强制：模型明确拒绝"故意省略必填参数"。单测也未覆盖这条路径（见 3.6） |
+| E1 | 错误-缺参数 | LLM调用 form_assemble_schema 不传 fields | form-builder | form-designer | 返回明确错误+重试，不超过3次失败 | ✅ | 模型拒绝照做，拆两层验（见 3.6）：**文案层已验**（HTTP 直打工具端点，拿到 `参数错误：…。请按正确格式重试。`）；**级联层**由 `graph-flow.spec.ts` 3 条单测覆盖（第 3 次失败才 `[DEGRADE]`、错一次再成功不误报、两次降级收 `FALLBACK`），真机侧与 3.11 同一段代码 |
 | E2 | 错误-缺Token | 不登录直接调 agent | - | - | 返回 401 而非 500 | ✅ | 无 token → HTTP 401 |
 | E3 | 错误-Server断连 | Server 未启动时调 template_search | template-creator | template | 提示"后端未启动"而非模糊错误 | ➖ | 需要把 apps/server 停掉才能测（代码路径在 context.service.ts:42 把 ECONNREFUSED 转成"后端服务未启动或不可达"） |
 | D1 | SSE-流式 | 会产出文字的提示词（如"你能做什么？"） | form-builder | form-designer | delta 事件逐 token 到达，且只包含模型输出 | ✅ | 09-20：**langgraph 下 0 条 delta**（纯文字回复也一样；legacy 同场景 72 条）（见 3.2）。**09-21 复测通过**：168 条 delta / 290 字符，无提示词泄漏。原输入的"创建留言表"模型直接调工具、没有文字可流，已换成纯文字提示词（见 3.2） |
@@ -103,8 +103,24 @@
 
 前端 `ChatPanel.vue` 的 `AGENT_LABEL` 是按 agent key 建的，所以在 legacy 下 `form-builder` / `workflow-node` 查不到标签、状态栏会显示原始字符串。langgraph 侧是对的。
 
-### 3.6 E1 无覆盖 —— P2
-缺参数的错误路径（ToolRegistry 的 zod + 参数修复）既无法从外部强制触发，单测里也没有对应用例（`tool-bridge.spec.ts` 只覆盖了工具执行失败的透传）。
+### 3.6 E1 缺参数错误 —— 2026-09-24 拆两层验完（原 P2）
+
+原先的问题是这条路径**推不动**：模型明确拒绝"故意省略必填参数"，单测里也只有工具执行失败的透传。09-24 拆成两层分别验：
+
+**文案层（已验，`D:\agent-e2e\probe_e1.py`）** —— 参数校验的报错文案不必经过模型，直接 HTTP 打工具端点（`POST /api/v1/agent/tools/:name`，走 `ToolGateway` → `ToolRegistry.call`，与图侧是同一条 zod 路径）：
+
+```
+form_validate_schema  {"schema": 123}      → 参数错误：schema: Expected object, received number。请按正确格式重试。
+form_validate_schema  {"schema": "not-json"} → 参数错误：schema: Expected object, received string。请按正确格式重试。
+form_assemble_schema  {"fields": "oops"}   → 参数错误：fields: Expected array, received string。请按正确格式重试。
+flow_create           {"nodes": "oops"}    → 参数错误：name: Required; nodes: Expected array, received string; edges: Required。请按正确格式重试。
+```
+
+返回的 `summary` **就是编排层回灌给模型的那句 ToolMessage**（`tool.registry.ts:162-165`）；最后一条还证明多字段错误按 `; ` 聚合。两个坑：端点响应有**双层壳**（全局拦截器在 controller 自己的 `{code,data,…}` 外又包一层，真实载荷在 `data.data`）；`error: 'validation_error'` 分类**不出现在端点响应里**（controller 只回 `ok/result/summary`），只有图侧 `bridge.run` 看得到。
+
+**级联层（已验，`graph-flow.spec.ts` 3 条）** —— 「重试不超过 3 次」由 `subgraph.factory.ts:504-538` 保证，且这段分支**对 `validation_error` 与 `execution_error` 是同一段代码**，差别只在多发不发一个 `RETRY`/`DEGRADE` 事件（这两个 code 前端本就过滤，见 `useAgentChat.ts:311`）。所以真机侧的 3.11（不存在的 formId 连试 3 次）已经覆盖了级联本身。单测三条锁死：第 3 次失败才换 `[DEGRADE]` 回灌、失败一次后再成功不误报 `DEGRADE`、第二个工具也跨阈值时 `FALLBACK` 收尾并 `halted`（21/21 绿，日志里能看到 `工具多次降级（degradeCount=2），收尾本轮`）。
+
+**没做的**：改成 `z.record(z.string())` 注入式专测 `validation_error` 版级联 —— 需要 rebuild + 重启，收益只是换掉事件里的 error code，判断为不值。
 
 ### 3.7 连发消息报「会话正在执行中」—— P1（2026-09-22 已修 + 复测）
 用户实操：第一个检查点没答就发第二条、第二个检查点没答就发第三条，第三条报「会话正在执行中，请等待完成」。
@@ -210,7 +226,7 @@
 | D2 打字动画 | 依赖 D1（D1 已通），且是 DOM 表现 |
 | 预览卡片在检查点待答复时自动展开、答完收起 | DOM 表现 |
 | E3 Server 断连提示 | 需要把 apps/server 停掉 |
-| E1 缺参数错误 | 模型拒绝照做；需单测或注入路径 |
+| E1 缺参数错误 | ~~模型拒绝照做；需单测或注入路径~~ 09-24 已拆两层验完（HTTP 端点验文案 + 单测验级联，见 3.6），不再需要人工介入 |
 
 ## 五、实测写入的数据（09-21、09-22、09-24 均已清理）
 
