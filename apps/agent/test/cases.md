@@ -278,3 +278,5 @@ form_save 的落库已按"必须查 formpu.forms 新行"核对：新行存在且
 **F7 的查库结论就是"静默覆盖"这个隐藏 bug 的反证**：旧版这里只会剩 1 行、名字是后建的那张、字段是两张表混起来的；现在两行并存、字段各自完整。
 
 **2026-09-22（F11 / 3.10 增量契约）**：`probe_ops.py` 全程不在检查点上点按钮（走抢占分支），也没在"是否加入当前空间"处选加入，所以**一行都没落库**，跑完查库仍是基线 **forms=69 / form_versions=179**（`db_cleanup.js` dry-run 复核）。字段级证据取自 `formWorksheet` channel，新探针 `db_ws2.js <thread_id>` 把该 channel 的写入解成「字段 key/type[o选项数,r必填数]」逐版打印 —— 查「选项有没有丢」用这个，比翻 checkpoint 原始 blob 省事。
+
+**2026-09-24（3.13 放弃出口真机三条）**：三条都没走到 `form_save`（① 指死端口后工具必然失败、② 多步计划第一步就放弃、③ 检查点中断），**一行都没落库**。`db_cleanup.js` dry-run：`forms=69 / form_versions=179`，`ceshi` 空间 forms=0，与基线一致。
