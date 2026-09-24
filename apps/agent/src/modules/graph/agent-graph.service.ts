@@ -135,6 +135,15 @@ export class AgentGraphService {
       completedSteps: [],
       artifacts: {},
       halted: false,
+      gaveUp: false,
+      // 一轮新消息 = 一次全新的尝试：上一轮攒下的失败额度不能带进来，
+      // 否则用户换个说法重试时，模型第一次失败就直接吃 [DEGRADE]，白丢两次重试机会。
+      //
+      // 只能放这里，不能放子图的 prepare —— 多步计划的每个 step 都会重进 prepare，
+      // 那样会把同一计划内前面步骤的计数也抹掉。resume 走 Command 直接恢复被中断的
+      // gate，不过 routerNode，所以同一轮内的续跑不受影响。
+      toolErrors: {},
+      degradeCount: 0,
       finalContent: '',
       pendingCalls: [],
       lastTool: null,
@@ -157,7 +166,7 @@ export class AgentGraphService {
     const steps = plan?.steps ?? []
     const idx = state.stepIndex ?? 0
 
-    if (state.halted || idx >= steps.length) {
+    if (state.halted || state.gaveUp || idx >= steps.length) {
       return {} // 由 nextAfterPlanDriver 送去 aggregate
     }
 
@@ -185,7 +194,7 @@ export class AgentGraphService {
   private nextAfterPlanDriver(state: AgentStateType): string {
     const steps = state.plan?.steps ?? []
     const idx = state.stepIndex ?? 0
-    if (state.halted || idx >= steps.length) return 'aggregate'
+    if (state.halted || state.gaveUp || idx >= steps.length) return 'aggregate'
     const agent = steps[idx].agent
     if (!this.catalog.get(agent)) {
       this.logger.warn(`计划里的 agent "${agent}" 不在目录中，跳过该步骤`)
@@ -203,8 +212,8 @@ export class AgentGraphService {
     const step = steps[idx]
     if (!step) return {}
 
-    // 用户中断：不标记完成、不推进，直接收尾
-    if (state.halted) return {}
+    // 用户中断 / 系统放弃：不标记完成、不推进、不登记产物，直接收尾
+    if (state.halted || state.gaveUp) return {}
 
     const draft = state.drafts[step.agent]
     const artifacts = draft ? { ...state.artifacts, [step.id]: draft } : state.artifacts
@@ -233,6 +242,7 @@ export class AgentGraphService {
       type: 'aggregate',
       planId: plan?.planId ?? null,
       halted: state.halted,
+      gaveUp: state.gaveUp,
       steps: steps.map((s) => ({ id: s.id, agent: s.agent, done: done.includes(s.id) })),
       artifactKeys: Object.keys(artifacts),
     })

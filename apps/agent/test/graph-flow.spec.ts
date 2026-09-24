@@ -732,7 +732,7 @@ describe('路由与计划（纯函数）', () => {
     expect(h.events.some((e) => e.type === 'error' && e.code === 'DEGRADE')).toBe(false)
   })
 
-  it('多个工具都降到谷底时收尾，并如实上报 FALLBACK', async () => {
+  it('多个工具都降到谷底时收尾：走 gaveUp，且不再下发 FALLBACK 错误事件', async () => {
     const fail = (id: string, name: string) => ({ calls: [{ id, name, args: {} }] })
     const h = buildHarness(
       [
@@ -751,11 +751,114 @@ describe('路由与计划（纯函数）', () => {
 
     const result = await runTurn(h, '查一下本月数据', 'data-analysis')
 
-    // data_query 降级 1 次、data_list_forms 又降级 1 次 → 超过 MAX_DEGRADE=1 → 收尾
-    expect(result.halted).toBe(true)
+    // data_query 降级 1 次、data_list_forms 又降级 1 次 → 超过 MAX_DEGRADE=1 → 放弃本轮
+    expect(result.gaveUp).toBe(true)
+    // 放弃是「系统做不到」，不是用户叫停：halted 必须保持 false，两者不能混
+    expect(result.halted).toBe(false)
     expect(result.finalContent).toContain('多次尝试')
-    expect(h.events.some((e) => e.type === 'error' && e.code === 'FALLBACK')).toBe(true)
-    // 收尾后不该再继续打没有意义的调用
+    // 放弃不再下发终态 error：同一句「我做不到」不该既是红 banner 又是助手气泡。
+    // 对外改由 done.stopReason='giveup' 表达（见 langgraph-turn 的用例）。
+    expect(h.events.some((e) => e.type === 'error')).toBe(false)
+    // 放弃后不该再继续打没有意义的调用
     expect(h.gateway.calls).toHaveLength(6)
+  })
+
+  it('上一轮攒下的失败额度不带进下一轮：换个说法重试仍有完整重试机会', async () => {
+    // 同一 thread 跑两轮。第一轮把 data_query 错满 3 次（degradeCount 到 1，触及上限
+    // 但未越过），第二轮再错 1 次 —— 若 toolErrors 跨轮残留，这第 4 次会被算成
+    // 「已连续失败 4 次」，模型第一次失败就直接吃 [DEGRADE]，白丢两次自修机会。
+    const h = buildHarness(
+      [
+        { calls: [{ id: 'c1', name: 'data_query', args: {} }] },
+        { calls: [{ id: 'c2', name: 'data_query', args: {} }] },
+        { calls: [{ id: 'c3', name: 'data_query', args: {} }] },
+        { content: '第一轮结束' },
+        { calls: [{ id: 'c4', name: 'data_query', args: {} }] },
+        { content: '第二轮结束' },
+      ],
+      { catalogSpec: submissionSpec(['data_query']) },
+    )
+    h.gateway.failTools.add('data_query')
+
+    await runTurn(h, '查一下本月数据', 'data-analysis')
+    const second = await runTurn(h, '换个说法再查一次', 'data-analysis')
+
+    // 先证明这套脚本确实能产生 [DEGRADE]（第一轮第 3 次失败后的那次 think）
+    expect(toolContentsOf(h.llm.seen[3]).some((c) => c.startsWith('[DEGRADE]'))).toBe(true)
+    // 第二轮第 1 次失败（seen[5]）回灌的必须是原始失败，让模型自己改
+    const fedBack = toolContentsOf(h.llm.seen[5])
+    expect(fedBack.some((c) => c.startsWith('[DEGRADE]'))).toBe(false)
+    expect(fedBack[0]).toContain('"ok":false')
+    expect(second.gaveUp).toBe(false)
+    expect(second.halted).toBe(false)
+  })
+
+  it('单个工具从头坏到尾满 6 次也会收尾，不必等轮次用尽兜底', async () => {
+    const fail = (id: string) => ({ calls: [{ id, name: 'data_query', args: {} }] })
+    const h = buildHarness(
+      [fail('c1'), fail('c2'), fail('c3'), fail('c4'), fail('c5'), fail('c6'), { content: '还是不行' }],
+      // 轮次给足：这里要验的是「工具连续失败」这条出口，不是 MAX_ITERATIONS 兜底
+      { catalogSpec: submissionSpec(['data_query'], 12) },
+    )
+    h.gateway.failTools.add('data_query')
+
+    const result = await runTurn(h, '查一下本月数据', 'data-analysis')
+
+    // 第 3 次失败降级 1 次、第 6 次再降级 1 次 → 越过 MAX_DEGRADE=1 → 放弃。
+    // 旧实现里这里走不到：degradeCount 会卡在 1，只能靠 maxIterations 给别的文案。
+    expect(result.gaveUp).toBe(true)
+    expect(result.finalContent).toContain('多次尝试')
+    expect(h.gateway.calls).toHaveLength(6)
+  })
+
+  it('轮次用尽与工具反复失败走同一个放弃出口', async () => {
+    // 工具不失败：不靠失败额度，纯验 MAX_ITERATIONS 兜底也置 gaveUp
+    const h = buildHarness(
+      [
+        { calls: [{ id: 'c1', name: 'data_query', args: {} }] },
+        { calls: [{ id: 'c2', name: 'data_query', args: {} }] },
+        { content: '第三轮不该被调用' },
+      ],
+      { catalogSpec: submissionSpec(['data_query'], 2) },
+    )
+
+    const result = await runTurn(h, '查一下本月数据', 'data-analysis')
+
+    expect(result.gaveUp).toBe(true)
+    // 与用户中断区分开：轮次用尽不是 halted
+    expect(result.halted).toBe(false)
+    expect(result.finalContent).toContain('已经尝试了 2 轮')
+  })
+
+  it('多步计划第一步就放弃：后续步骤不再执行，产物不登记', async () => {
+    // 旧实现里放弃被当成「正常完成」，planAdvance 会把这个步骤记成 done、游标前推，
+    // 于是多步计划带着缺失的产物继续空跑后面的步骤。
+    const fail = (id: string) => ({ calls: [{ id, name: 'template_search', args: { keyword: '请假' } }] })
+    const h = buildHarness([
+      fail('c1'),
+      fail('c2'),
+      fail('c3'),
+      fail('c4'),
+      fail('c5'),
+      fail('c6'),
+      { content: '还是不行' },
+    ])
+    h.gateway.failTools.add('template_search')
+
+    const r = await runTurn(h, '搜索请假模板，基于它创建表单并配一个审批流程')
+
+    const route = h.events.find((e) => e.type === 'route')
+    expect(route?.isCrossDomain).toBe(true)
+
+    expect(r.gaveUp).toBe(true)
+    expect(r.interrupted).toBeUndefined()
+    // 只有第一步的工具被打过；form-designer / workflow 的工具一次都没出现
+    expect(h.gateway.calls).toHaveLength(6)
+    expect(h.gateway.calls.every((c) => c.name === 'template_search')).toBe(true)
+
+    const agg = h.events.find((e) => e.type === 'aggregate')
+    expect(agg?.gaveUp).toBe(true)
+    expect((agg?.steps as any[]).map((s) => s.done)).toEqual([false, false, false])
+    expect(agg?.artifactKeys).toEqual([])
   })
 })

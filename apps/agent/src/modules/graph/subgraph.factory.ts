@@ -225,11 +225,14 @@ export class AgentSubgraphFactory {
   private async think(state: AgentStateType, spec: AgentSpec): Promise<Partial<AgentStateType>> {
     const iterations = (state.iterations ?? 0) + 1
     if (iterations > spec.maxIterations) {
+      // 和工具反复失败那条出口共用 gaveUp：都是「系统放弃」，都该停掉整条计划，
+      // 而不是被父图当成正常完成、带着缺失的产物继续跑后面的步骤。
       return {
         iterations,
         finalContent: `已经尝试了 ${spec.maxIterations} 轮仍未完成，请把需求说得更具体一些，或告诉我下一步怎么做。`,
         pendingCalls: [],
         needThink: false,
+        gaveUp: true,
       }
     }
 
@@ -507,10 +510,17 @@ export class AgentSubgraphFactory {
     const failures = ok ? 0 : (prevErrors[call.name] ?? 0) + 1
     const toolErrors = { ...prevErrors, [call.name]: failures }
 
-    // 只在「刚刚越过重试上限」那一刻记一次降级；该工具成功后再失败会重新计
-    const previouslyDegraded = (prevErrors[call.name] ?? 0) > maxRetries
+    // 每「连续失败满 maxRetries+1 次」记一次降级；该工具成功后再失败会重新计。
+    //
+    // 不能写成「刚跨过上限才记一次」：那样子在同一工具身上只会触发一次
+    // （第 4 次起「上一次就已越线」恒为真），degradeCount 卡在 1、
+    // `degradeCount > maxDegrades` 永远不成立 —— 一个工具从头坏到尾反倒不会收尾，
+    // 只能等该 agent 的 maxIterations 兜底。
+    const window = maxRetries + 1
+    const prevFailures = prevErrors[call.name] ?? 0
+    const crossed = Math.floor(failures / window) - Math.floor(prevFailures / window)
     const degradedNow = failures > maxRetries
-    const degradeCount = (state.degradeCount ?? 0) + (!previouslyDegraded && degradedNow ? 1 : 0)
+    const degradeCount = (state.degradeCount ?? 0) + Math.max(0, crossed)
 
     let content: string
     if (ok) {
@@ -541,16 +551,20 @@ export class AgentSubgraphFactory {
 
     // 降级次数超上限 → 整体收尾（legacy 的 FALLBACK）。清空待执行队列，
     // 让 gate 走 respond 而不是继续 act，避免明知不可行还往下打。
+    //
+    // 走 gaveUp 而不是 halted：这是「系统放弃」，不是用户叫停。对外不发 error 事件
+    // （文案本身是给用户的建议，不是系统故障，红色错误条会让人以为平台坏了），
+    // 收尾语义改由 `done.stopReason = 'giveup'` 表达 —— 与 MAX_ITERATIONS 用尽那条
+    // 出口共用同一个标记，两个「我做不到」从此长得一样。
     if (degradeCount > maxDegrades) {
       const message = '当前方式多次尝试仍未成功，建议换一种描述，或把需求拆得更具体一些。'
-      emit({ type: 'error', code: 'FALLBACK', message })
       this.logger.warn(`工具多次降级（degradeCount=${degradeCount}），收尾本轮`)
       return {
         messages: [...state.messages, toolMessage],
         pendingCalls: [],
         lastTool: { callId: call.id, name: call.name, ok, summary },
         needThink: false,
-        halted: true,
+        gaveUp: true,
         finalContent: message,
         toolErrors,
         degradeCount,

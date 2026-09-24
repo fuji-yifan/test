@@ -204,7 +204,9 @@ export class LangGraphTurnService {
       }
       case 'error':
         // 图内上报的错误：RETRY/RETRYING/DEGRADE 是内部修正过程，前端按 code 自行过滤不提示；
-        // FALLBACK / CIRCUIT_BREAKER 是终态，必须让用户看到。
+        // 只有 CIRCUIT_BREAKER 是终态，必须让用户看到。
+        // （FALLBACK 原先也走这里，2026-09-24 起不再下发 —— 放弃本轮改由
+        //  `stopReason: 'giveup'` + 助手气泡表达，不再叠一个红 banner。）
         this.safeWrite(sse, SseEventType.ERROR, {
           code: (event.code as string) ?? 'UNKNOWN',
           message: (event.message as string) ?? '',
@@ -227,7 +229,13 @@ export class LangGraphTurnService {
 
     sse.writeEvent(SseEventType.DONE, {
       sessionId: session.id,
-      stopReason: result.interrupted ? 'interrupted' : result.halted ? 'halted' : 'completed',
+      stopReason: result.interrupted
+        ? 'interrupted'
+        : result.halted
+          ? 'halted'
+          : result.gaveUp
+            ? 'giveup'
+            : 'completed',
       usage: result.usage,
     })
   }

@@ -159,20 +159,24 @@ export const AgentState = Annotation.Root({
   /** 该子图内已进行的 LLM 轮次，用于兜底防死循环 */
   iterations: Annotation<number>({ reducer: (_p, n) => n, default: () => 0 }),
   /**
-   * 工具名 -> 连续失败次数（成功即清零，merge 语义）。
+   * 工具名 -> 连续失败次数（成功即清零）。
    *
    * 迁移时漏掉的一环：legacy 的 base.agent 会数同一个工具连续错了几次，
    * 超过 MAX_RETRIES 就改成「换方案」提示、超过 MAX_DEGRADE 就整体收尾。
    * 图侧原先只有「失败就回一条 ToolMessage」——模型可以无限重试同一个坏工具。
+   *
+   * 替换语义（不是 merge）：act 是唯一写入者，每次返回的都是**全量 map**，
+   * 所以替换才能让 routerNode 按轮清零 —— 用 merge 的话写 `{}` 只算空增量，
+   * 上一轮的失败额度会带进下一轮。
    */
   toolErrors: Annotation<Record<string, number>>({
-    reducer: (prev, next) => ({ ...(prev ?? {}), ...(next ?? {}) }),
+    reducer: (_p, n) => n ?? {},
     default: () => ({}),
   }),
   /**
    * 已进入「降级」状态的次数（替换语义）。
    *
-   * 按「某个工具刚刚越过重试上限」的那一刻计一次，与 legacy 的 degradeCount 同义；
+   * 按「某个工具连续失败满 MAX_RETRIES+1 次」计一次，与 legacy 的 degradeCount 同义；
    * 该工具成功后再失败会重新计数，所以反复坏掉的工具最终仍会触发收尾。
    */
   degradeCount: Annotation<number>({ reducer: (_p, n) => n, default: () => 0 }),
@@ -187,7 +191,21 @@ export const AgentState = Annotation.Root({
     reducer: (_p, n) => n,
     default: () => 'think',
   }),
+  /**
+   * 用户主动中断（点了检查点上的「中断」、或拒绝了风险确认）。
+   *
+   * 与 gaveUp 的分工：halted 是「用户让停」，gaveUp 是「系统放弃」。
+   * 父图对两者的处置相同（都停整条计划、不登记产物），但对外话术与
+   * `done.stopReason` 必须区分得开 —— 否则排障时分不清是用户叫停还是我们认输。
+   */
   halted: Annotation<boolean>({ reducer: (_p, n) => n, default: () => false }),
+  /**
+   * 系统放弃本轮：工具反复失败（超过 MAX_DEGRADE）或轮次用尽（超过该 agent 的 maxIterations）。
+   *
+   * 这两个出口共用它，所以它们在父图看来是同一件事（停计划、不推进），
+   * 而不是一个走 halted、另一个被当成正常完成继续往下跑。
+   */
+  gaveUp: Annotation<boolean>({ reducer: (_p, n) => n, default: () => false }),
 
   // ---- 汇总 ----
   finalContent: Annotation<string>({ reducer: (_p, n) => n, default: () => '' }),

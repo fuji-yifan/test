@@ -113,6 +113,7 @@ const OK_RESULT: RunGraphResult = {
   finalContent: '表单已经建好了',
   usage: { inputTokens: 12, outputTokens: 34 },
   halted: false,
+  gaveUp: false,
 }
 
 const INTERRUPT_PAYLOAD = {
@@ -237,6 +238,7 @@ describe('LangGraphTurnService — interrupt 与回执', () => {
     finalContent: '',
     usage: { inputTokens: 5, outputTokens: 6 },
     halted: false,
+    gaveUp: false,
   }
 
   it('interrupt 折成 confirm_required，并把待答复项记进 session', async () => {

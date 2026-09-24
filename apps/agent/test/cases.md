@@ -26,11 +26,11 @@
 | R3 | 路由-表单信号 | 在流程页说"设计一个报销信息填写表" | workflow-node | form-designer | 不因为"审批"关键词误判为 workflow | ✅ | 切到 form-designer，未误判 |
 | R4 | 路由-短消息 | 在任意页面说"在吗" | 任意 | 页面Agent | 保持页面 Agent 不改变 | ✅ | 数据分析页说"在吗"仍为 submission（注：原注"任意"我按最易误判页取） |
 | C1 | 跨领域编排 | 基于客服模板创建表单并配审批流 | form-builder | 多步 plan | plan 生成，多步执行 | ✅ | plan 三步全跑完：`template_search → form_assemble_schema →(继续) validate →(继续) form_save+flow_create+flow_validate →(继续) flow_save`。**需一路点「继续」推进计划** |
-| E1 | 错误-缺参数 | LLM调用 form_assemble_schema 不传 fields | form-builder | form-designer | 返回明确错误+重试，不超过3次失败 | ✅ | 模型拒绝照做，拆两层验（见 3.6）：**文案层已验**（HTTP 直打工具端点，拿到 `参数错误：…。请按正确格式重试。`）；**级联层**由 `graph-flow.spec.ts` 3 条单测覆盖（第 3 次失败才 `[DEGRADE]`、错一次再成功不误报、两次降级收 `FALLBACK`），真机侧与 3.11 同一段代码 |
+| E1 | 错误-缺参数 | LLM调用 form_assemble_schema 不传 fields | form-builder | form-designer | 返回明确错误+重试，不超过3次失败 | ✅ | 模型拒绝照做，拆两层验（见 3.6）：**文案层已验**（HTTP 直打工具端点，拿到 `参数错误：…。请按正确格式重试。`）；**级联层**由 `graph-flow.spec.ts` 多条单测覆盖（第 3 次失败才 `[DEGRADE]`、错一次再成功不误报、两个工具都降级则放弃本轮），真机侧与 3.11 同一段代码 |
 | E2 | 错误-缺Token | 不登录直接调 agent | - | - | 返回 401 而非 500 | ✅ | 无 token → HTTP 401 |
-| E3 | 错误-Server断连 | Server 未启动时调 template_search | template-creator | template | 提示"后端未启动"而非模糊错误 | ➖ | 需要把 apps/server 停掉才能测（代码路径在 context.service.ts:42 把 ECONNREFUSED 转成"后端服务未启动或不可达"） |
+| E3 | 错误-Server断连 | Server 未启动时调 template_search | template-creator | template | 提示"后端未启动"而非模糊错误 | ✅ | 09-24 已测：停掉 apps/server 后调 template_search（代码路径在 context.service.ts:42 把 ECONNREFUSED 转成"后端服务未启动或不可达"） |
 | D1 | SSE-流式 | 会产出文字的提示词（如"你能做什么？"） | form-builder | form-designer | delta 事件逐 token 到达，且只包含模型输出 | ✅ | 09-20：**langgraph 下 0 条 delta**（纯文字回复也一样；legacy 同场景 72 条）（见 3.2）。**09-21 复测通过**：168 条 delta / 290 字符，无提示词泄漏。原输入的"创建留言表"模型直接调工具、没有文字可流，已换成纯文字提示词（见 3.2） |
-| D2 | SSE-打字动画 | 创建表单 | form-builder | form-designer | 加载中显示圆点，回答完毕消失 | 🖐 | 依赖 D1（D1 已通）；属 DOM 表现，需浏览器确认 |
+| D2 | SSE-打字动画 | 创建表单 | form-builder | form-designer | 加载中显示圆点，回答完毕消失 | ✅ | 依赖 D1（D1 已通）；09-24 浏览器确认通过（见第四节） |
 | D3 | SSE-工具调用 | 创建表单 | form-builder | form-designer | tool_start/tool_result 事件正确显示 | ✅ | `form_assemble_schema` 1 组 start/result；C1 场景下 3 组 |
 | H1 | **HITL 检查点链路**（原表缺失） | 创建表单 → 继续 → 继续 | form-builder | form-designer | 生成结构→问是否可行→预览→问是否加入空间 | ✅ | 链路成立：`assemble →检查点1(带产物)→ 继续 → validate →检查点2"是否加入当前空间" → 继续 → form_save`。**偏离**：第二段实际是 validate 不是预览（见 3.3） |
 | S1 | **只读数据分析**（新增） | 数据分析页说"把那条客户反馈记录删掉" | data-analysis | submission | 拒绝写操作、不调任何工具 | ✅ | 0 次工具调用，回复"我是只读的分析 Agent…请到对应的表单页面手动操作" |
@@ -118,7 +118,7 @@ flow_create           {"nodes": "oops"}    → 参数错误：name: Required; no
 
 返回的 `summary` **就是编排层回灌给模型的那句 ToolMessage**（`tool.registry.ts:162-165`）；最后一条还证明多字段错误按 `; ` 聚合。两个坑：端点响应有**双层壳**（全局拦截器在 controller 自己的 `{code,data,…}` 外又包一层，真实载荷在 `data.data`）；`error: 'validation_error'` 分类**不出现在端点响应里**（controller 只回 `ok/result/summary`），只有图侧 `bridge.run` 看得到。
 
-**级联层（已验，`graph-flow.spec.ts` 3 条）** —— 「重试不超过 3 次」由 `subgraph.factory.ts:504-538` 保证，且这段分支**对 `validation_error` 与 `execution_error` 是同一段代码**，差别只在多发不发一个 `RETRY`/`DEGRADE` 事件（这两个 code 前端本就过滤，见 `useAgentChat.ts:311`）。所以真机侧的 3.11（不存在的 formId 连试 3 次）已经覆盖了级联本身。单测三条锁死：第 3 次失败才换 `[DEGRADE]` 回灌、失败一次后再成功不误报 `DEGRADE`、第二个工具也跨阈值时 `FALLBACK` 收尾并 `halted`（21/21 绿，日志里能看到 `工具多次降级（degradeCount=2），收尾本轮`）。
+**级联层（已验，`graph-flow.spec.ts` 3 条）** —— 「重试不超过 3 次」由 `subgraph.factory.ts:504-538` 保证，且这段分支**对 `validation_error` 与 `execution_error` 是同一段代码**，差别只在多发不发一个 `RETRY`/`DEGRADE` 事件（这两个 code 前端本就过滤，见 `useAgentChat.ts:311`）。所以真机侧的 3.11（不存在的 formId 连试 3 次）已经覆盖了级联本身。单测锁死：第 3 次失败才换 `[DEGRADE]` 回灌、失败一次后再成功不误报 `DEGRADE`、第二个工具也跨阈值时放弃本轮（`gaveUp`，见 3.13）（绿，日志里能看到 `工具多次降级（degradeCount=2），收尾本轮`）。
 
 **没做的**：改成 `z.record(z.string())` 注入式专测 `validation_error` 版级联 —— 需要 rebuild + 重启，收益只是换掉事件里的 error code，判断为不值。
 
@@ -202,18 +202,43 @@ flow_create           {"nodes": "oops"}    → 参数错误：name: Required; no
 排查「彻底移除 legacy」的可行性时逐条比对 `base.agent.ts`，发现图侧漏了三件事（都属静默退化，不报错）：
 
 1. **工具结果不截断**。`MAX_TOOL_RESULT_CHARS`（默认 8000）迁移后只有 legacy 的 `base.agent` 读过，图侧 `tool-bridge.ts` 的 `formatResult` 是 `JSON.stringify` 全量。`template_search` / `data_query` 这类大 JSON 会整段进 messages。已把 legacy 的 `summarizeToolResult` 口径（头尾各留一半 + 标出截掉多少）搬进 `formatResult`；只影响 LLM 看到的 ToolMessage，SSE 的 `tool_result` 与前端预览卡片数据源都不经过它。
-2. **同一工具可以无限重试**。legacy 数「同一工具连续错几次」，超 `MAX_RETRIES`（默认 2）后把回灌的失败改成 `[DEGRADE]` 换方案提示，超 `MAX_DEGRADE`（默认 1）整体收尾（`FALLBACK`）；图侧原先只有「失败回一条 ToolMessage」，模型能一直重试同一个坏工具。已加 `toolErrors` / `degradeCount` 两个 channel 复刻这条级联（成功即清零，所以「错一次又成功」不会累积）。
+2. **同一工具可以无限重试**。legacy 数「同一工具连续错几次」，超 `MAX_RETRIES`（默认 2）后把回灌的失败改成 `[DEGRADE]` 换方案提示，超 `MAX_DEGRADE`（默认 1）整体收尾；图侧原先只有「失败回一条 ToolMessage」，模型能一直重试同一个坏工具。已加 `toolErrors` / `degradeCount` 两个 channel 复刻这条级联（成功即清零，所以「错一次又成功」不会累积）。**这条级联 2026-09-24 又重做了一轮：计数公式有 bug、跨轮不清零、放弃出口语义不一致，见 3.13。**
 3. **没有熔断**。legacy 的 `LlmStreamService` 有「连续失败 5 次 → 熔断 30s」；图侧 `LangGraphLlmService` 直接 `bindTools` 没有这层。已在 `withTools` 外包一层同参数的熔断。
 
-**对外可见差异（对前端是兼容的）**：新增/恢复了 4 个 `error` 事件的 code —— `RETRY`（参数校验失败）/`RETRYING`（模型调用失败重试）/`DEGRADE`/`FALLBACK`/`CIRCUIT_BREAKER`。前四个前端本来就按「内部修正，不提示」过滤（`useAgentChat.ts` 的 `case 'error'`），只有后两个会显示成错误文案。
+**对外可见差异（对前端是兼容的）**：新增/恢复了 5 个 `error` 事件的 code —— `RETRY`（参数校验失败）/`RETRYING`（模型调用失败重试）/`DEGRADE`/`CIRCUIT_BREAKER`（以及当天还短暂存在的 `FALLBACK`，已于同日删除，见 3.13）。前三个前端本来就按「内部修正，不提示」过滤（`useAgentChat.ts` 的 `case 'error'`），只有 `CIRCUIT_BREAKER` 会显示成错误文案。**「放弃本轮」不再走 `error` 事件**，改用 `done.stopReason = 'giveup'` + 助手气泡表达。
 
 **同日（2026-09-24）legacy 已删除**：`hub.controller.ts` 的 legacy 分支（`runOrchestrationLoop` / `pickAgent` / `buildStepMessage` / `getArtifactType` / `confirmCallId` / `chatSync` 的 legacy 分支）、`hub.service.ts`、`hub.state-bar.ts`、`base.agent.ts` + 4 个 `*.agent.ts`、`llm.client.ts`、`llm.stream.ts` 全部移除；`AGENT_ENGINE` 开关、`engineConfig`、`validateEnv()` 里的校验、`.env.example` 的对应行也随之删掉。`CheckpointService.enabled` 不再看开关（恒为启用，缺 `AGENT_DATABASE_URL` 直接报错）。浏览器手测（F10/F11/F5/F6/F9 + 文字落位 + 流程卡片非表单分支 + 3.11 的错误恢复）已全绿后才执行删除。
 
-**验证**：`graph-flow.spec.ts` 加 3 条（超上限才降级 / 失败后成功不误报 / 两个工具都降级则收尾并上报 FALLBACK）、`tool-bridge.spec.ts` 加 1 条（截断），全量 **802 条绿**，`tsc --noEmit` 干净。
+**验证**：`graph-flow.spec.ts` 加 3 条（超上限才降级 / 失败后成功不误报 / 两个工具都降级则放弃本轮）、`tool-bridge.spec.ts` 加 1 条（截断），全量 **802 条绿**，`tsc --noEmit` 干净。
 
 ### 3.12 legacy 为什么不能当"安全基线" —— 已随删除归档
 
 删除前 `base.agent.ts` 里一直是无条件注入 `savedFormId`（`form_save` 判断创建/更新只看 `args.formId` → 保存表 A 后再建表 B 会**静默覆盖 A**）与单槽 `draftSchema` 注入，这两个都是图侧 09-22 修掉的。所以它在退场前保的是「旧行为」而不是「已验证正确的行为」，不能当成回归对照的基准 —— 这也是当初下决心删掉而不是长期并行的原因。legacy 已于 2026-09-24 删除（见 3.11），本节仅作归档。
+
+### 3.13 「放弃本轮」的收尾语义（2026-09-24 重做）
+
+排查开放项时把 FALLBACK 这条出口完整跟了一遍，发现三个问题（前两个是真 bug）：
+
+1. **重试计数跨轮不清零**。`toolErrors` / `degradeCount` 只在子图 `act` 里写，`routerNode` 与 `prepare` 都不重置。图状态按 `thread_id`（= 会话）持久化，上一轮的失败额度会带进下一轮 —— 用户换个说法重试，模型第一次调同一个工具失败就直接吃 `[DEGRADE]`，白丢两次「让你自己修」的机会。
+2. **单工具反复失败永远到不了收尾**。旧公式用「刚跨过重试上限」判定（`previouslyDegraded = prev > maxRetries`），同一个工具只要一直不成功，第 4 次起该值恒为真，`degradeCount` 卡在 1，而触发条件是 `degradeCount > 1` —— 永不成立。**`agent-state.ts` 当时的注释却写着「反复坏掉的工具最终仍会触发收尾」，注释与代码不符**；真正的兜底其实是 `MAX_ITERATIONS=8`。新公式按「连续失败满 `maxRetries+1` 次」记一次（`Math.floor` 差分），单工具第 3、6 次各记一次。
+3. **两个「我做不到」长得完全不一样**。工具失败那条发 `error{code:'FALLBACK'}` + `halted: true`（前端渲染红 banner，同时助手气泡又是同一句话 → 同一句出现两遍）；轮次用尽那条反而被当成**正常完成**（不发 error、不置标志、`stopReason: 'completed'`），多步计划会带着缺失的产物继续空跑后面的步骤。
+
+**改法（`gaveUp` 统一出口）**：新增 `gaveUp` channel，与 `halted` 分工 —— `halted` = 用户主动中断（检查点点「中断」/ 拒绝风险确认），`gaveUp` = 系统放弃（工具反复失败 / 轮次用尽）。父图三处判断（`planDriver` / `nextAfterPlanDriver` / `planAdvance`）都读 `halted || gaveUp`：都停整条计划、不推进、不登记产物。对外：`gaveUp` → `stopReason: 'giveup'`、`metadata.phase = 'gave_up'`、`activeSubAgent = null`，**不再下发 `error` 事件**（放弃的文案本身是给用户的建议，不是系统故障，红条会让人以为平台坏了）。日志与单测通过内部 `aggregate` 事件的 `gaveUp` 字段观察。
+
+**踩到的坑（reducer 语义）**：重置只能靠「写空值」，而写空值只对**替换**语义的 channel 有效。`degradeCount` 本来就是替换（能清），`toolErrors` 当时是 **merge**（写 `{}` 只算空增量，清不掉）→ 改成替换。安全性依据：`act` 是唯一写入者，且每次都写**全量 map**。`checkpointDone` 也是 append 语义、同样清不掉，但它按 `toolCallId` 归零、不影响本轮重试预算，**本次刻意不动**。
+
+**明确不做：放弃后重新路由（C2）**。三类失败里只有「这件事本来就该别的 agent 做」这类重路由有用，而这一类本该在 `router.decide` 第一次就判对（它已有 `isCrossDomain` 与多步 plan 能力）；烧掉 3+ 次工具调用后再回头重判，等于承认第一次判错，收益小于代价。
+
+**验证**：`graph-flow.spec.ts` 重写原 FALLBACK 用例 + 新增 4 条（跨轮额度不残留 / 单工具连续失败满 6 次也收尾 / 轮次用尽与工具失败同一个出口 / 多步计划第一步放弃后后续步骤不执行且产物不登记），全量 **806 条绿**，`tsc --noEmit` 干净（注意 `tsconfig.json` 只 include `src/**/*`，spec 不在 tsc 范围内）。**真机三条也已走完（2026-09-24）**：① 放弃出口（气泡只有一条、无红条、终端有 `工具多次降级（degradeCount=1），收尾本轮`）；② 多步计划第一步放弃后 `flow_*` 工具一个未出现；③ 检查点「中断」回归（气泡仍是「已按你的要求中断」，没被 gaveUp 抢走）。
+
+**真机怎么造这几条（踩过的坑，别再照抄旧配方）**：
+- **别让模型去试一个不存在的 formId** —— 表单助手 prompt 的寻址契约就是「只认会话工作台里的 key/标题」，它会**直接拒绝**、一个工具都不调，于是没有任何失败可以计数（09-24 实测）。
+- 正确做法是**让工具真的执行失败**：`apps/agent/.env` 里把 `SERVER_API_BASE_URL` 改成一个没人听的端口（如 `http://localhost:3999`），前端与 server 都照常，只有 agent 出站调用打不通。配合 `MAX_RETRIES=0` / `MAX_DEGRADE=0`（第一次失败即放弃），一次点击就能验完；验后必须改回 `:3000` 并删掉那两行。
+- **不要停 apps/server**：server/web/agent 是同一个 `turbo run dev` 的子任务，杀掉 server 会让 turbo 把另外两个也收掉，而且前端页面本身就依赖 :3000。
+- **多步计划要挑对话**：别用「搜索请假模板，基于它创建表单并配一个审批流程」—— 它的第一步是 template，而 `template_search` 会自己 catch 错误当成功返回，永远不失败。用「创建一个客户登记表，并配一个审批流程」（第一步是 form-designer，`form_save` 才会真失败）。
+- **`phase='gave_up'` / `activeSubAgent=null` 查不了库**：`SESSION_STORE=memory`，session metadata 不落任何地方，前端也不消费 `phase`（`useAgentChat.ts` 的 `done` 分支只清 status）。`stopReason` 同理只在 SSE 里，界面看不到。
+
+**顺带发现（未处理）**：`.env` 的 `MAX_ITERATIONS` 是死配置 —— `configuration.ts:38` 读进 `context.maxIterations` 后无人消费，图里用的是 `agent-catalog.ts` 里每个 agent 硬编码的 `maxIterations: 8`（数值相同，行为无差异）。所以「轮次用尽」那条出口在真机上没法用 env 触发。
 
 ## 四、人工验证（2026-09-24 已全部走完）
 
@@ -225,13 +250,16 @@ flow_create           {"nodes": "oops"}    → 参数错误：name: Required; no
 | 预览卡片在检查点待答复时自动展开、答完收起 | 浏览器 | ✅ |
 | 回执轮不出用户气泡（文字原地续写在带卡片的那条消息里） | 浏览器 | ✅ |
 | E3 Server 断连提示 | 停掉 apps/server 后调 template_search | ✅ |
+| 放弃出口（原 FALLBACK）：工具失败到收尾时无红条、气泡只有一条 | 浏览器 + `SERVER_API_BASE_URL` 指死端口 + `MAX_RETRIES=0/MAX_DEGRADE=0`（见 3.13） | ✅ |
+| 多步计划第一步放弃：后续步骤不再执行、不登记产物 | 浏览器（同上配置） | ✅ |
+| 检查点「中断」回归：仍是 `halted`，没被 gaveUp 抢走 | 浏览器 | ✅ |
 | E1 缺参数错误（明确错误文案 + 重试不超过 3 次） | HTTP 直打工具端点 + 单测（见 3.6） | ✅ |
 | F5/F6 多行摘要卡片：两行分别点开是**各自那张表**、只有一张表时仍是单行 | 浏览器 | ✅ |
 | 非表单分支回归：流程页建三级审批流，流程卡片仍按老样子折叠 | 浏览器 | ✅ |
 | F9 抢占：上一条还在跑时发下一条，界面不出现「会话正在执行中，请等待完成」 | 浏览器 | ✅ |
 | F10 精简字段：卡片字段数与点开预览都真的变成 10 个 | 浏览器 | ✅ |
 | F11 改字段不丢配置：留下的 select/radio 仍带选项、必填仍有红星；加「返聘」只多一项 | 浏览器 | ✅ |
-| 3.11 的错误恢复：必然失败的工具连试 3 次，界面不出现 RETRY/DEGRADE，只在收尾显示一次 FALLBACK | 浏览器 | ✅ |
+| 3.11 的错误恢复：必然失败的工具连试 3 次，界面不出现 RETRY/DEGRADE，也不出现红 banner（放弃以助手气泡收尾，`stopReason: 'giveup'`） | 浏览器 | ✅（当天验的是 FALLBACK 红条版本；09-24 重做后见 3.13，红条已删） |
 
 ## 五、实测写入的数据（09-21、09-22、09-24 均已清理）
 

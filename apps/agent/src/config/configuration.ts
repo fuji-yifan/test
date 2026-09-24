@@ -35,7 +35,6 @@ export const sessionConfig = registerAs('session', () => ({
 
 export const contextConfig = registerAs('context', () => ({
   maxToolResultChars: parseInt(process.env.MAX_TOOL_RESULT_CHARS || '8000', 10),
-  maxIterations: parseInt(process.env.MAX_ITERATIONS || '8', 10),
   maxOutputTokens: parseInt(process.env.MAX_OUTPUT_TOKENS || '2048', 10),
   maxRetries: parseInt(process.env.MAX_RETRIES || '2', 10),
   maxDegrades: parseInt(process.env.MAX_DEGRADE || '1', 10),

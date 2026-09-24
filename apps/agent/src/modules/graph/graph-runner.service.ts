@@ -34,7 +34,10 @@ export interface RunGraphResult {
   interrupted?: InterruptPayload & { id?: string }
   finalContent: string
   usage: { inputTokens: number; outputTokens: number }
+  /** 用户主动中断（检查点上点了「中断」/ 拒绝风险确认） */
   halted: boolean
+  /** 系统放弃本轮（工具反复失败超限 / 轮次用尽），与 halted 区分开以便排障 */
+  gaveUp: boolean
 }
 
 /** drive 只依赖这几个字段，run/resume 的参数都能满足 */
@@ -154,6 +157,7 @@ export class GraphRunnerService {
             // 挂起的子图不会把补丁冒泡到父图，所以优先用载荷里带出来的用量
             usage: payload.usage ?? values.usage ?? { inputTokens: 0, outputTokens: 0 },
             halted: !!values.halted,
+            gaveUp: !!values.gaveUp,
           }
         }
       }
@@ -163,6 +167,7 @@ export class GraphRunnerService {
       finalContent: values.finalContent ?? '',
       usage: values.usage ?? { inputTokens: 0, outputTokens: 0 },
       halted: !!values.halted,
+      gaveUp: !!values.gaveUp,
     }
 
     // 回写会话：产物草稿 + 兼容 legacy 的 metadata 键
@@ -179,6 +184,9 @@ export class GraphRunnerService {
     if (!plan) return
 
     const total = plan.steps?.length ?? 0
+    // 放弃（gaveUp）与用户中断（halted）对会话状态的处置相同：都不是「正常在跑」，
+    // 都该把 activeSubAgent 摘掉，否则前端状态栏会永远显示一个已经停下的 Agent。
+    const stopped = !!(values?.halted || values?.gaveUp)
     const metadata: Record<string, unknown> = {
       ...patch,
       engine: 'langgraph',
@@ -186,14 +194,16 @@ export class GraphRunnerService {
       currentStepId: plan.steps?.[completed.length]?.id ?? null,
       completedSteps: completed,
       artifacts,
-      activeSubAgent: values?.halted ? null : (values?.route?.agent ?? null),
+      activeSubAgent: stopped ? null : (values?.route?.agent ?? null),
       phase: waiting
         ? 'waiting_user'
         : values?.halted
           ? 'halted'
-          : completed.length >= total
-            ? 'completed'
-            : 'executing',
+          : values?.gaveUp
+            ? 'gave_up'
+            : completed.length >= total
+              ? 'completed'
+              : 'executing',
     }
 
     await this.sessions.updateMetadata(sessionId, metadata).catch((err) => {
