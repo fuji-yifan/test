@@ -28,6 +28,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
+import type { FormSchema } from '@furmx/sdk'
 import { useDesignerStore } from '../stores/designer'
 
 const store = useDesignerStore()
@@ -38,7 +39,7 @@ function syncFromStore() {
 }
 
 /** 校验 JSON 文本，返回解析结果，失败时弹窗并返回 null */
-function validateJson(): Record<string, unknown> | null {
+function validateJson(): FormSchema | null {
   let parsed: unknown
   try {
     parsed = JSON.parse(jsonText.value)
@@ -76,7 +77,8 @@ function validateJson(): Record<string, unknown> | null {
     return null
   }
 
-  return parsed as Record<string, unknown>
+  // 边界处结构已做必要校验（对象 + fields 数组），其余字段由 store/schema 消费
+  return parsed as FormSchema
 }
 
 function applyJson() {

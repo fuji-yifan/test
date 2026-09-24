@@ -104,12 +104,14 @@ const fieldStyle = computed(() => {
   let col: number
   if (props.field.type === 'rate') {
     const labelLen = (props.field.name || '').length
-    const stars = props.field.props?.max || 5
+    const stars = Number(props.field.props?.max) || 5
     col = Math.max(3, Math.ceil(labelLen * 0.4 + stars * 0.75 + 0.8))
   } else if (props.field.type === 'switch') {
     const labelLen = Math.min((props.field.name || '').length, 6)
-    const activeLen = Math.min((props.field.props?.activeText || '').length, 6)
-    const inactiveLen = Math.min((props.field.props?.inactiveText || '').length, 6)
+    const activeText = props.field.props?.activeText
+    const inactiveText = props.field.props?.inactiveText
+    const activeLen = Math.min(typeof activeText === 'string' ? activeText.length : 0, 6)
+    const inactiveLen = Math.min(typeof inactiveText === 'string' ? inactiveText.length : 0, 6)
     col = Math.max(4, Math.ceil((labelLen + activeLen + inactiveLen) * 0.5 + 3))
   } else {
     const min = getMinCol(props.field.type)

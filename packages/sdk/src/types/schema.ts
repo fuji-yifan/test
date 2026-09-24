@@ -13,6 +13,8 @@ export interface FormSchema {
 export interface FormSettings {
   /** 标签位置（表单级默认，字段可覆盖） */
   labelPosition: 'left' | 'top' | 'right'
+  /** 标签宽度 px（服务端 seed 会写入 100；老 Schema 可能没有 → 渲染器按自适应处理） */
+  labelWidth?: number
   /** 尺寸（表单级默认，字段可覆盖） */
   size: 'small' | 'default' | 'large'
   /** 全局禁用 */

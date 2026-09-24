@@ -124,7 +124,7 @@ const hasPieData = ref(false)
 async function fetchOverview() {
   try {
     const res = await http.get('/analytics/overview', { params: { workspaceId: wsId.value } })
-    const d = (res as { data?: Record<string, number> }).data || (res as Record<string, number>)
+    const d = (res.data || res) as Record<string, number>
     stats.value[0].value = d.totalForms || 0
     stats.value[1].value = d.totalSubmissions || 0
     stats.value[2].value = d.monthlySubmissions || 0

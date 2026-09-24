@@ -940,7 +940,7 @@
                         placeholder="字段"
                         size="small"
                         class="cond-field"
-                        @change="(v: string) => buildCondition(e, v, e._condOp, e._condVal)"
+                        @change="(v: string) => buildCondition(e, v, e._condOp || '', e._condVal || '')"
                       >
                         <el-option
                           v-for="pv in processVariables"
@@ -954,7 +954,7 @@
                         placeholder="运算符"
                         size="small"
                         class="cond-op"
-                        @change="(v: string) => buildCondition(e, e._condField, v, e._condVal)"
+                        @change="(v: string) => buildCondition(e, e._condField || '', v, e._condVal || '')"
                       >
                         <el-option
                           v-for="op in COND_OPERATORS"
@@ -968,7 +968,7 @@
                         placeholder="值"
                         size="small"
                         class="cond-val"
-                        @input="(v: string) => buildCondition(e, e._condField, e._condOp, v)"
+                        @input="(v: string) => buildCondition(e, e._condField || '', e._condOp || '', v)"
                       />
                     </div>
                     <div
@@ -1137,11 +1137,26 @@ import {
 import http from '@/api/client'
 import { useAppStore } from '@/stores/app'
 import ProcessNodePalette from './ProcessNodePalette.vue'
-import type { ProcessDefinition, ProcessNode, ProcessEdge, NodeType } from '@furmx/sdk'
+import type { ProcessDefinition, ProcessNode, ProcessEdge, ProcessSettings, NodeType } from '@furmx/sdk'
 
 interface WorkspaceMember { id: string; userId: string; user: { id: string; email: string; nickname?: string }; role: string }
 interface WorkspaceRole { id: string; name: string; isSystem: boolean }
 interface WorkspaceForm { id: string; name: string; schema: { fields: Array<{ key: string; name: string }> } }
+interface FormField { key: string; name: string; type?: string; duplicate?: boolean }
+/** 表单原始字段节点（来自未类型化的 JSON schema） */
+interface RawFormField {
+  key?: string
+  name?: string
+  type?: string
+  children?: RawFormField[]
+}
+/** 连线在前端附加的 UI 状态字段（SDK 的 ProcessEdge 未声明） */
+type DesignerEdge = ProcessEdge & {
+  _isDefault?: boolean
+  _condField?: string
+  _condOp?: string
+  _condVal?: string
+}
 
 const appStore = useAppStore()
 const isDark = computed(() => appStore.isDark)
@@ -1154,7 +1169,7 @@ const workflowId = computed(() => route.params.wfId as string)
 // ---- 数据 ----
 const definition = ref<ProcessDefinition | null>(null)
 const nodes = ref<ProcessNode[]>([])
-const edges = ref<ProcessEdge[]>([])
+const edges = ref<DesignerEdge[]>([])
 const selectedNodeId = ref<string | null>(null)
 const dirty = ref(false)
 const saving = ref(false)
@@ -1162,7 +1177,7 @@ const publishing = ref(false)
 const workspaceMembers = ref<WorkspaceMember[]>([])
 const workspaceRoles = ref<WorkspaceRole[]>([])
 const workspaceForms = ref<WorkspaceForm[]>([])
-const formFields = ref<Array<{ key: string; name: string }>>([])
+const formFields = ref<FormField[]>([])
 const loadedFormId = ref('')
 const ccSelected = ref<string[]>([])
 const edgeTarget = ref('')
@@ -1264,10 +1279,10 @@ const COND_OPERATORS = [
 ]
 
 const processVariables = computed(() => {
-  const startNode = nodes.value.find((n: ProcessNode | undefined) => n.type === 'start')
+  const startNode = nodes.value.find((n: ProcessNode) => n.type === 'start')
   const varKeys: string[] = startNode?.config?.variables || []
   return varKeys.map((key: string) => {
-    const ff = formFields.value.find((f: { key: string; name: string; duplicate?: boolean } | undefined) => f.key === key)
+    const ff = formFields.value.find((f: FormField) => f.key === key)
     return { key, name: ff?.name || key }
   })
 })
@@ -1411,10 +1426,10 @@ function nodeTypeLabel(type: string) {
 
 // ---- 连线路径计算 ----
 const edgePaths = computed(() => {
-  return edges.value.map((e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) => {
-    const src = nodes.value.find((n: ProcessNode | undefined) => n.id === e.sourceNodeId)
-    const tgt = nodes.value.find((n: ProcessNode | undefined) => n.id === e.targetNodeId)
-    if (!src || !tgt) return { id: e.id, sourceId: e.sourceNodeId, targetId: e.targetNodeId, d: '', label: e.label || '', labelX: 0, labelY: 0 }
+  return edges.value.map((e: DesignerEdge) => {
+    const src = nodes.value.find((n: ProcessNode) => n.id === e.sourceNodeId)
+    const tgt = nodes.value.find((n: ProcessNode) => n.id === e.targetNodeId)
+    if (!src || !tgt) return { id: e.id, sourceId: e.sourceNodeId, targetId: e.targetNodeId, d: '', label: e.label || '', labelX: 0, labelY: 0, labelW: 0 }
 
     // 根据节点形状计算连接点
     const srcW = isCircle(src.type) ? CIRCLE_SIZE : isGateway(src.type) ? 150 : NODE_W
@@ -1441,7 +1456,7 @@ const edgePaths = computed(() => {
 
 // ---- 选中节点 ----
 const selectedNode = computed(() => nodes.value.find((n) => n.id === selectedNodeId.value) || null)
-const nodeOutEdges = computed(() => edges.value.filter((e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) => e.sourceNodeId === selectedNodeId.value))
+const nodeOutEdges = computed(() => edges.value.filter((e: DesignerEdge) => e.sourceNodeId === selectedNodeId.value))
 const assigneeSelectValue = computed(() => {
   if (!selectedNode.value) return []
   const arr = selectedNode.value.config.assignees || []
@@ -1450,7 +1465,7 @@ const assigneeSelectValue = computed(() => {
 
 const availableTargets = computed(() => nodes.value.filter((n) => n.id !== selectedNodeId.value))
 
-function isEdgeSelected(ep: { sourceNodeId?: string; targetNodeId?: string }) {
+function isEdgeSelected(ep: { sourceId?: string; targetId?: string }) {
   const sid = selectedNodeId.value
   return sid && (ep.sourceId === sid || ep.targetId === sid)
 }
@@ -1515,7 +1530,7 @@ async function onFormBind(formId: string) {
     if (schema && schema.fields) {
       formFields.value = extractFormFields(schema.fields)
       // 检查是否有同名字段
-      const dup = formFields.value.find((f: { key: string; name: string; duplicate?: boolean } | undefined) => f.duplicate)
+      const dup = formFields.value.find((f: FormField) => f.duplicate)
       if (dup) {
         ElMessage.warning('表单中存在同名字段，不可绑定流程')
         selectedNode.value.config.formId = ''
@@ -1529,11 +1544,11 @@ async function onFormBind(formId: string) {
 }
 
 /** 递归提取表单字段（排除布局容器、提示文字等无值字段），标注重名 */
-function extractFormFields(fields: Array<Record<string, unknown>>): Array<{ key: string; name: string }> {
-  const result: Array<{ key: string; name: string }> = []
+function extractFormFields(fields: RawFormField[]): FormField[] {
+  const result: FormField[] = []
   const skipTypes = ['card', 'collapse', 'tabs', 'divider', 'tip-text']
   for (const f of fields) {
-    if (skipTypes.includes(f.type)) {
+    if (f.type && skipTypes.includes(f.type)) {
       if (f.children) result.push(...extractFormFields(f.children))
       continue
     }
@@ -1550,12 +1565,14 @@ async function loadDefinition() {
   try {
     const res = await http.get(`/workflows/${workflowId.value}`) as any
     const data = res.data || res
-    definition.value = data
-    if (!definition.value.settings) definition.value.settings = {}
-    nodes.value = [...(data.nodes || [])]
-    edges.value = [...(data.edges || [])]
+    const def: ProcessDefinition = data
+    definition.value = def
+    // settings 可能缺失，接口返回的是未类型化 JSON
+    if (!def.settings) def.settings = {} as ProcessSettings
+    nodes.value = [...(def.nodes || [])]
+    edges.value = [...(def.edges || [])]
     updateCanvasSize()
-  } catch (e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) {
+  } catch {
     ElMessage.error('加载失败')
     goBack()
   }
@@ -1563,7 +1580,7 @@ async function loadDefinition() {
 
 function updateCanvasSize() {
   let maxX = 800, maxY = 600
-  nodes.value.forEach((n: ProcessNode | undefined) => {
+  nodes.value.forEach((n: ProcessNode) => {
     const w = isCircle(n.type) ? CIRCLE_SIZE : isGateway(n.type) ? 150 : NODE_W
     const h = isCircle(n.type) ? CIRCLE_SIZE : isGateway(n.type) ? 80 : NODE_H
     if (n.position.x + w + 100 > maxX) maxX = n.position.x + w + 100
@@ -1573,7 +1590,7 @@ function updateCanvasSize() {
   canvasHeight.value = Math.max(600, maxY)
 }
 
-function selectNode(node: ProcessNode | undefined) {
+function selectNode(node: ProcessNode) {
   selectedNodeId.value = node.id
   panelMode.value = 'node'
   edgeLabel.value = ''
@@ -1591,7 +1608,7 @@ function selectNode(node: ProcessNode | undefined) {
     if (!node.config.roleList) node.config.roleList = []
     // 选中单个审批人后自动反查其工作空间角色
     if (node.config.assignees?.length === 1) {
-      const member = workspaceMembers.value.find((m: WorkspaceMember | undefined) => m.user.id === node.config.assignees[0])
+      const member = workspaceMembers.value.find((m: WorkspaceMember) => m.user.id === node.config.assignees[0])
       if (member) node.config.role = member.role
     }
   }
@@ -1695,7 +1712,7 @@ function addNode(type: string, posX?: number, posY?: number) {
       })()
 
   nodes.value.push({
-    id, type,
+    id, type: type as NodeType,
     name: nodeTypeLabel(type),
     position,
     config: baseConfig,
@@ -1828,7 +1845,7 @@ function onPortClick(node: ProcessNode) {
   } else if (connectSourceId.value === node.id) {
     cancelConnect()
   } else {
-    addEdge(connectSourceId.value, node.id, edgeLabel.value || undefined)
+    if (connectSourceId.value) addEdge(connectSourceId.value, node.id, edgeLabel.value || undefined)
     if (selectedNodeId.value === connectSourceId.value) edgeTarget.value = node.id
     connecting.value = false; connectSourceId.value = null; tempLine.show = false
     edgeLabel.value = ''
@@ -1908,7 +1925,7 @@ function onAssigneesChange(val: string | string[]) {
   selectedNode.value.config.assignees = arr.filter(Boolean)
   // 角色审批：选中单个审批人后自动反查其工作空间角色
   if (isRoleApproval(selectedNode.value.type) && arr.length === 1) {
-    const member = workspaceMembers.value.find((m: WorkspaceMember | undefined) => m.user.id === arr[0])
+    const member = workspaceMembers.value.find((m: WorkspaceMember) => m.user.id === arr[0])
     if (member) {
       selectedNode.value.config.role = member.role
     }
@@ -1928,28 +1945,32 @@ function markDirty() { dirty.value = true }
 
 async function saveDefinition() {
   if (!dirty.value) return
+  const def = definition.value
+  if (!def) return
   saving.value = true
   try {
     await http.patch(`/workflows/${workflowId.value}`, {
-      name: definition.value.name,
-      description: definition.value.description,
+      name: def.name,
+      description: def.description,
       nodes: nodes.value,
       edges: edges.value,
-      settings: definition.value.settings,
+      settings: def.settings,
     })
     dirty.value = false
     ElMessage.success('已保存')
-  } catch (e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) { if (e?.__handled) return; ElMessage.error('保存失败') } finally { saving.value = false }
+  } catch (e: unknown) { if (e instanceof Error && (e as { __handled?: boolean }).__handled) return; ElMessage.error('保存失败') } finally { saving.value = false }
 }
 
 async function publishDef() {
+  const def = definition.value
+  if (!def) return
   saving.value = true
   try {
     if (dirty.value) await saveDefinition()
     await http.post(`/workflows/${workflowId.value}/publish`)
-    definition.value.status = 'published'
+    def.status = 'published'
     ElMessage.success('已发布')
-  } catch (e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) { if (e?.__handled) return; ElMessage.error('发布失败') } finally { saving.value = false }
+  } catch (e: unknown) { if (e instanceof Error && (e as { __handled?: boolean }).__handled) return; ElMessage.error('发布失败') } finally { saving.value = false }
 }
 
 function goBack() { router.push(`/workspace/${wsId.value}/workflows`) }

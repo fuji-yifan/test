@@ -10,6 +10,8 @@ export interface Workspace {
   logoUrl?: string
   plan: string
   role?: string
+  /** RBAC 权限点。注意：服务端 /workspaces 列表目前不返回该字段（见 usePermission 的说明） */
+  permissions?: string[]
 }
 
 export const useWorkspaceStore = defineStore('workspace', () => {

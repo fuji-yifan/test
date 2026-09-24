@@ -191,7 +191,7 @@
           </el-form-item>
           <el-form-item label="选项列表">
             <div
-              v-for="(opt, i) in (selectedField.props?.options || [])"
+              v-for="(opt, i) in selectOptions"
               :key="i"
               class="option-row"
             >
@@ -224,7 +224,7 @@
         <template v-if="selectedField.type === 'radio' || selectedField.type === 'checkbox'">
           <el-form-item label="选项列表">
             <div
-              v-for="(opt, i) in (selectedField.props?.options || [])"
+              v-for="(opt, i) in selectOptions"
               :key="i"
               class="option-row"
             >
@@ -417,15 +417,15 @@
         </template>
 
         <!-- tabs: 标签列表 -->
-        <template v-if="selectedField.type === 'tabs'">
+        <template v-if="(selectedField.type as string) === 'tabs'">
           <el-form-item label="标签页列表">
             <div
-              v-for="(tab, i) in (selectedField.props?.tabList || [])"
+              v-for="(tab, i) in tabList"
               :key="i"
               class="option-row"
             >
               <el-input
-                v-model="selectedField.props.tabList[i]"
+                v-model="tabList[i]"
                 size="small"
                 :placeholder="'标签 ' + (i + 1)"
                 @input="markTabDirty"
@@ -602,7 +602,7 @@
               @input="(v: string) => updateProp('text', v)"
             />
             <div
-              v-if="!(selectedField.props?.text || '').trim()"
+              v-if="!tipText.trim()"
               class="placeholder-warning"
             >
               提示内容不能为空
@@ -634,7 +634,7 @@
           <el-form-item label="字体颜色">
             <el-color-picker
               :model-value="selectedField.props?.color || '#909399'"
-              @focus="tipTextPrevColor = selectedField.props?.color"
+              @focus="tipTextPrevColor = tipColor"
               @change="(v: string | null) => updateProp('color', v ?? '#909399')"
             />
             <el-button
@@ -761,7 +761,7 @@ import { computed, reactive, watch, ref } from 'vue'
 import { useDesignerStore } from '../stores/designer'
 import { builtinComponents } from '../config/component-registry'
 import { getMinCol } from '@furmx/sdk'
-import type { FieldSchema } from '@furmx/sdk'
+import type { FieldSchema, SelectOption } from '@furmx/sdk'
 import CascaderNode from './CascaderNode.vue'
 import FormSettingsPanel from './FormSettingsPanel.vue'
 // regionData 由子组件 CascaderNode 按需导入
@@ -769,6 +769,27 @@ import FormSettingsPanel from './FormSettingsPanel.vue'
 const store = useDesignerStore()
 
 const selectedField = computed(() => store.selectedField)
+
+// props 为 Record<string, unknown>，这里对已知属性做窄化，供模板/逻辑安全使用
+const selectOptions = computed<SelectOption[]>(() => {
+  const opts = selectedField.value?.props?.options
+  return Array.isArray(opts) ? opts : []
+})
+
+const tabList = computed<string[]>(() => {
+  const list = selectedField.value?.props?.tabList
+  return Array.isArray(list) ? list : []
+})
+
+const tipText = computed(() => {
+  const t = selectedField.value?.props?.text
+  return typeof t === 'string' ? t : ''
+})
+
+const tipColor = computed(() => {
+  const c = selectedField.value?.props?.color
+  return typeof c === 'string' ? c : ''
+})
 
 // 面板模式：'form' = 表单设置，'field' = 控件属性
 const panelMode = ref<'form' | 'field'>('form')
@@ -794,7 +815,7 @@ const minCol = computed(() => {
   let min = getMinCol(selectedField.value.type)
   if (selectedField.value.type === 'rate') {
     const labelLen = (selectedField.value.name || '').length
-    const stars = selectedField.value.props?.max || 5
+    const stars = Number(selectedField.value.props?.max) || 5
     min = Math.max(3, Math.ceil(labelLen * 0.4 + stars * 0.75 + 0.8))
   }
   return min
@@ -864,7 +885,7 @@ function getPlaceholderDefault(field: typeof selectedField.value): string {
 }
 
 watch(() => selectedField.value?.props?.placeholder, (v) => {
-  if (!placeholderTimer) placeholderText.value = v ?? getPlaceholderDefault(selectedField.value)
+  if (!placeholderTimer) placeholderText.value = String(v ?? getPlaceholderDefault(selectedField.value))
 })
 watch(() => selectedField.value?.id, () => {
   placeholderText.value = getPlaceholderDefault(selectedField.value)
@@ -920,11 +941,11 @@ let inactiveTextTimer: ReturnType<typeof setTimeout> | null = null
 const showActiveTextWarning = computed(() => activeText.value.length > 6 && !activeTextDismissed.value)
 const showInactiveTextWarning = computed(() => inactiveText.value.length > 6 && !inactiveTextDismissed.value)
 
-watch(() => selectedField.value?.props?.activeText, (v) => { if (!activeTextTimer) activeText.value = v || '' })
-watch(() => selectedField.value?.props?.inactiveText, (v) => { if (!inactiveTextTimer) inactiveText.value = v || '' })
+watch(() => selectedField.value?.props?.activeText, (v) => { if (!activeTextTimer) activeText.value = String(v ?? '') })
+watch(() => selectedField.value?.props?.inactiveText, (v) => { if (!inactiveTextTimer) inactiveText.value = String(v ?? '') })
 watch(() => selectedField.value?.id, () => {
-  activeText.value = selectedField.value?.props?.activeText || ''
-  inactiveText.value = selectedField.value?.props?.inactiveText || ''
+  activeText.value = String(selectedField.value?.props?.activeText ?? '')
+  inactiveText.value = String(selectedField.value?.props?.inactiveText ?? '')
   activeTextDismissed.value = false
   inactiveTextDismissed.value = false
   if (activeTextTimer) { clearTimeout(activeTextTimer); activeTextTimer = null }
@@ -983,12 +1004,12 @@ watch(
     fieldMeta.name = info.name
     if (selectedField.value?.type === 'rate') {
       const labelLen = (info.name || '').length
-      const stars = info.props?.max || 5
+      const stars = Number(info.props?.max) || 5
       fieldMeta.col = Math.max(3, Math.ceil(labelLen * 0.4 + stars * 0.75 + 0.8))
     } else if (selectedField.value?.type === 'switch') {
       const labelLen = Math.min((info.name || '').length, 6)
-      const activeLen = Math.min((info.props?.activeText || '').length, 6)
-      const inactiveLen = Math.min((info.props?.inactiveText || '').length, 6)
+      const activeLen = Math.min(String(info.props?.activeText ?? '').length, 6)
+      const inactiveLen = Math.min(String(info.props?.inactiveText ?? '').length, 6)
       const textLen = labelLen + activeLen + inactiveLen
       fieldMeta.col = Math.max(4, Math.ceil(textLen * 0.5 + 3))
     } else {
@@ -1043,20 +1064,20 @@ function updateProp(key: string, value: any) {
 
 function markOptionsDirty() {
   if (!store.selectedFieldId || !selectedField.value) return
-  const opts = [...(selectedField.value.props?.options || [])]
+  const opts = [...selectOptions.value]
   store.updateFieldProps(store.selectedFieldId, { options: opts })
 }
 
 function addOption() {
   if (!store.selectedFieldId || !selectedField.value) return
-  const label = '选项 ' + ((selectedField.value.props?.options?.length || 0) + 1)
-  const opts = [...(selectedField.value.props?.options || []), { label, value: label }]
+  const label = '选项 ' + ((selectOptions.value.length) + 1)
+  const opts = [...selectOptions.value, { label, value: label }]
   store.updateFieldProps(store.selectedFieldId, { options: opts })
 }
 
 function removeOption(i: number) {
   if (!store.selectedFieldId || !selectedField.value) return
-  const opts = [...(selectedField.value.props?.options || [])]
+  const opts = [...selectOptions.value]
   opts.splice(i, 1)
   store.updateFieldProps(store.selectedFieldId, { options: opts })
 }
@@ -1064,20 +1085,21 @@ function removeOption(i: number) {
 // tabs 操作
 function addTab() {
   if (!store.selectedFieldId || !selectedField.value) return
-  const list = [...(selectedField.value.props?.tabList || ['标签1', '标签2'])]
+  const raw = selectedField.value.props?.tabList
+  const list = Array.isArray(raw) ? [...raw] : ['标签1', '标签2']
   list.push('标签' + (list.length + 1))
   store.updateFieldProps(store.selectedFieldId, { tabList: list })
 }
 function removeTab(i: number) {
   if (!store.selectedFieldId || !selectedField.value) return
-  const list = [...(selectedField.value.props?.tabList || [])]
+  const list = [...tabList.value]
   list.splice(i, 1)
   store.updateFieldProps(store.selectedFieldId, { tabList: list })
 }
 function markTabDirty() {
   // tabList 已经通过 v-model 直接修改，此处触发保存
   if (!store.selectedFieldId || !selectedField.value) return
-  store.updateFieldProps(store.selectedFieldId, { tabList: [...(selectedField.value.props?.tabList || [])] })
+  store.updateFieldProps(store.selectedFieldId, { tabList: [...tabList.value] })
 }
 
 // ---- 文件类型选项 ----
@@ -1107,8 +1129,8 @@ const acceptOptions = [
 
 const acceptList = computed(() => {
   const raw = selectedField.value?.props?.accept
-  if (!raw) return []
-  return raw.split(',').map(s => s.trim()).filter(Boolean)
+  if (typeof raw !== 'string' || !raw) return []
+  return raw.split(',').map((s) => s.trim()).filter(Boolean)
 })
 
 function onAcceptChange(vals: string[]) {
@@ -1152,7 +1174,7 @@ let _cascaderSyncing = false
 
 watch(
   () => selectedField.value?.props?.separator,
-  (v) => { cascaderSeparator.value = v ?? '/' },
+  (v) => { cascaderSeparator.value = String(v ?? '/') },
   { immediate: true },
 )
 

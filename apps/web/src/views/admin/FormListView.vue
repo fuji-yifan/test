@@ -363,7 +363,7 @@ const wsId = computed(() => route.params.wsId as string)
 const { confirm } = useConfirmAction()
 
 // 分页列表 — usePagedList 接管 loading/list/total/page/fetch
-const { list, total, page, loading, fetch: _fetch } = usePagedList<Form>(
+const { list, total, page, pageSize, loading, fetch: _fetch } = usePagedList<Form>(
   (params) => http.get(`/workspaces/${wsId.value}/forms`, { params }),
   12,
 )
@@ -376,7 +376,13 @@ const creating = ref(false)
 const createFormData = reactive({ name: '', description: '', category: '' })
 const showLink = ref(false)
 const linkFormId = ref('')
-const boundWorkflows = ref<Record<string, unknown[]>>({})
+/** 表单绑定的流程（`/workspaces/:id/workflow-bindings` 的返回项，只用到这三个字段） */
+interface BoundWorkflow {
+  id: string
+  name: string
+  status: string
+}
+const boundWorkflows = ref<Record<string, BoundWorkflow[]>>({})
 const workflowFilter = ref('')
 
 // 跨工作空间复制
@@ -407,7 +413,7 @@ function fetchList() {
 async function fetchBindings() {
   try {
     const res = await http.get(`/workspaces/${wsId.value}/workflow-bindings`)
-    boundWorkflows.value = (res as { data?: Record<string, unknown[]> }).data || (res as Record<string, unknown[]>) || {}
+    boundWorkflows.value = ((res.data || res) || {}) as Record<string, BoundWorkflow[]>
   } catch { /* ignore */ }
 }
 

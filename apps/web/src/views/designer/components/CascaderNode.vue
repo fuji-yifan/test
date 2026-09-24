@@ -9,7 +9,7 @@
         size="small"
         placeholder="选项名"
         style="width: 120px"
-        @input="(v) => $emit('update', path, { label: v, value: v })"
+        @input="(v: string) => $emit('update', path, { label: v, value: v })"
       />
       <el-button
         size="small"

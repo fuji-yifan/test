@@ -39,13 +39,13 @@ export function usePermission() {
   /** 检查当前用户是否有指定权限 */
   function can(permission: string): boolean {
     if (isOwner.value) return true
-    return wsStore.permissions?.includes(permission) ?? false
+    return wsStore.current?.permissions?.includes(permission) ?? false
   }
 
   /** 检查是否拥有任意一项权限 */
   function canAny(...permissions: string[]): boolean {
     if (isOwner.value) return true
-    return permissions.some((p) => wsStore.permissions?.includes(p))
+    return permissions.some((p) => wsStore.current?.permissions?.includes(p))
   }
 
   /** 权限 label 映射（按钮文案、提示语等场景） */

@@ -11,7 +11,7 @@
         <span class="toolbar-title">表单预览</span>
         <el-button
           size="small"
-          @click="window.close()"
+          @click="closeWindow"
         >
           关闭
         </el-button>
@@ -126,9 +126,15 @@ function resolveControl(type: string): string {
 
 function uploadHint(field: FieldSchema) {
   const parts: string[] = []
-  if (field.props?.accept) parts.push(`文件格式仅限 ${field.props.accept.replace(/,/g, '/')}`)
-  if (field.props?.maxSize) parts.push(`单个文件容量上限为 ${field.props.maxSize}MB`)
+  // field.props 为运行时 JSON 属性包（SDK 类型 Record<string, unknown>），按 any 读取
+  const fp: Record<string, any> = field.props
+  if (fp.accept) parts.push(`文件格式仅限 ${fp.accept.replace(/,/g, '/')}`)
+  if (fp.maxSize) parts.push(`单个文件容量上限为 ${fp.maxSize}MB`)
   return parts.join("<br>")
+}
+
+function closeWindow() {
+  window.close()
 }
 
 function onSubmit() {

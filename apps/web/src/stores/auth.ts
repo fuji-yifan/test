@@ -46,7 +46,7 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     try {
       const res = await http.post('/auth/login', params)
-      const data = (res as { data?: AuthApiResponse }).data || (res as AuthApiResponse)
+      const data = (res.data || res) as AuthApiResponse
       token.value = data.accessToken
       user.value = data.user
       localStorage.setItem('access_token', data.accessToken)
@@ -69,7 +69,7 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     try {
       const res = await http.post('/auth/register', params)
-      const data = (res as { data?: AuthApiResponse }).data || (res as AuthApiResponse)
+      const data = (res.data || res) as AuthApiResponse
       token.value = data.accessToken
       user.value = data.user
       localStorage.setItem('access_token', data.accessToken)
@@ -89,7 +89,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (!token.value) return
     try {
       const res = await http.get('/auth/me')
-      const data = (res as { data?: UserInfo }).data || (res as UserInfo)
+      const data = (res.data || res) as UserInfo
       user.value = data
     } catch {
       // token 过期 → 清除

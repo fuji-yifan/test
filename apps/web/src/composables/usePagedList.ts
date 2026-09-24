@@ -25,6 +25,9 @@ interface PagedResult<T> {
 
 type Fetcher<T> = (params: Record<string, string | number>) => Promise<PagedResult<T> | { data: PagedResult<T> } | { list: T[]; total: number } | T[]>
 
+/** 后端可能直出数组，也可能给 { list, pagination } / { list, total } / { data: … }，归一化后的形状 */
+type PagedLike<T> = { list?: T[]; pagination?: Pagination; total?: number }
+
 export function usePagedList<T>(fetcher: Fetcher<T>, defaultPageSize = 20) {
   const list = ref<T[]>([])
   const total = ref(0)
@@ -45,14 +48,14 @@ export function usePagedList<T>(fetcher: Fetcher<T>, defaultPageSize = 20) {
       const res = await fetcher(params)
 
       // 兼容多种后端响应格式
-      let actual: { list?: T[]; pagination?: Pagination; total?: number } | T[]
+      let actual: PagedLike<T> | T[]
 
       if (Array.isArray(res)) {
         actual = res
       } else if ('data' in res && res.data && typeof res.data === 'object') {
-        actual = res.data as Record<string, unknown>
+        actual = res.data as PagedLike<T>
       } else {
-        actual = res as Record<string, unknown>
+        actual = res as PagedLike<T>
       }
 
       if (Array.isArray(actual)) {

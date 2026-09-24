@@ -30,7 +30,7 @@
     </div>
 
     <div
-      v-else-if="field.type === 'group'"
+      v-else-if="String(field.type) === 'group'"
       class="field-group"
     >
       <h4 class="group-title">
@@ -111,10 +111,10 @@
         <el-select
           :model-value="formData[field.key]"
           v-bind="selectProps(field)"
-          @update:model-value="(v) => emit('update', field.key, v)"
+          @update:model-value="(v: any) => emit('update', field.key, v)"
         >
           <el-option
-            v-for="opt in (field.props.options || [])"
+            v-for="opt in (propsOf(field).options || [])"
             :key="opt.value"
             :label="opt.label"
             :value="opt.value"
@@ -128,10 +128,10 @@
         <el-radio-group
           :model-value="formData[field.key]"
           v-bind="radioCheckboxProps(field)"
-          @update:model-value="(v) => emit('update', field.key, v)"
+          @update:model-value="(v: any) => emit('update', field.key, v)"
         >
           <el-radio
-            v-for="opt in (field.props.options || [])"
+            v-for="opt in (propsOf(field).options || [])"
             :key="String(opt.value)"
             :value="opt.value"
             :disabled="opt.disabled"
@@ -146,10 +146,10 @@
         <el-checkbox-group
           :model-value="formData[field.key]"
           v-bind="radioCheckboxProps(field)"
-          @update:model-value="(v) => emit('update', field.key, v)"
+          @update:model-value="(v: any) => emit('update', field.key, v)"
         >
           <el-checkbox
-            v-for="opt in (field.props.options || [])"
+            v-for="opt in (propsOf(field).options || [])"
             :key="String(opt.value)"
             :value="opt.value"
             :disabled="opt.disabled"
@@ -163,9 +163,8 @@
       <template v-else-if="field.type === 'textarea'">
         <el-input
           :model-value="formData[field.key]"
-          type="textarea"
           v-bind="textareaProps(field)"
-          @update:model-value="(v) => emit('update', field.key, v)"
+          @update:model-value="(v: any) => emit('update', field.key, v)"
         />
       </template>
 
@@ -174,7 +173,7 @@
         <el-switch
           :model-value="formData[field.key]"
           v-bind="switchProps(field)"
-          @update:model-value="(v) => emit('update', field.key, v)"
+          @update:model-value="(v: any) => emit('update', field.key, v)"
         />
       </template>
 
@@ -231,12 +230,12 @@
       <template v-else-if="field.type === 'tip-text'">
         <div
           class="fr-tip"
-          :style="{ color: field.props?.color || '#909399', fontSize: (field.props?.fontSize || 14) + 'px', justifyContent: tipJustifyMap[field.props?.textAlign || 'left'], padding: '8px 0' }"
+          :style="{ color: propsOf(field).color || '#909399', fontSize: (field.props?.fontSize || 14) + 'px', justifyContent: tipJustifyMap[propsOf(field).textAlign || 'left'], padding: '8px 0' }"
         >
           <span
             v-if="field.props?.tipType"
             class="fr-tip-icon"
-          >{{ tipIconChars[field.props.tipType] }}</span>
+          >{{ tipIconChars[propsOf(field).tipType] }}</span>
           <span>{{ field.props?.text }}</span>
         </div>
       </template>
@@ -248,7 +247,7 @@
           :options="frCascaderOpts"
           v-bind="frCascaderProps"
           :size="fieldSize"
-          @update:model-value="(v) => emit('update', field.key, v)"
+          @update:model-value="(v: any) => emit('update', field.key, v)"
         />
       </template>
 
@@ -258,7 +257,7 @@
           :is="resolveControl(field.type)"
           :model-value="formData[field.key]"
           v-bind="field.props"
-          @update:model-value="(v) => emit('update', field.key, v)"
+          @update:model-value="(v: any) => emit('update', field.key, v)"
         />
       </template>
     </el-form-item>
@@ -295,11 +294,20 @@ const emit = defineEmits<{
   update: [key: string, value: any]
 }>()
 
+/**
+ * field.props 的 SDK 类型为 Record<string, unknown>（运行时 JSON 属性包）。
+ * 读取时统一视为 any（Record<string, unknown> 可直接赋给 Record<string, any>），
+ * 与原本的运行时行为一致，不做任何类型收窄或默认值改写。
+ */
+function propsOf(field: FieldSchema): Record<string, any> {
+  return field.props
+}
+
 // ---- 上传 ----
 const uploadFiles = ref<Record<string, UploadFile[]>>({})
 
 function onUploadChange(field: FieldSchema, file: UploadFile, files: UploadFiles) {
-  const maxSize = field.props?.maxSize
+  const maxSize = propsOf(field).maxSize
   if (maxSize && file.size && file.size / 1024 / 1024 > maxSize) {
     ElMessage.warning(`文件大小不能超过 ${maxSize}MB`)
     uploadFiles.value[field.key] = files.filter((f: UploadFile) => f.uid !== file.uid)
@@ -322,8 +330,8 @@ function onUploadExceed() {
 
 function uploadHintText(field: FieldSchema) {
   const parts: string[] = []
-  if (field.props?.accept) parts.push(`文件格式仅限 ${field.props.accept.replace(/,/g, '/')}`)
-  if (field.props?.maxSize) parts.push(`单个文件容量上限为 ${field.props.maxSize}MB`)
+  if (field.props?.accept) parts.push(`文件格式仅限 ${propsOf(field).accept.replace(/,/g, '/')}`)
+  if (field.props?.maxSize) parts.push(`单个文件容量上限为 ${propsOf(field).maxSize}MB`)
   return parts.join("<br>")
 }
 
@@ -356,7 +364,7 @@ function textareaProps(field: FieldSchema) {
 }
 
 function switchProps(field: FieldSchema) {
-  const raw = { ...(field.props || {}) }
+  const raw: Record<string, any> = { ...(field.props || {}) }
   if (raw.activeText && raw.activeText.length > 6) raw.activeText = raw.activeText.slice(0, 6)
   if (raw.inactiveText && raw.inactiveText.length > 6) raw.inactiveText = raw.inactiveText.slice(0, 6)
   return raw
@@ -395,7 +403,7 @@ watch(frRichTextHtml, (v) => {
 
 // 占位文本变更时直接更新编辑器 DOM
 watch(
-  () => props.field.props?.placeholder,
+  () => propsOf(props.field).placeholder,
   (val) => {
     if (richTextEditorRef.value) {
       const editable = richTextEditorRef.value.getEditableContainer()
@@ -452,14 +460,15 @@ const richToolbarConfig = computed(() => {
 })
 
 function getLayoutStyle(field: FieldSchema): Record<string, any> {
-  if (field.type === 'grid') {
+  const type: string = field.type
+  if (type === 'grid') {
     return {
       display: 'grid',
       gridTemplateColumns: `repeat(${field.props.columns || 2}, 1fr)`,
       gap: `${field.props.gutter || 16}px`,
     }
   }
-  if (field.type === 'flex') {
+  if (type === 'flex') {
     return {
       display: 'flex',
       flexDirection: field.props.direction || 'row',

@@ -22,7 +22,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import type { FormSchema } from '@furmx/sdk'
-import { useDesignerStore } from '../stores/designer'
+import { useDesignerStore } from './stores/designer'
 
 const store = useDesignerStore()
 const schema = ref<FormSchema | null>(null)

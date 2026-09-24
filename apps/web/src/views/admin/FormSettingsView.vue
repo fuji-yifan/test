@@ -271,8 +271,18 @@ interface FormVersion {
   id: string
   formId: string
   version: number
-  schema: Record<string, unknown>
+  /** 服务端保存的 schema 快照（FormSchema 的局部，老版本可能缺字段） */
+  schema: Partial<FormSchema>
   createdAt: string
+}
+
+/** 无待恢复版本时的占位 settings，取值与 SDK RendererEngine.loadSchema 的兜底一致 */
+function emptySettings(): FormSchema['settings'] {
+  return {
+    labelPosition: 'left', size: 'default', disabled: false,
+    submitText: '提交', resetText: null, rules: [],
+    cssClassName: '', formTitle: '', canvasCols: 24, canvasHeight: 0,
+  }
 }
 
 const CATEGORIES = ['人事', '财务', '行政', '销售', '运营', '项目']
@@ -298,13 +308,13 @@ const previewMode = ref<'design' | 'json'>('design')
 const previewJson = ref('')
 const pendingRestore = ref<FormVersion | null>(null)
 const previewSchema = computed<FormSchema>(() => {
-  if (!pendingRestore.value) return { version: '2.0', id: '', settings: {} as FormSchema['settings'], fields: [] }
+  if (!pendingRestore.value) return { version: '2.0', id: '', settings: emptySettings(), fields: [] }
   const s = pendingRestore.value.schema || {}
   return {
     version: s.version || '2.0',
     id: s.id || '',
-    settings: (s.settings || {}) as FormSchema['settings'],
-    fields: (s.fields || []) as FormSchema['fields'],
+    settings: s.settings || emptySettings(),
+    fields: s.fields || [],
   }
 })
 

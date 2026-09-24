@@ -193,6 +193,9 @@ interface ProcessInstanceData {
   createdAt: string; updatedAt?: string; completedAt?: string
 }
 
+/** API 在任务上附带审批人对象（SDK 类型未声明该字段） */
+type TaskWithAssignee = TaskInstance & { assignee?: { id: string; email: string; nickname?: string } }
+
 const route = useRoute()
 const router = useRouter()
 const instanceId = computed(() => route.params.id as string)
@@ -237,7 +240,7 @@ const taskMap = computed(() => {
 
 function getNodeState(nodeId: string): string {
   const tasks = taskMap.value[nodeId]
-  const node = nodes.value.find((n: ProcessNode | undefined) => n.id === nodeId)
+  const node = nodes.value.find((n: ProcessNode) => n.id === nodeId)
   const currentNodeIds: string[] = instance.value?.currentNodeIds || []
   const isCompleted = instance.value?.currentState === 'completed'
 
@@ -293,10 +296,10 @@ function computeTraversal() {
 
     const outEdges = edges.value.filter((e: ProcessEdge) => e.sourceNodeId === nodeId)
     for (const e of outEdges) {
-      const tgtNode = nodes.value.find((n: ProcessNode | undefined) => n.id === e.targetNodeId)
+      const tgtNode = nodes.value.find((n: ProcessNode) => n.id === e.targetNodeId)
       if (!tgtNode) continue
 
-      const srcNode = nodes.value.find((n: ProcessNode | undefined) => n.id === nodeId)
+      const srcNode = nodes.value.find((n: ProcessNode) => n.id === nodeId)
       if (srcNode?.type === 'condition') {
         if (reached.has(e.targetNodeId) || tgtNode.type === 'end') {
           edgeSet.add(e.id)
@@ -320,7 +323,7 @@ const traversedEdgeIds = computed(() => traversal.value.edges)
 function getNodeTooltip(nodeId: string): string {
   const tasks = taskMap.value[nodeId]
   if (!tasks || tasks.length === 0) return ''
-  return tasks.map((t: TaskInstance) => {
+  return tasks.map((t: TaskWithAssignee) => {
     const name = t.assignee?.nickname || t.assignee?.email || t.assigneeId
     const st = { pending: '待处理', approved: '已通过', rejected: '已驳回', transferred: '已转交', withdrawn: '已撤回' }[t.status] || t.status
     return `${name}: ${st}` + (t.comment ? ` (${t.comment})` : '')
@@ -329,8 +332,8 @@ function getNodeTooltip(nodeId: string): string {
 
 const edgePaths = computed(() => {
   return edges.value.map((e: ProcessEdge) => {
-    const src = nodes.value.find((n: ProcessNode | undefined) => n.id === e.sourceNodeId)
-    const tgt = nodes.value.find((n: ProcessNode | undefined) => n.id === e.targetNodeId)
+    const src = nodes.value.find((n: ProcessNode) => n.id === e.sourceNodeId)
+    const tgt = nodes.value.find((n: ProcessNode) => n.id === e.targetNodeId)
     if (!src || !tgt) return { id: e.id, d: '', edgeColor: '#c0c4cc', marker: 'arrow-gray', label: e.label || '', labelX: 0, labelY: 0 }
 
     const srcW = isCircle(src.type) ? CIRCLE_W : isGateway(src.type) ? GW : NODE_W
@@ -358,13 +361,13 @@ const edgePaths = computed(() => {
 const stateLabel = computed(() => {
   const s = instance.value?.currentState
   const m: Record<string, string> = { approving: '审批中', completed: '已完成', rejected: '已驳回', withdrawn: '已撤回', timeout: '已超时' }
-  return m[s] || s || ''
+  return (s && m[s]) || s || ''
 })
 
 const stateTagType = computed(() => {
   const s = instance.value?.currentState
   const m: Record<string, string> = { approving: 'warning', completed: 'success', rejected: 'danger', withdrawn: 'info', timeout: 'danger' }
-  return m[s] || 'info'
+  return (s && m[s]) || 'info'
 })
 
 onMounted(async () => {
@@ -384,7 +387,9 @@ onMounted(async () => {
     })
     canvasW.value = Math.max(1000, mx); canvasH.value = Math.max(600, my)
   } catch (e: unknown) {
-    ElMessage.error('加载流程实例失败: ' + (e.response?.data?.message || e.message || '未知错误'))
+    // 错误对象来自 HTTP 客户端，是未类型化的边界
+    const err = e as { response?: { data?: { message?: string } }; message?: string }
+    ElMessage.error('加载流程实例失败: ' + (err.response?.data?.message || err.message || '未知错误'))
   }
 })
 

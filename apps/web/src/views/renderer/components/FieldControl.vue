@@ -34,7 +34,7 @@
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <el-option
-      v-for="opt in (field.props?.options || [])"
+      v-for="opt in (propsOf(field).options || [])"
       :key="opt.value"
       :label="opt.label"
       :value="opt.value"
@@ -48,7 +48,7 @@
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <el-radio
-      v-for="opt in (field.props?.options || [])"
+      v-for="opt in (propsOf(field).options || [])"
       :key="String(opt.value)"
       :value="opt.value"
     >
@@ -63,7 +63,7 @@
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <el-checkbox
-      v-for="opt in (field.props?.options || [])"
+      v-for="opt in (propsOf(field).options || [])"
       :key="String(opt.value)"
       :value="opt.value"
     >
@@ -146,15 +146,15 @@
     v-else-if="field.type === 'tip-text'"
     class="fc-tip"
     :style="{
-      color: field.props?.color || '#909399',
+      color: propsOf(field).color || '#909399',
       fontSize: (field.props?.fontSize || 14) + 'px',
-      justifyContent: tipJustifyMap[field.props?.textAlign || 'left'],
+      justifyContent: tipJustifyMap[propsOf(field).textAlign || 'left'],
     }"
   >
     <span
       v-if="field.props?.tipType"
       class="fc-tip-icon"
-    >{{ tipIconChars[field.props.tipType] }}</span>
+    >{{ tipIconChars[propsOf(field).tipType] }}</span>
     <span>{{ field.props?.text }}</span>
   </div>
   <el-cascader
@@ -194,22 +194,31 @@ const props = defineProps<{
 
 const emit = defineEmits<{ 'update:modelValue': [value: any] }>()
 
+/**
+ * field.props 的 SDK 类型为 Record<string, unknown>（运行时 JSON 属性包）。
+ * 读取时统一视为 any（Record<string, unknown> 可直接赋给 Record<string, any>），
+ * 与原本的运行时行为一致，不做任何类型收窄或默认值改写。
+ */
+function propsOf(field: FieldSchema): Record<string, any> {
+  return field.props
+}
+
 // ---- 上传 ----
 const fileList = ref<UploadFile[]>([])
 
 const uploadHint = computed(() => {
   const parts: string[] = []
   if (props.field.props?.accept) {
-    parts.push(`文件格式仅限 ${props.field.props.accept.replace(/,/g, '/')}`)
+    parts.push(`文件格式仅限 ${propsOf(props.field).accept.replace(/,/g, '/')}`)
   }
   if (props.field.props?.maxSize) {
-    parts.push(`单个文件容量上限为 ${props.field.props.maxSize}MB`)
+    parts.push(`单个文件容量上限为 ${propsOf(props.field).maxSize}MB`)
   }
   return parts.join('<br>')
 })
 
 function onUploadChange(file: UploadFile, files: UploadFiles) {
-  const maxSize = props.field.props?.maxSize
+  const maxSize = propsOf(props.field).maxSize
   if (maxSize && file.size && file.size / 1024 / 1024 > maxSize) {
     ElMessage.warning(`文件大小不能超过 ${maxSize}MB`)
     fileList.value = files.filter((f: UploadFile) => f.uid !== file.uid)
@@ -231,7 +240,7 @@ function onUploadExceed() {
 }
 
 const switchProps = computed(() => {
-  const raw = { ...(props.field.props || {}) }
+  const raw: Record<string, any> = { ...(props.field.props || {}) }
   if (raw.activeText && raw.activeText.length > 6) raw.activeText = raw.activeText.slice(0, 6)
   if (raw.inactiveText && raw.inactiveText.length > 6) raw.inactiveText = raw.inactiveText.slice(0, 6)
   return raw
@@ -287,7 +296,7 @@ watch(richTextValue, (v) => {
 
 // 占位文本变更时直接更新编辑器 DOM（不能依赖 defaultConfig 重建，WangEditor 只读一次）
 watch(
-  () => props.field.props?.placeholder,
+  () => propsOf(props.field).placeholder,
   (val) => {
     if (richTextEditorRef.value) {
       const editable = richTextEditorRef.value.getEditableContainer()

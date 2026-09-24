@@ -11,7 +11,7 @@
       ref="formRef"
       :model="formData"
       :rules="formRules"
-      :label-width="engineRef.schema.settings.labelWidth + 'px'"
+      :label-width="labelWidth"
       label-position="left"
       :size="engineRef.schema.settings.size"
       :disabled="engineRef.schema.settings.disabled"
@@ -98,6 +98,12 @@ const {
   submitForm,
   updateField,
 } = useRendererEngine(props.schema, resolvedInitialData)
+
+/** 标签宽度：schema 未设 labelWidth（老表单/手工建的）时交给 Element Plus 自适应 */
+const labelWidth = computed(() => {
+  const w = engineRef.value.schema.settings.labelWidth
+  return w ? `${w}px` : 'auto'
+})
 
 // ACL 过滤后的可见字段
 const aclFilteredFields = computed(() => {

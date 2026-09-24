@@ -245,7 +245,7 @@ import PropertyPanel from './components/PropertyPanel.vue'
 import JsonPreview from './components/JsonPreview.vue'
 import PreviewPanel from '@/components/PreviewPanel.vue'
 import { isLayoutField } from '@furmx/sdk'
-import type { FieldSchema } from '@furmx/sdk'
+import type { FieldSchema, FormSchema } from '@furmx/sdk'
 import { ArrowLeft, ArrowDown, RefreshLeft, RefreshRight, Close } from '@element-plus/icons-vue'
 import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import PublishLinkDialog from '@/components/PublishLinkDialog.vue'
@@ -279,17 +279,17 @@ const currentFormId = ref('')
 const formId = route.params.formId as string
 const wsId = (route.params.wsId as string) || ''
 
-function getCurrentSchema(): Record<string, unknown> | null {
+function getCurrentSchema(): FormSchema | null {
   try {
-    return designerStore.getSchema?.() || null
+    return store.getSchema() || null
   } catch {
     return null
   }
 }
 
-function handleInsertSchema(schema: Record<string, unknown>) {
+function handleInsertSchema(schema: FormSchema) {
   if (schema.fields && Array.isArray(schema.fields)) {
-    designerStore.loadSchema(schema as any)
+    store.loadSchema(schema)
     ElMessage.success('AI 生成的表单已加载到设计器，后续对话将基于此表单')
   }
 }

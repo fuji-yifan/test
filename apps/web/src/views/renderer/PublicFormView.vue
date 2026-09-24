@@ -355,7 +355,9 @@ async function handleSubmit() {
           ElMessage.warning(`请填写「${f.name}」`)
           return false
         }
-        const maxLen = f.props?.maxLength || f.props?.maxlength
+        // field.props 为运行时 JSON 属性包（SDK 类型 Record<string, unknown>），按 any 读取
+        const fp: Record<string, any> = f.props
+        const maxLen = fp.maxLength || fp.maxlength
         if (maxLen && formData[f.key] && String(formData[f.key]).length > maxLen) {
           ElMessage.warning(`「${f.name}」输入内容超过最大长度 ${maxLen}`)
           return false

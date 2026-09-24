@@ -221,11 +221,18 @@ describe('DragDropManager', () => {
       expect(result.index).toBe(1) // 1 < 2, so index shifts down by 1
     })
 
-    it('after: adjusts index correctly', () => {
+    it('after: 源项在目标之前时，抽走后目标前移，插在它后面', () => {
       const d = new DragDropManager()
       const drop: DropPosition = { parentId: null, index: 1, mode: 'after' }
-      const result = d.resolveInsertion(drop, 0) // source before target
-      expect(result.index).toBe(2) // 0 < 1, so target index + 1
+      const result = d.resolveInsertion(drop, 0) // source at 0, target at 1
+      expect(result.index).toBe(1) // 0 < 1：源项在目标前，抽走后目标落到 0，插它后面 = 1
+    })
+
+    it('after: 源项在目标之后时，目标位置不动，插在它后面', () => {
+      const d = new DragDropManager()
+      const drop: DropPosition = { parentId: null, index: 1, mode: 'after' }
+      const result = d.resolveInsertion(drop, 3) // source at 3, target at 1
+      expect(result.index).toBe(2) // 3 >= 1：抽走源项不影响目标，插它后面 = 1 + 1
     })
 
     it('inside: always inserts at index 0', () => {

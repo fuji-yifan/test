@@ -92,15 +92,17 @@ const sizeVal = computed(() =>
 
 /** 栅格跨度 = max(类型最小列宽, 字段 col)，评分/开关固定列宽 */
 const spanCol = computed(() => {
+  /** field.props 为运行时 JSON 属性包（SDK 类型 Record<string, unknown>），按 any 读取 */
+  const fp: Record<string, any> = props.field.props
   if (props.field.type === 'rate') {
     const labelLen = (props.field.name || '').length
-    const stars = props.field.props?.max || 5
+    const stars = fp.max || 5
     return Math.max(3, Math.ceil(labelLen * 0.4 + stars * 0.75 + 0.8))
   }
   if (props.field.type === 'switch') {
     const labelLen = Math.min((props.field.name || '').length, 6)
-    const activeLen = Math.min((props.field.props?.activeText || '').length, 6)
-    const inactiveLen = Math.min((props.field.props?.inactiveText || '').length, 6)
+    const activeLen = Math.min((fp.activeText || '').length, 6)
+    const inactiveLen = Math.min((fp.inactiveText || '').length, 6)
     return Math.max(4, Math.ceil((labelLen + activeLen + inactiveLen) * 0.5 + 3))
   }
   const min = getMinCol(props.field.type)
