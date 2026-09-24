@@ -41,17 +41,6 @@ export const contextConfig = registerAs('context', () => ({
   maxDegrades: parseInt(process.env.MAX_DEGRADE || '1', 10),
 }))
 
-/**
- * 引擎开关：legacy = 手写 ReAct 编排；langgraph = LangGraph 图编排。
- *
- * 默认值必须是 langgraph：默认成 legacy 时，忘记配这个变量的环境会静默退回旧引擎，
- * 表现是「新功能（多表工作台 / 抢占 / 声明式检查点）全都不见了」而不是报错。
- * 取值合法性由 validateEnv() 兜住。
- */
-export const engineConfig = registerAs('engine', () => ({
-  mode: (process.env.AGENT_ENGINE || 'langgraph') as 'legacy' | 'langgraph',
-}))
-
 /** LangGraph checkpoint 持久化（与 server 共库，表结构由 Prisma migration 管理） */
 export const checkpointConfig = registerAs('checkpoint', () => ({
   databaseUrl: process.env.AGENT_DATABASE_URL || '',

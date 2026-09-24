@@ -20,7 +20,7 @@ import { ToolGateway, type GatewayResult } from '../harness/tool-gateway'
 import { ToolConfirmationRequiredError } from './tool-confirmation.error'
 import { entryOf, targetKeyOf, type FormWorksheet, type TargetResolution } from './worksheet'
 
-/** 单次图执行的会话上下文，对齐 legacy base.agent 注入的字段 */
+/** 单次图执行的会话上下文：token / 工作空间 / 草稿等由 act 节点按本次调用填进来 */
 export interface ToolCallContext {
   userToken?: string
   workspaceId?: string
@@ -29,8 +29,8 @@ export interface ToolCallContext {
   /** 当前会话已有的表单结构（form-designer 草稿），供 form_assemble_schema 合并 */
   currentSchema?: Record<string, unknown>
   /**
-   * 会话级表单工作台。**undefined 时退回旧行为**（legacy / 非表单 agent / 单测直连），
-   * 由 act 从图状态填进来。
+   * 会话级表单工作台。**undefined 时不启用工作台**（非表单 agent / 单测直连），
+   * 退回单槽草稿行为。由 act 从图状态填进来。
    */
   formWorksheet?: FormWorksheet
   /**
@@ -53,7 +53,7 @@ export class LangChainToolBridge {
 
   /**
    * 按名字构建 LangChain 工具列表；未注册的名字告警并跳过。
-   * 传入的 names 应与 legacy 各 Agent 的 getServerTools() 保持一致。
+   * 传入的 names 应取自 `AgentSpec.serverTools`（agent-catalog）。
    */
   build(names: string[], ctx: ToolCallContext = {}): StructuredToolInterface[] {
     const tools: StructuredToolInterface[] = []
@@ -148,7 +148,7 @@ export class LangChainToolBridge {
 
   // ==================== 内部方法 ====================
 
-  /** 注入 token / workspaceId（对齐 legacy）；表单工具按本次调用的**目标**补 existingSchema / formId */
+  /** 注入 token / workspaceId；表单工具按本次调用的**目标**补 existingSchema / formId */
   private injectContext(
     name: string,
     args: Record<string, unknown>,
@@ -158,7 +158,7 @@ export class LangChainToolBridge {
     out.token = ctx.userToken || ''
     out.workspaceId = ctx.workspaceId || ''
 
-    // 没有工作台（legacy / 非表单 agent）：维持迁移前的单槽行为
+    // 没有工作台（非表单 agent / 单测直连）：单槽行为
     if (!ctx.formWorksheet) {
       if (name === 'form_save' && !out.formId && ctx.savedFormId) out.formId = ctx.savedFormId
       if (name === 'form_assemble_schema' && !out.existingSchema && ctx.currentSchema) {
@@ -187,7 +187,7 @@ export class LangChainToolBridge {
     return out
   }
 
-  /** 与 legacy 的 tool 消息形态对齐：LLM 看到的是 ok/summary/data/error 的 JSON */
+  /** LLM 看到的工具结果是 ok/summary/data/error 的 JSON */
   private formatResult(res: GatewayResult): string {
     return this.truncate(
       JSON.stringify({
@@ -203,9 +203,8 @@ export class LangChainToolBridge {
    * 截断工具结果，控制进上下文的体积。
    *
    * `template_search` / `data_query` 这类工具会返回大 JSON，全量塞进 messages 会让
-   * token 迅速膨胀（`MAX_TOOL_RESULT_CHARS` 这个配置在迁移时只被 legacy 的
-   * base.agent 读过，图侧漏了）。口径与 legacy 的 `summarizeToolResult` 一致：
-   * 头尾各留一半，中间标出被截掉多少。
+   * token 迅速膨胀。上限取 `MAX_TOOL_RESULT_CHARS`，**头尾各留一半**、中间标出
+   * 截掉多少 —— 头尾都要留是因为 ok / summary 在头、往往最有用的切片在尾。
    *
    * 只影响 LLM 看到的 ToolMessage —— SSE 的 `tool_result` 用的是网关的 summary，
    * 前端预览卡片的数据源是产物（artifact），都不经过这里。
@@ -219,7 +218,7 @@ export class LangChainToolBridge {
 }
 
 /**
- * 取工具调用的 id 作为网关幂等键（与 legacy `toolCall.id` 对齐）。
+ * 取工具调用的 id 作为网关幂等键。
  * LangGraph ToolNode 构造 runtime 时写入 `toolCallId`；用 ToolCall 形态直接
  * invoke 时，invoke() 会把整个 ToolCall 塞进 `config.toolCall`。两者都兜住。
  */

@@ -99,8 +99,8 @@ const { messages, isLoading, status, error, sendMessage, cancel, clearMessages, 
 })
 
 /**
- * 人机协作检查点的选项。langgraph 引擎由后端下发 options（含「加入当前空间」这类
- * 自定义文案）；legacy 的风险确认没有 options，回退成确认/取消。
+ * 人机协作检查点的选项。正常由后端下发 options（含「加入当前空间」这类自定义文案）；
+ * 后端没带时回退成确认/取消。
  */
 function confirmOptions(tc: any): ConfirmOption[] {
   if (tc.options?.length) return tc.options

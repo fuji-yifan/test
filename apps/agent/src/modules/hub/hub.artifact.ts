@@ -1,9 +1,8 @@
 /**
  * 产物映射：把 session.metadata 里的草稿键翻译成前端预览卡片认的 result 结构。
  *
- * 两个引擎共用同一份实现：
- * - legacy 的编排循环用它登记步骤产物、并把 result 塞进 message 事件；
- * - langgraph 的适配层用它在收尾时补发 message.result（图内的 message 事件只带 content）。
+ * 图内的 `message` 事件只带 content，前端预览卡片的数据源却是 `message.result`，
+ * 所以适配层在收尾时用它补发一次。
  */
 import type { AgentKey } from '../graph/agent-state'
 
@@ -33,7 +32,7 @@ function readDraft(key: string, metadata: Record<string, any>): Record<string, u
   return value as Record<string, unknown>
 }
 
-/** 按 agent 取产物。行为与迁移前 hub.controller 的私有实现一致：取不到就是 null，不回退。 */
+/** 按 agent 取产物：取不到就是 null，不回退。 */
 export function extractArtifactData(
   agent: string | null | undefined,
   metadata: Record<string, any> | null | undefined,

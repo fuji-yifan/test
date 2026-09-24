@@ -4,7 +4,7 @@
 
 ## 一、主用例表
 
-实测环境（2026-09-20 首测，2026-09-21、2026-09-22 复测）：`AGENT_ENGINE=langgraph`，agent:3002 + server:3000 + 本机 MySQL formpu 全栈在跑；用真实用户 token 走 `POST /api/v1/agent/chat`（SSE），写入落在名为 `ceshi` 的测试空间。legacy 引擎另起一轮跑同批主干用例（见第二节）。
+实测环境（2026-09-20 首测，2026-09-21、09-22、09-24 复测）：agent:3002 + server:3000 + 本机 MySQL formpu 全栈在跑；用真实用户 token 走 `POST /api/v1/agent/chat`（SSE），写入落在名为 `ceshi` 的测试空间。2026-09-24 起只跑 LangGraph —— legacy 引擎与 `AGENT_ENGINE` 开关一并删除（见 3.11）。
 
 状态列 = 2026-09-21/09-22 复测后的结果；「实测」列保留 09-20 的原始记录，改动过的行注明复测结论。
 
@@ -43,27 +43,6 @@
 | F9 | **会话-新消息抢占**（新增） | 上一条没答检查点就直接发下一条（连发三条） | form-builder | form-designer | 不再回 SESSION_BUSY，执行权自动交给新消息 | ✅ | 09-22：旧版第三条必回 `SESSION_BUSY` + `stopReason:'locked'`（前端「会话正在执行中，请等待完成」，见 3.7）。改抢占后由 `probe_preempt.py`（并发两条）+ `probe_takeover.py`（第 3 条卡住时发第 4 条）验证：不再出现 error 事件，新消息照常跑到检查点。09-22 复测：3.8 修掉后「上一轮卡住」已不复现，抢占后同一会话的第三条消息也正常（不再留下卡死的会话） |
 | F10 | **精简/删除字段**（新增） | 建教职工信息登记表（17 字段）→ "缩减至10个字段" | form-builder | form-designer | 字段真的被删到 10 个，卡片/检查点产物同步 | ✅ | 09-22：修复前模型照做只回了 10 个字段，但工具按 key 合并**只增不减** → 仍是 17 个，卡片与用户要求不符（见 3.9）。改增量契约后（见 3.10）模型只发 `{target:'f1', removeFields:[要删的 key]}`，`已更新表单"…"，删除 7 个字段，共 10 个字段`，检查点产物同步 |
 | F11 | **改字段属性/选项不丢配置**（新增） | 建 5 字段表（含 radio 选项与必填）→ "精简到 3 个字段" → "用工性质加一个选项：返聘" | form-builder | form-designer | 保留下来的字段选项与必填一个不丢；改选项只动那一个字段 | ✅ | 09-22 `probe_ops.py`：精简后 `formWorksheet` 里的保留字段仍是 `name r1 / employment_type o4 / gender o2`（修前必是 o0/r0），加选项后 employment_type o5、其余字段未动（见 3.10） |
-
-## 二、回归：legacy 引擎
-
-把 `apps/agent/.env` 的 `AGENT_ENGINE` 临时切回 `legacy`（跑完已切回 `langgraph`），同批主干用例结果：
-
-| 用例 | langgraph | legacy |
-|---|---|---|
-| R1 / R2 / R3 / R4 | ✅ | ✅ |
-| F1 | ✅ | ✅ |
-| T1 | ✅ | ✅ |
-| W1 | ✅ | ✅（序列多一个 flow_save） |
-| C1 | ✅ | ✅（`template: search+instantiate` 等带 agent 前缀的计划文案） |
-| E2 | ✅ | ✅ |
-| D1 | ❌ 0 条 delta → **09-21 复测 ✅**（168 条，见 3.2） | ✅ 72 条 delta |
-| D3 | ✅ | ✅ |
-
-结论：主链路两个引擎都能跑通，**没有回归**；差异集中在 SSE 方言（见 3.2、3.5）。
-
-2026-09-21 复测：改动（delta 过滤、interrupt 载荷带 usage、`form_assemble_schema` 合并）之后重跑主干用例，`F1 / W1 / R2 / D3 / C1 / HITL` 全部 ✅，中断密集的链路无回归。
-
-**多表用例（F5–F8）不在此表**：legacy 没有工作台与 target 寻址（见 3.1 末尾的已知差异），这 4 条只对 langgraph 有效，不做 legacy 回归。
 
 ## 三、实测发现（按严重度）
 
@@ -210,13 +189,15 @@
 2. **同一工具可以无限重试**。legacy 数「同一工具连续错几次」，超 `MAX_RETRIES`（默认 2）后把回灌的失败改成 `[DEGRADE]` 换方案提示，超 `MAX_DEGRADE`（默认 1）整体收尾（`FALLBACK`）；图侧原先只有「失败回一条 ToolMessage」，模型能一直重试同一个坏工具。已加 `toolErrors` / `degradeCount` 两个 channel 复刻这条级联（成功即清零，所以「错一次又成功」不会累积）。
 3. **没有熔断**。legacy 的 `LlmStreamService` 有「连续失败 5 次 → 熔断 30s」；图侧 `LangGraphLlmService` 直接 `bindTools` 没有这层。已在 `withTools` 外包一层同参数的熔断。
 
-**对外可见差异（对前端是兼容的）**：新增/恢复了 4 个 `error` 事件的 code —— `RETRY`（参数校验失败）/`RETRYING`（模型调用失败重试）/`DEGRADE`/`FALLBACK`/`CIRCUIT_BREAKER`。前四个前端本来就按「内部修正，不提示」过滤（`useAgentChat.ts` 的 `case 'error'`），只有后两个会显示成错误文案。另外把 `AGENT_ENGINE` 的默认值从 `legacy` 改成 `langgraph`，并在 `validateEnv()` 里拦住拼错的值 —— **默认成 legacy 时，漏配这个变量的环境会静默退回旧引擎，「新功能都不见了」而不报错**。跑 legacy 回归对照（第二节）时要显式写 `AGENT_ENGINE=legacy`。
+**对外可见差异（对前端是兼容的）**：新增/恢复了 4 个 `error` 事件的 code —— `RETRY`（参数校验失败）/`RETRYING`（模型调用失败重试）/`DEGRADE`/`FALLBACK`/`CIRCUIT_BREAKER`。前四个前端本来就按「内部修正，不提示」过滤（`useAgentChat.ts` 的 `case 'error'`），只有后两个会显示成错误文案。
+
+**同日（2026-09-24）legacy 已删除**：`hub.controller.ts` 的 legacy 分支（`runOrchestrationLoop` / `pickAgent` / `buildStepMessage` / `getArtifactType` / `confirmCallId` / `chatSync` 的 legacy 分支）、`hub.service.ts`、`hub.state-bar.ts`、`base.agent.ts` + 4 个 `*.agent.ts`、`llm.client.ts`、`llm.stream.ts` 全部移除；`AGENT_ENGINE` 开关、`engineConfig`、`validateEnv()` 里的校验、`.env.example` 的对应行也随之删掉。`CheckpointService.enabled` 不再看开关（恒为启用，缺 `AGENT_DATABASE_URL` 直接报错）。浏览器手测（F10/F11/F5/F6/F9 + 文字落位 + 流程卡片非表单分支 + 3.11 的错误恢复）已全绿后才执行删除。
 
 **验证**：`graph-flow.spec.ts` 加 3 条（超上限才降级 / 失败后成功不误报 / 两个工具都降级则收尾并上报 FALLBACK）、`tool-bridge.spec.ts` 加 1 条（截断），全量 **802 条绿**，`tsc --noEmit` 干净。
 
-### 3.12 legacy 目前带着两个已修的 bug，不能当"安全基线" —— 提醒
+### 3.12 legacy 为什么不能当"安全基线" —— 已随删除归档
 
-`base.agent.ts` 里仍是无条件注入 `savedFormId`（`form_save` 判断创建/更新只看 `args.formId` → 保存表 A 后再建表 B 会**静默覆盖 A**）与单槽 `draftSchema` 注入。这两个都是图侧 09-22 修掉的。所以切回 legacy 做对照时，**凡涉及「同会话多张表」的差异都属于预期**（legacy 本就不支持多表，见第一节标注），不要当成回归失败。
+删除前 `base.agent.ts` 里一直是无条件注入 `savedFormId`（`form_save` 判断创建/更新只看 `args.formId` → 保存表 A 后再建表 B 会**静默覆盖 A**）与单槽 `draftSchema` 注入，这两个都是图侧 09-22 修掉的。所以它在退场前保的是「旧行为」而不是「已验证正确的行为」，不能当成回归对照的基准 —— 这也是当初下决心删掉而不是长期并行的原因。legacy 已于 2026-09-24 删除（见 3.11），本节仅作归档。
 
 ## 四、仍需人工验证
 
@@ -234,11 +215,15 @@
 | F11 改字段不丢配置：精简/删字段后，点开预览看留下的 select/radio 是否**还带着选项**、必填是否有红星；再说「用工性质加一个选项：返聘」看是否只多了这一项 | DOM 表现。后端载荷已核对（保留字段 options/required 数量不变、加选项只动该字段），但预览渲染与必填标记要人看 |
 | 3.11 的错误恢复在真机上的表现：拿一个必然失败的工具（如不存在的 formId 走 `form_save`）连试 3 次，界面**不该**出现 RETRY/DEGRADE 的提示，只在最终收尾时显示一次 FALLBACK 文案 | 需要真实模型按失败结果反复重试同一工具，单测是脚本化的假模型 |
 
-## 五、实测写入的数据（2026-09-21、09-22 均已清理）
+## 五、实测写入的数据（09-21、09-22、09-24 均已清理）
 
 所有写入都落在 workspace `ceshi`（`2636ca19-d5d7-4a83-b2eb-a678633e7b0e`，owner `a375921c-…`）。两轮实测（09-20 首测 + legacy 回归，09-21 复测）累计新增 17 行，名字如「客户登记表」「留言表」「客服工单」「客服工单表」「报销信息填写表」，按 `workspace_id` 分组核对全部落在 `ceshi`。
 
 **已于 2026-09-21 全部删除**（`D:\agent-e2e\db_cleanup.js`，先 dry-run 再 `--apply`）：forms 从 86 回到基线 **69**，form_versions 从 196 回到基线 **179**，该空间 submissions=0。
+
+**2026-09-24 的浏览器手测写到了另一个空间**：`员工信息登记表`（`7a4a5f65-0488-42de-9d37-ee8add2dc403`，v1→v2，`field_status` 选项 3→4，即 F11 那只真机证据）与 `工单信息表`（`c1b129a8-d8d5-4533-9d2a-adfc1bc6ef47`）都建在 workspace `test`（`ab718c8d-1990-49c4-a2c0-a768c159a985`），**不是 `ceshi`** —— 照原样跑默认的 `db_cleanup.js` 会显示「ceshi 空间 forms=0」而白跑。已按 **form id 白名单**精确删除（`db_cleanup.js --forms=<id1>,<id2>`，不碰该空间里 09-15 起的历史数据）：forms 71→**69**、form_versions 182→**179**，回到基线。`db_cleanup.js` 因此新增了 `--forms=` 模式，默认无参时行为不变（仍删 `ceshi` 空间）。
+
+> 注意 `db_*.js` 是 Node 脚本，用 `node D:\agent-e2e\db_cleanup.js` 跑；用 `python` 会报 `SyntaxError: invalid character '。'`。
 
 form_save 的落库已按"必须查 formpu.forms 新行"核对：新行存在且 `schema` 的 fields 完整，**两轮都没有复现"假成功"**。
 

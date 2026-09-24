@@ -11,24 +11,14 @@ import {
   Req,
 } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger'
-import { ConfigService } from '@nestjs/config'
 import { Response, Request } from 'express'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
-import { Public } from '../../common/decorators/public.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { SseWriter, SseEventType, startHeartbeat } from '../../common/sse/sse.writer'
-import { HubService } from './hub.service'
-import { extractArtifactData } from './hub.artifact'
 import { LangGraphTurnService } from './langgraph-turn.service'
 import { RouterService } from '../graph/router.service'
 import { SessionService } from '../session/session.service'
-import { FormDesignerAgent } from '../sub-agents/form-designer/form-designer.agent'
-import { WorkflowAgent } from '../sub-agents/workflow/workflow.agent'
-import { TemplateAgent } from '../sub-agents/template/template.agent'
-import { SubmissionAgent } from '../sub-agents/submission/submission.agent'
 import { ToolGateway } from '../harness/tool-gateway'
-import { ToolRegistry } from '../harness/tool.registry'
-import { HubStateBar } from './hub.state-bar'
 
 @ApiTags('Agent')
 @ApiBearerAuth()
@@ -38,21 +28,13 @@ export class HubController {
   private readonly logger = new Logger(HubController.name)
 
   constructor(
-    private hubService: HubService,
     private sessionService: SessionService,
-    private formDesigner: FormDesignerAgent,
-    private workflowAgent: WorkflowAgent,
-    private templateAgent: TemplateAgent,
-    private submissionAgent: SubmissionAgent,
     private toolGateway: ToolGateway,
-    private toolRegistry: ToolRegistry,
-    private stateBar: HubStateBar,
-    private config: ConfigService,
     private langGraphTurn: LangGraphTurnService,
     private router: RouterService,
   ) {}
 
-  /** POST /agent/chat — SSE 流式聊天（Hub-Agent 入口，支持多步骤编排） */
+  /** POST /agent/chat — SSE 流式聊天（LangGraph 编排入口） */
   @Post('chat')
   async chat(
     @CurrentUser() user: { userId: string; workspaceId: string },
@@ -63,8 +45,9 @@ export class HubController {
       message: string
       context?: Record<string, unknown>
       stream?: boolean
+      /** 用户点检查点按钮时的回执：本层下发的 callId */
       confirmCallId?: string
-      /** langgraph 引擎：用户点检查点按钮时选中的 option.value */
+      /** 用户点检查点按钮时选中的 option.value */
       confirmAction?: string
     },
     @Res() res: Response,
@@ -127,58 +110,15 @@ export class HubController {
       // 发送 session 事件
       sse.writeEvent(SseEventType.SESSION, { sessionId: session.id })
 
-      // 引擎分流：legacy 手写 ReAct 编排 / langgraph 图编排
-      const engine = this.config.get<'legacy' | 'langgraph'>('engine.mode') ?? 'legacy'
-
-      // 处理确认操作（legacy 的"工具风险确认"；langgraph 的检查点回执走下面的分流）
-      let confirmHandled = false
-      if (engine === 'legacy' && body.confirmCallId && session.metadata?.pendingConfirms) {
-        const confirms = session.metadata.pendingConfirms as any[]
-        const target = confirms.find((c) => c.callId === body.confirmCallId)
-        if (target) {
-          const result = await this.toolGateway.executeConfirmed(target.tool, target.args)
-          sse.writeEvent(SseEventType.TOOL_RESULT, {
-            callId: target.callId,
-            tool: target.tool,
-            ok: result.ok,
-            summary: result.summary || 'Confirmed and executed',
-          })
-          await this.sessionService.updateMetadata(session.id, {
-            pendingConfirms: confirms.filter((c) => c.callId !== body.confirmCallId),
-            lastConfirmAction: 'confirmed',
-          })
-          sse.writeEvent(SseEventType.MESSAGE, {
-            role: 'assistant',
-            content: result.ok
-              ? `✅ ${target.tool} 执行成功`
-              : `❌ ${target.tool} 执行失败：${result.summary || ''}`,
-          })
-          confirmHandled = true
-        }
-      }
-
-      // 编排循环（纯确认消息跳过，避免死循环）
-      if (!confirmHandled) {
-        if (engine === 'langgraph') {
-          await this.langGraphTurn.runTurn({
-            sse,
-            session,
-            body,
-            userToken: rawToken,
-            requestId: this.nanoid(),
-            signal: abortController.signal,
-          })
-        } else {
-          await this.runOrchestrationLoop(
-            session,
-            body.message,
-            body.scenario,
-            sse,
-            abortController.signal,
-          )
-        }
-      }
-
+      // 检查点回执（confirmCallId / confirmAction）由这一层认领，命中就续跑断点
+      await this.langGraphTurn.runTurn({
+        sse,
+        session,
+        body,
+        userToken: rawToken,
+        requestId: this.nanoid(),
+        signal: abortController.signal,
+      })
     } catch (err: any) {
       try { sse.writeEvent(SseEventType.ERROR, { code: 'FATAL', message: err.message || '未知错误' }) } catch {}
       try { sse.writeEvent(SseEventType.DONE, { sessionId: session?.id, stopReason: 'error', usage: { inputTokens: 0, outputTokens: 0 } }) } catch {}
@@ -189,142 +129,6 @@ export class HubController {
       }
       heartbeat.stop()
       sse.end()
-    }
-  }
-
-  /**
-   * 编排循环：反复调用 orchestrate → run agent → advance plan → 直到计划完成。
-   */
-  private async runOrchestrationLoop(
-    session: any,
-    userMessage: string,
-    scenario: string,
-    sse: SseWriter,
-    signal: AbortSignal,
-  ): Promise<void> {
-    let currentMessage = userMessage
-    let totalToolCalls = 0
-    let totalInputTokens = 0
-    let totalOutputTokens = 0
-    let isFirstStep = true
-
-    // 最多执行 MAX_PLAN_STEPS 步（防止无限循环）
-    const MAX_PLAN_STEPS = 5
-
-    for (let stepIndex = 0; stepIndex < MAX_PLAN_STEPS; stepIndex++) {
-      if (signal.aborted) break
-
-      // 重新加载 session（metadata 可能在之前步骤更新过）
-      session = await this.sessionService.get(session.id)
-      if (!session) break
-
-      // 1. 编排：确定当前应该用哪个 Agent
-      const orchestration = await this.hubService.orchestrate(session, currentMessage, scenario)
-
-      // 2. 更新 metadata（plan + currentStepId）
-      if (orchestration.plan && isFirstStep) {
-        await this.hubService.updateMetadata(session.id, {
-          plan: orchestration.plan,
-          currentStepId: orchestration.plan.steps[0]?.id,
-          activeSubAgent: orchestration.targetAgent,
-          phase: 'executing',
-          completedSteps: [],
-          artifacts: {},
-        })
-        session = await this.sessionService.get(session.id)
-      } else {
-        await this.hubService.updateMetadata(session.id, {
-          activeSubAgent: orchestration.targetAgent,
-          phase: 'executing',
-        })
-      }
-
-      // 3. 发送 status 事件
-      const state = this.stateBar.generate(session!)
-      sse.writeEvent(SseEventType.STATUS, {
-        agent: state.agent,
-        phase: state.phase,
-        todo: state.todo.map((t) => t.text),
-      })
-
-      // 4. 执行 Sub-Agent
-      const agent = this.pickAgent(orchestration.targetAgent)
-      const runResult = await agent.run(session!, currentMessage, sse, signal)
-
-      totalToolCalls += runResult.toolCalls
-      totalInputTokens += runResult.usage.inputTokens
-      totalOutputTokens += runResult.usage.outputTokens
-
-      // 5. 记录产物（供下游步骤引用）
-      if (orchestration.plan) {
-        const currentStepId = session.metadata?.currentStepId
-        if (currentStepId) {
-          const artifactType = this.getArtifactType(orchestration.targetAgent)
-          const artifactData = extractArtifactData(orchestration.targetAgent, session.metadata)
-          if (artifactData) {
-            await this.hubService.recordArtifact(session.id, currentStepId, artifactType, artifactData)
-          }
-        }
-      }
-
-      // 6. 推进计划
-      if (orchestration.plan) {
-        const currentStepId = session.metadata?.currentStepId
-        if (currentStepId) {
-          await this.hubService.completeStep(session.id, currentStepId)
-        }
-
-        // 重新加载 session 获取更新后的 metadata
-        session = await this.sessionService.get(session.id)
-
-        const advanced = this.hubService.advancePlan(session!)
-        if (!advanced) break // 计划完成
-
-        // 解析下一步的输入引用
-        const resolvedInput = this.hubService.resolveStepInput(
-          advanced.nextStep,
-          session?.metadata?.artifacts || {},
-        )
-
-        // 准备下一步的消息
-        currentMessage = this.buildStepMessage(advanced.nextStep, resolvedInput)
-        isFirstStep = false
-        scenario = '' // 后续步骤不再用前端 scenario
-        continue
-      }
-
-      // 单步任务 → 完成
-      break
-    }
-
-    // 汇总
-    await this.hubService.updateMetadata(session!.id, {
-      phase: 'completed',
-      activeSubAgent: null,
-      tokenUsage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
-    })
-  }
-
-  /** 构建传递给下一步 Sub-Agent 的上下文消息 */
-  private buildStepMessage(step: any, resolvedInput: Record<string, unknown>): string {
-    const parts: string[] = [`[步骤 ${step.id}] ${step.action}`]
-    for (const [key, value] of Object.entries(resolvedInput)) {
-      if (key === 'query' || key === 'description') {
-        parts.push(`${key}: ${value}`)
-      } else if (typeof value === 'object') {
-        parts.push(`${key}: ${JSON.stringify(value).slice(0, 500)}`)
-      }
-    }
-    return parts.join('\n')
-  }
-
-  private getArtifactType(agent: string): string {
-    switch (agent) {
-      case 'form-designer': return 'FormArtifact'
-      case 'workflow': return 'WorkflowArtifact'
-      case 'template': return 'TemplateArtifact'
-      case 'submission': return 'AnalysisArtifact'
-      default: return 'Artifact'
     }
   }
 
@@ -346,31 +150,17 @@ export class HubController {
       scenario: body.scenario,
     })
 
-    // 引擎分流：两个引擎的路由器不是同一个实现，预览结果也得跟着走，
-    // 否则 langgraph 模式下这个端点会给出 legacy 的结论。
-    const engine = this.config.get<'legacy' | 'langgraph'>('engine.mode') ?? 'legacy'
-
-    if (engine === 'langgraph') {
-      const decision = await this.router.decide(body.message, {
-        scenario: body.scenario,
-        entityId: body.context?.entityId as string | undefined,
-        pageLabel: body.context?.pageLabel as string | undefined,
-      })
-      return {
-        sessionId: session.id,
-        targetAgent: decision.agent,
-        scenario: decision.scenario,
-        plan: decision.plan ?? null,
-      }
-    }
-
-    const orchestration = await this.hubService.orchestrate(session, body.message, body.scenario)
+    const decision = await this.router.decide(body.message, {
+      scenario: body.scenario,
+      entityId: body.context?.entityId as string | undefined,
+      pageLabel: body.context?.pageLabel as string | undefined,
+    })
 
     return {
       sessionId: session.id,
-      targetAgent: orchestration.targetAgent,
-      scenario: orchestration.targetScenario,
-      plan: orchestration.plan || null,
+      targetAgent: decision.agent,
+      scenario: decision.scenario,
+      plan: decision.plan ?? null,
     }
   }
 
@@ -495,21 +285,6 @@ export class HubController {
       data: { ok: result.ok, result: result.result, summary: result.summary },
       message: 'ok',
       requestId: this.nanoid(),
-    }
-  }
-
-  /** 根据编排结果选择对应的 Sub-Agent */
-  private pickAgent(target: string): {
-    run: (session: any, msg: string, sse: SseWriter, signal?: AbortSignal) => Promise<{
-      finalContent: string; toolCalls: number; usage: { inputTokens: number; outputTokens: number }
-    }>
-  } {
-    switch (target) {
-      case 'workflow': return this.workflowAgent
-      case 'template': return this.templateAgent
-      case 'submission': return this.submissionAgent
-      case 'form-designer':
-      default: return this.formDesigner
     }
   }
 

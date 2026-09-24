@@ -90,12 +90,9 @@ export class AgentGraphService {
 
     builder.addEdge('aggregate', END)
 
-    // interrupt/resume 依赖 checkpointer；legacy 引擎下没有它，图本身仍可跑（只是不能续跑）
-    const checkpointer = this.checkpoint.enabled ? this.checkpoint.saver : undefined
-    if (!checkpointer) {
-      this.logger.warn('未启用 checkpoint（AGENT_ENGINE != langgraph）：interrupt 无法持久化')
-    }
-    return builder.compile(checkpointer ? { checkpointer } : undefined)
+    // interrupt/resume 依赖 checkpointer，所以它现在是硬依赖（MySQL 持久化）
+    const checkpointer = this.checkpoint.saver
+    return builder.compile({ checkpointer })
   }
 
   // ==================== router ====================

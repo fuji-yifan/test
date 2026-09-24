@@ -17,11 +17,11 @@ export interface AgentToolCall {
   tool: string
   status: string
   summary?: string
-  /** 人机协作检查点的问题文案（只有 langgraph 引擎下发） */
+  /** 人机协作检查点的问题文案 */
   prompt?: string
-  /** 检查点的风险等级，用于在卡片上披露「批准的是什么」 */
+  /** 检查点的风险等级，用于在卡片上披露「批准的是什么」；不是风险门时后端不带 */
   risk?: string
-  /** 检查点的可选项；legacy 的风险确认不带，前端回退成确认/取消 */
+  /** 检查点的可选项；没带时前端回退成确认/取消 */
   options?: ConfirmOption[]
 }
 
@@ -38,7 +38,6 @@ interface AgentStatus {
   agent: string
   phase: string
   products: { type: string; agent: string; status: string }[]
-  pendingConfirms: number
   todo: { id: string; text: string; status: string }[]
 }
 
@@ -237,7 +236,6 @@ export function useAgentChat(options: UseAgentChatOptions) {
           agent: data.agent || '',
           phase: data.phase || '',
           products: data.products || [],
-          pendingConfirms: data.pendingConfirms || 0,
           todo: data.todo || [],
         }
         break

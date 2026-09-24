@@ -13,8 +13,8 @@ import { MysqlExecutor } from './sql-executor'
 /**
  * LangGraph checkpoint 持久化。
  *
- * 懒初始化：只有 AGENT_ENGINE=langgraph 时才会真正建连接池，
- * legacy 引擎下这个模块完全不产生数据库连接，保证灰度期间零影响。
+ * 懒初始化：连接池在第一次取 `saver` 时才建。引擎开关已随 legacy 退场移除，
+ * 这个模块现在总是启用 —— 没配 `AGENT_DATABASE_URL` 会在建图时直接报错，而不是静默降级。
  */
 @Injectable()
 export class CheckpointService implements OnApplicationBootstrap, OnModuleDestroy {
@@ -23,10 +23,6 @@ export class CheckpointService implements OnApplicationBootstrap, OnModuleDestro
   private instance?: MysqlCheckpointSaver
 
   constructor(private readonly config: ConfigService) {}
-
-  get enabled(): boolean {
-    return this.config.get<string>('engine.mode') === 'langgraph'
-  }
 
   get saver(): MysqlCheckpointSaver {
     if (!this.instance) {
@@ -45,10 +41,6 @@ export class CheckpointService implements OnApplicationBootstrap, OnModuleDestro
   }
 
   async onApplicationBootstrap(): Promise<void> {
-    if (!this.enabled) {
-      this.logger.log('AGENT_ENGINE=legacy，LangGraph checkpoint 未启用')
-      return
-    }
     const saver = this.saver
     if (this.config.get<boolean>('checkpoint.autoSetup')) {
       await saver.setup()

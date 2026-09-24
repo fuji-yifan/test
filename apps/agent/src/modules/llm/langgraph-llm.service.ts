@@ -11,17 +11,16 @@ export interface BoundGraphModel {
 }
 
 /**
- * LangGraph 侧使用的 LLM。
+ * 平台唯一的 LLM 接入层。
  *
- * 与现有的 LlmClient 并存：LlmClient 走裸 openai SDK（legacy 编排用），
- * 这个走 @langchain/deepseek 的 ChatDeepSeek（图节点用，直接产出 AIMessage.tool_calls）。
+ * 走 @langchain/deepseek 的 ChatDeepSeek，图节点直接消费它产出的 AIMessage.tool_calls。
  */
 @Injectable()
 export class LangGraphLlmService {
   private readonly logger = new Logger(LangGraphLlmService.name)
   private readonly model: ChatDeepSeek
 
-  /** 熔断器：连续失败到阈值后短时间内直接拒绝，避免上游挂了还一直打（对齐 legacy 的参数） */
+  /** 熔断器：连续失败到阈值后短时间内直接拒绝，避免上游挂了还一直打 */
   private failures = 0
   private openUntil = 0
   private static readonly BREAKER_THRESHOLD = 5

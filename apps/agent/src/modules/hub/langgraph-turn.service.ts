@@ -2,8 +2,7 @@
  * LangGraph 引擎的 SSE 适配层。
  *
  * 职责边界：`GraphRunnerService` 只产出 GraphEvent 和「本轮结果」，不碰 HTTP；
- * 这一层负责把两者翻译成平台既有的 10 个 SSE 事件，让前端在
- * `AGENT_ENGINE=legacy|langgraph` 两种引擎下看到同一套协议。
+ * 这一层负责把两者翻译成平台既有的 10 个 SSE 事件，前端只认这一套协议。
  *
  * 两处不能直通的差异在这里抹平：
  * 1. interrupt 不走 GraphEvent，而是作为 run/resume 的返回值出来 → 这里合成
@@ -11,8 +10,8 @@
  * 2. 图内的 `message` 事件只带 content，而前端预览卡片的数据源是
  *    `message.result` → 收尾时按 session.metadata 里的草稿补发一次。
  *
- * 前端回执契约（与 legacy 完全一致，不新增端点）：再发一次 POST /agent/chat，
- * 带上 `confirmCallId`（本层下发的 id）与 `confirmAction`（选中的 option.value）。
+ * 前端回执契约（不新增端点）：再发一次 POST /agent/chat，带上 `confirmCallId`
+ * （本层下发的 id）与 `confirmAction`（选中的 option.value）。
  */
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
@@ -191,7 +190,7 @@ export class LangGraphTurnService {
         })
         return
       case 'status':
-        // legacy 的 todo 是纯文案数组，进度信息在 phase 里表达
+        // todo 是纯文案数组，进度信息在 phase 里表达
         this.safeWrite(sse, SseEventType.STATUS, {
           agent: event.agent,
           phase: event.phase,

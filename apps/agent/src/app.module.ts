@@ -8,7 +8,6 @@ import configuration, {
   checkpointConfig,
   contextConfig,
   deepseekConfig,
-  engineConfig,
 } from './config/configuration'
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard'
@@ -33,7 +32,7 @@ import { HealthController } from './modules/health/health.controller'
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [configuration, deepseekConfig, contextConfig, engineConfig, checkpointConfig],
+      load: [configuration, deepseekConfig, contextConfig, checkpointConfig],
       envFilePath: ['.env'],
     }),
     ThrottlerModule.forRoot([
