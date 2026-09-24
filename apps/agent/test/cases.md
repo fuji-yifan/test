@@ -220,7 +220,7 @@ flow_create           {"nodes": "oops"}    → 参数错误：name: Required; no
 排查开放项时把 FALLBACK 这条出口完整跟了一遍，发现三个问题（前两个是真 bug）：
 
 1. **重试计数跨轮不清零**。`toolErrors` / `degradeCount` 只在子图 `act` 里写，`routerNode` 与 `prepare` 都不重置。图状态按 `thread_id`（= 会话）持久化，上一轮的失败额度会带进下一轮 —— 用户换个说法重试，模型第一次调同一个工具失败就直接吃 `[DEGRADE]`，白丢两次「让你自己修」的机会。
-2. **单工具反复失败永远到不了收尾**。旧公式用「刚跨过重试上限」判定（`previouslyDegraded = prev > maxRetries`），同一个工具只要一直不成功，第 4 次起该值恒为真，`degradeCount` 卡在 1，而触发条件是 `degradeCount > 1` —— 永不成立。**`agent-state.ts` 当时的注释却写着「反复坏掉的工具最终仍会触发收尾」，注释与代码不符**；真正的兜底其实是 `MAX_ITERATIONS=8`。新公式按「连续失败满 `maxRetries+1` 次」记一次（`Math.floor` 差分），单工具第 3、6 次各记一次。
+2. **单工具反复失败永远到不了收尾**。旧公式用「刚跨过重试上限」判定（`previouslyDegraded = prev > maxRetries`），同一个工具只要一直不成功，第 4 次起该值恒为真，`degradeCount` 卡在 1，而触发条件是 `degradeCount > 1` —— 永不成立。**`agent-state.ts` 当时的注释却写着「反复坏掉的工具最终仍会触发收尾」，注释与代码不符**；真正的兜底其实是每个 agent 的 `maxIterations: 8`。新公式按「连续失败满 `maxRetries+1` 次」记一次（`Math.floor` 差分），单工具第 3、6 次各记一次。
 3. **两个「我做不到」长得完全不一样**。工具失败那条发 `error{code:'FALLBACK'}` + `halted: true`（前端渲染红 banner，同时助手气泡又是同一句话 → 同一句出现两遍）；轮次用尽那条反而被当成**正常完成**（不发 error、不置标志、`stopReason: 'completed'`），多步计划会带着缺失的产物继续空跑后面的步骤。
 
 **改法（`gaveUp` 统一出口）**：新增 `gaveUp` channel，与 `halted` 分工 —— `halted` = 用户主动中断（检查点点「中断」/ 拒绝风险确认），`gaveUp` = 系统放弃（工具反复失败 / 轮次用尽）。父图三处判断（`planDriver` / `nextAfterPlanDriver` / `planAdvance`）都读 `halted || gaveUp`：都停整条计划、不推进、不登记产物。对外：`gaveUp` → `stopReason: 'giveup'`、`metadata.phase = 'gave_up'`、`activeSubAgent = null`，**不再下发 `error` 事件**（放弃的文案本身是给用户的建议，不是系统故障，红条会让人以为平台坏了）。日志与单测通过内部 `aggregate` 事件的 `gaveUp` 字段观察。
@@ -238,7 +238,7 @@ flow_create           {"nodes": "oops"}    → 参数错误：name: Required; no
 - **多步计划要挑对话**：别用「搜索请假模板，基于它创建表单并配一个审批流程」—— 它的第一步是 template，而 `template_search` 会自己 catch 错误当成功返回，永远不失败。用「创建一个客户登记表，并配一个审批流程」（第一步是 form-designer，`form_save` 才会真失败）。
 - **`phase='gave_up'` / `activeSubAgent=null` 查不了库**：`SESSION_STORE=memory`，session metadata 不落任何地方，前端也不消费 `phase`（`useAgentChat.ts` 的 `done` 分支只清 status）。`stopReason` 同理只在 SSE 里，界面看不到。
 
-**顺带发现（未处理）**：`.env` 的 `MAX_ITERATIONS` 是死配置 —— `configuration.ts:38` 读进 `context.maxIterations` 后无人消费，图里用的是 `agent-catalog.ts` 里每个 agent 硬编码的 `maxIterations: 8`（数值相同，行为无差异）。所以「轮次用尽」那条出口在真机上没法用 env 触发。
+**顺带清掉的死配置**：`.env` 的 `MAX_ITERATIONS` 原先读进 `configuration.ts` 的 `context.maxIterations` 后无人消费，图里用的是 `agent-catalog.ts` 里每个 agent 硬编码的 `maxIterations: 8`（数值相同，行为无差异）。2026-09-24 已把这条 env 与 config 一并删除。所以「轮次用尽」那条出口仍然没法用 env 触发 —— 要造这条得直接改 catalog 里的 `maxIterations`。
 
 ## 四、人工验证（2026-09-24 已全部走完）
 
