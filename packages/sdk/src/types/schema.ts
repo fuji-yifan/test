@@ -91,6 +91,10 @@ export type FieldType =
   | 'upload'
   | 'rich-text'
   | 'cascader'
+  | 'time-picker'
+  | 'date-time-picker'
+  | 'color-picker'
+  | 'tree-select'
   // 布局容器
   | 'card'
   | 'collapse'

@@ -126,7 +126,7 @@ export class ValidationPipeline {
     this.register('minLength', {
       type: 'minLength',
       validate: (value, rule) => {
-        if (value && String(value).length < (rule.value || 0)) {
+        if (value && String(value).length < (Number(rule.value) || 0)) {
           return { fieldKey: '', type: 'minLength', message: rule.message || `最少${rule.value}个字符` }
         }
         return null
@@ -136,7 +136,7 @@ export class ValidationPipeline {
     this.register('maxLength', {
       type: 'maxLength',
       validate: (value, rule) => {
-        if (value && String(value).length > (rule.value || Infinity)) {
+        if (value && String(value).length > (Number(rule.value) || Infinity)) {
           return { fieldKey: '', type: 'maxLength', message: rule.message || `最多${rule.value}个字符` }
         }
         return null
@@ -146,7 +146,7 @@ export class ValidationPipeline {
     this.register('min', {
       type: 'min',
       validate: (value, rule) => {
-        if (value !== null && value !== undefined && Number(value) < (rule.value ?? -Infinity)) {
+        if (value !== null && value !== undefined && Number(value) < Number(rule.value ?? -Infinity)) {
           return { fieldKey: '', type: 'min', message: rule.message || `最小值为${rule.value}` }
         }
         return null
@@ -156,7 +156,7 @@ export class ValidationPipeline {
     this.register('max', {
       type: 'max',
       validate: (value, rule) => {
-        if (value !== null && value !== undefined && Number(value) > (rule.value ?? Infinity)) {
+        if (value !== null && value !== undefined && Number(value) > Number(rule.value ?? Infinity)) {
           return { fieldKey: '', type: 'max', message: rule.message || `最大值为${rule.value}` }
         }
         return null
@@ -166,7 +166,7 @@ export class ValidationPipeline {
     this.register('pattern', {
       type: 'pattern',
       validate: (value, rule) => {
-        if (value && rule.value && !new RegExp(rule.value).test(String(value))) {
+        if (value && rule.value && !new RegExp(String(rule.value)).test(String(value))) {
           return { fieldKey: '', type: 'pattern', message: rule.message || '格式不正确' }
         }
         return null
@@ -501,9 +501,10 @@ export class RendererEngine {
     if (!Array.isArray(current)) {
       this._formData[fieldKey] = []
     }
+    const rows = this._formData[fieldKey] as unknown[]
     const rowData = data || this._getSubFormDefaults(fieldKey)
-    this._formData[fieldKey].push(rowData)
-    return this._formData[fieldKey].length - 1
+    rows.push(rowData)
+    return rows.length - 1
   }
 
   removeSubFormRow(fieldKey: string, rowIndex: number): void {
