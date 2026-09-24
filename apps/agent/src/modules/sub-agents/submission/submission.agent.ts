@@ -15,10 +15,7 @@ export class SubmissionAgent extends BaseAgent {
   protected readonly logger = new Logger(SubmissionAgent.name)
   protected readonly config: AgentConfig = {
     name: 'Submission Agent',
-    toolNames: [
-      'data_validate', 'data_preview', 'data_confirm',
-      'data_rollback', 'data_query', 'data_analyze',
-    ],
+    toolNames: ['data_list_forms', 'data_query', 'data_analyze'],
     maxIterations: parseInt(process.env.MAX_ITERATIONS || '8', 10),
     maxRetries: parseInt(process.env.MAX_RETRIES || '2', 10),
     maxDegrades: parseInt(process.env.MAX_DEGRADE || '1', 10),
@@ -35,18 +32,17 @@ export class SubmissionAgent extends BaseAgent {
     super(llmStream, toolRegistry, toolGateway, sessionService, stateBar, skillsLoader)
   }
 
-  protected buildSystemPrompt(session: AgentSession): string {
+  protected buildSystemPrompt(_session: AgentSession): string {
     const skillMeta = this.skillsLoader.getAllMeta()
     const skillFull = this.skillsLoader.loadFull(this.config.name)
     return submissionPrompt({
-      scenario: session.scenario || 'data-analysis',
       skillMetas: skillMeta,
       skillFull: skillFull || undefined,
     })
   }
 
   protected getServerTools(): string[] {
-    return ['data_confirm', 'data_rollback', 'data_query', 'data_validate', 'data_preview', 'data_analyze']
+    return ['data_list_forms', 'data_query', 'data_analyze']
   }
 
   protected async onToolSuccess(
@@ -61,11 +57,8 @@ export class SubmissionAgent extends BaseAgent {
     }
   }
 
-  protected extractResultJSON(fullContent: string, _session: AgentSession): unknown {
-    const decisionMatch = fullContent.match(/\{[\s\S]*"decision"[\s\S]*(?:approve|reject)[\s\S]*\}/)
-    if (decisionMatch) {
-      try { return JSON.parse(decisionMatch[0]) } catch { /* skip */ }
-    }
+  /** 只读分析没有需要挂回消息的结构化产物（分析结果走 metadata.lastAnalysis） */
+  protected extractResultJSON(_fullContent: string, _session: AgentSession): unknown {
     return undefined
   }
 }

@@ -20,6 +20,11 @@ function nanoid(): string {
     schema: z.record(z.unknown()).describe('完整的 FormSchema 对象'),
     category: z.string().optional().describe('分类'),
     tags: z.array(z.string()).optional().describe('标签'),
+    // 目标寻址：编排层据此决定给不给 formId（进而决定这次是新建还是更新）。
+    target: z
+      .string()
+      .optional()
+      .describe('要保存/更新的表单：填【会话中的表单】里那张表的 key 或标题；这是一张新表则填它的标题。'),
     formId: z.string().optional().describe('如果要更新已有表单，传入上次 form_save 返回的 formId'),
   }),
   riskLevel: 'low',
@@ -33,6 +38,7 @@ export class FormSaveTool {
     schema: Record<string, unknown>
     category?: string
     tags?: string[]
+    target?: string
     formId?: string
     token?: string
     workspaceId?: string

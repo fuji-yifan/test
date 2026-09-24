@@ -18,6 +18,8 @@ export interface OrchestrationResult {
 @Injectable()
 export class HubService {
   private readonly logger = new Logger(HubService.name)
+  /** 已告警过的未知场景，避免每个请求刷一条日志 */
+  private readonly warnedScenarios = new Set<string>()
 
   constructor(
     private sessionService: SessionService,
@@ -46,7 +48,6 @@ export class HubService {
       'form-builder': 'form-designer',
       'workflow-node': 'workflow',
       'template-creator': 'template',
-      'approval-assist': 'submission',
       'data-analysis': 'submission',
     }
 
@@ -67,6 +68,11 @@ export class HubService {
     }
 
     // 1. 页面场景即为当前 Agent 身份
+    if (scenario && !scenarioMap[scenario] && !this.warnedScenarios.has(scenario)) {
+      // 与 langgraph 侧一致：未知场景会静默落到 form-designer，在这里喊一声
+      this.warnedScenarios.add(scenario)
+      this.logger.warn(`未知页面场景 "${scenario}"，默认身份落 form-designer`)
+    }
     const pageAgent = scenarioMap[scenario] || 'form-designer'
 
     // 检测消息中的"跨页面"意图（用户在A页面说B页面的事）
@@ -139,7 +145,7 @@ export class HubService {
 - template: 搜索、查找、浏览、下载模板；消息含"搜索XX模板""找模板""有什么模板"
 - form-designer: 创建、设计、制作、搭建表单；消息含"创建XX表""设计表单""做一个XX"
 - workflow: 创建、配置审批流、流程；消息含"审批流""流程""审批节点"
-- submission: 数据分析、审批待办任务
+- submission: 数据分析
 
 关键区分（重要）：
 - "搜索学生模板" → template（在模板市场搜索）
@@ -272,7 +278,7 @@ export class HubService {
     if (lower.includes('分析') || lower.includes('数据') || lower.includes('趋势')) {
       return {
         targetAgent: 'submission',
-        targetScenario: lower.includes('分析') ? 'data-analysis' : 'approval-assist',
+        targetScenario: 'data-analysis',
         context: { userMessage },
         isCrossDomain: false,
       }

@@ -275,6 +275,16 @@ export abstract class BaseAgent {
       }
     }
 
+    // 已有表单结构注入给 form_assemble_schema：模型在「追加字段」这类追问里常只给新字段，
+    // 工具据此按 key 合并，避免整表被覆盖（见 form-assemble-schema.tool.ts）。
+    if (
+      toolCall.function.name === 'form_assemble_schema' &&
+      !args.existingSchema &&
+      session.metadata?.draftSchema
+    ) {
+      args.existingSchema = session.metadata.draftSchema
+    }
+
     // SSE: tool_start
     sse.writeEvent(SseEventType.TOOL_START, {
       callId: toolCall.id,

@@ -1,0 +1,86 @@
+import { Injectable, Logger } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
+import { ChatDeepSeek } from '@langchain/deepseek'
+import type { AIMessage } from '@langchain/core/messages'
+import type { StructuredToolInterface } from '@langchain/core/tools'
+import { CircuitBreakerOpenError } from './llm.types'
+
+/** 绑定工具后的模型；`invoke` 外面包了一层熔断 */
+export interface BoundGraphModel {
+  invoke(messages: unknown[], options?: Record<string, unknown>): Promise<AIMessage>
+}
+
+/**
+ * LangGraph 侧使用的 LLM。
+ *
+ * 与现有的 LlmClient 并存：LlmClient 走裸 openai SDK（legacy 编排用），
+ * 这个走 @langchain/deepseek 的 ChatDeepSeek（图节点用，直接产出 AIMessage.tool_calls）。
+ */
+@Injectable()
+export class LangGraphLlmService {
+  private readonly logger = new Logger(LangGraphLlmService.name)
+  private readonly model: ChatDeepSeek
+
+  /** 熔断器：连续失败到阈值后短时间内直接拒绝，避免上游挂了还一直打（对齐 legacy 的参数） */
+  private failures = 0
+  private openUntil = 0
+  private static readonly BREAKER_THRESHOLD = 5
+  private static readonly BREAKER_RESET_MS = 30000
+
+  constructor(private readonly config: ConfigService) {
+    const apiKey = this.config.get<string>('deepseek.apiKey')
+    if (!apiKey) {
+      throw new Error('DEEPSEEK_API_KEY 未配置，无法初始化 LangGraph LLM')
+    }
+    this.model = new ChatDeepSeek({
+      apiKey,
+      model: this.config.get<string>('deepseek.model') || 'deepseek-chat',
+      temperature: 0,
+      maxTokens: this.config.get<number>('context.maxOutputTokens') || 2048,
+      configuration: {
+        baseURL: this.config.get<string>('deepseek.baseURL') || 'https://api.deepseek.com',
+      },
+    })
+    this.logger.log(`LangGraph LLM 已初始化: model=${this.config.get('deepseek.model')}`)
+  }
+
+  /** 原始模型（用于直接 invoke/stream） */
+  get chat(): ChatDeepSeek {
+    return this.model
+  }
+
+  /** 绑定工具后的模型，产出带 tool_calls 的 AIMessage */
+  withTools(tools: StructuredToolInterface[]): BoundGraphModel {
+    const bound = this.model.bindTools(tools)
+    return {
+      invoke: async (messages, options) => {
+        this.checkBreaker()
+        try {
+          const res = await bound.invoke(messages as never, options as never)
+          this.failures = 0
+          return res as AIMessage
+        } catch (err) {
+          this.recordFailure()
+          throw err
+        }
+      },
+    }
+  }
+
+  /** 熔断打开期间直接抛错，不再打上游；到点后半开放行一次 */
+  private checkBreaker(): void {
+    if (this.failures < LangGraphLlmService.BREAKER_THRESHOLD) return
+    if (Date.now() < this.openUntil) throw new CircuitBreakerOpenError()
+    this.failures = 0
+  }
+
+  private recordFailure(): void {
+    this.failures++
+    if (this.failures >= LangGraphLlmService.BREAKER_THRESHOLD) {
+      this.openUntil = Date.now() + LangGraphLlmService.BREAKER_RESET_MS
+      this.logger.warn(
+        `LLM 连续失败 ${this.failures} 次，熔断 ${LangGraphLlmService.BREAKER_RESET_MS}ms`,
+      )
+    }
+  }
+}

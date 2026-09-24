@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Delete,
+  Logger,
   Param,
   Body,
   Res,
@@ -10,12 +11,16 @@ import {
   Req,
 } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger'
+import { ConfigService } from '@nestjs/config'
 import { Response, Request } from 'express'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { Public } from '../../common/decorators/public.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { SseWriter, SseEventType, startHeartbeat } from '../../common/sse/sse.writer'
 import { HubService } from './hub.service'
+import { extractArtifactData } from './hub.artifact'
+import { LangGraphTurnService } from './langgraph-turn.service'
+import { RouterService } from '../graph/router.service'
 import { SessionService } from '../session/session.service'
 import { FormDesignerAgent } from '../sub-agents/form-designer/form-designer.agent'
 import { WorkflowAgent } from '../sub-agents/workflow/workflow.agent'
@@ -30,6 +35,8 @@ import { HubStateBar } from './hub.state-bar'
 @UseGuards(JwtAuthGuard)
 @Controller('agent')
 export class HubController {
+  private readonly logger = new Logger(HubController.name)
+
   constructor(
     private hubService: HubService,
     private sessionService: SessionService,
@@ -40,6 +47,9 @@ export class HubController {
     private toolGateway: ToolGateway,
     private toolRegistry: ToolRegistry,
     private stateBar: HubStateBar,
+    private config: ConfigService,
+    private langGraphTurn: LangGraphTurnService,
+    private router: RouterService,
   ) {}
 
   /** POST /agent/chat — SSE 流式聊天（Hub-Agent 入口，支持多步骤编排） */
@@ -54,6 +64,8 @@ export class HubController {
       context?: Record<string, unknown>
       stream?: boolean
       confirmCallId?: string
+      /** langgraph 引擎：用户点检查点按钮时选中的 option.value */
+      confirmAction?: string
     },
     @Res() res: Response,
     @Req() req: Request,
@@ -76,6 +88,10 @@ export class HubController {
     const heartbeat = startHeartbeat(res, 15000)
     let session: Awaited<ReturnType<typeof this.sessionService.getOrCreate>> | null = null
 
+    // 本轮的取消句柄：既是「客户端断开」的传播源，也是被下一轮抢占时收到的中止信号。
+    const abortController = new AbortController()
+    req.on('close', () => abortController.abort())
+
     try {
       // 提取原始 JWT token
       const authHeader = req.headers.authorization || ''
@@ -89,21 +105,19 @@ export class HubController {
         scenario: body.scenario,
       })
 
-      // 锁会话
-      const locked = await this.sessionService.lock(session.id)
-      if (!locked) {
-        sse.writeEvent(SseEventType.ERROR, {
-          code: 'SESSION_BUSY',
-          message: '会话正在执行中，请等待完成',
-        })
-        sse.writeEvent(SseEventType.DONE, {
-          sessionId: session.id,
-          stopReason: 'locked',
-          usage: { inputTokens: 0, outputTokens: 0 },
-        })
-        sse.end()
-        heartbeat.stop()
-        return
+      // 已存在的会话不会因为 getOrCreate 换掉 workspaceId。JWT 里没有这个声明
+      // （登录只签 sub/email），只能靠前端 context 带 —— 首次请求若落在还没拿到
+      // wsId 的页面，会话就被建成空的了，之后每次 form_save 都会「缺少工作空间 ID」。
+      // 这里按本次请求的可信值补一次，把旧的坏会话救回来。
+      if (effectiveWsId && session.workspaceId !== effectiveWsId) {
+        session = (await this.sessionService.updateWorkspace(session.id, effectiveWsId)) ?? session
+      }
+
+      // 取执行权：同一会话上一轮还在跑时，自动中断它并接管，而不是回
+      // SESSION_BUSY 让用户干等（用户视角：开新一段对话 = 上一段作废）。
+      const { preempted } = await this.sessionService.acquireRun(session.id, abortController)
+      if (preempted) {
+        this.logger.log(`会话 ${session.id} 上一轮仍在执行，已中止并由本轮接管`)
       }
 
       // 存储 token 到 metadata
@@ -113,9 +127,12 @@ export class HubController {
       // 发送 session 事件
       sse.writeEvent(SseEventType.SESSION, { sessionId: session.id })
 
-      // 处理确认操作
+      // 引擎分流：legacy 手写 ReAct 编排 / langgraph 图编排
+      const engine = this.config.get<'legacy' | 'langgraph'>('engine.mode') ?? 'legacy'
+
+      // 处理确认操作（legacy 的"工具风险确认"；langgraph 的检查点回执走下面的分流）
       let confirmHandled = false
-      if (body.confirmCallId && session.metadata?.pendingConfirms) {
+      if (engine === 'legacy' && body.confirmCallId && session.metadata?.pendingConfirms) {
         const confirms = session.metadata.pendingConfirms as any[]
         const target = confirms.find((c) => c.callId === body.confirmCallId)
         if (target) {
@@ -142,15 +159,33 @@ export class HubController {
 
       // 编排循环（纯确认消息跳过，避免死循环）
       if (!confirmHandled) {
-        await this.runOrchestrationLoop(session, body.message, body.scenario, sse, req)
+        if (engine === 'langgraph') {
+          await this.langGraphTurn.runTurn({
+            sse,
+            session,
+            body,
+            userToken: rawToken,
+            requestId: this.nanoid(),
+            signal: abortController.signal,
+          })
+        } else {
+          await this.runOrchestrationLoop(
+            session,
+            body.message,
+            body.scenario,
+            sse,
+            abortController.signal,
+          )
+        }
       }
 
     } catch (err: any) {
       try { sse.writeEvent(SseEventType.ERROR, { code: 'FATAL', message: err.message || '未知错误' }) } catch {}
       try { sse.writeEvent(SseEventType.DONE, { sessionId: session?.id, stopReason: 'error', usage: { inputTokens: 0, outputTokens: 0 } }) } catch {}
     } finally {
+      // 被抢占的那一轮在这里什么都不做：锁已经易主，清了会把新一轮放跑
       if (session) {
-        await this.sessionService.unlock(session.id).catch(() => {})
+        await this.sessionService.releaseRun(session.id, abortController).catch(() => {})
       }
       heartbeat.stop()
       sse.end()
@@ -165,11 +200,8 @@ export class HubController {
     userMessage: string,
     scenario: string,
     sse: SseWriter,
-    req: Request,
+    signal: AbortSignal,
   ): Promise<void> {
-    const abortController = new AbortController()
-    req.on('close', () => abortController.abort())
-
     let currentMessage = userMessage
     let totalToolCalls = 0
     let totalInputTokens = 0
@@ -180,7 +212,7 @@ export class HubController {
     const MAX_PLAN_STEPS = 5
 
     for (let stepIndex = 0; stepIndex < MAX_PLAN_STEPS; stepIndex++) {
-      if (abortController.signal.aborted) break
+      if (signal.aborted) break
 
       // 重新加载 session（metadata 可能在之前步骤更新过）
       session = await this.sessionService.get(session.id)
@@ -217,7 +249,7 @@ export class HubController {
 
       // 4. 执行 Sub-Agent
       const agent = this.pickAgent(orchestration.targetAgent)
-      const runResult = await agent.run(session!, currentMessage, sse, abortController.signal)
+      const runResult = await agent.run(session!, currentMessage, sse, signal)
 
       totalToolCalls += runResult.toolCalls
       totalInputTokens += runResult.usage.inputTokens
@@ -228,7 +260,7 @@ export class HubController {
         const currentStepId = session.metadata?.currentStepId
         if (currentStepId) {
           const artifactType = this.getArtifactType(orchestration.targetAgent)
-          const artifactData = this.extractArtifactData(orchestration.targetAgent, session.metadata)
+          const artifactData = extractArtifactData(orchestration.targetAgent, session.metadata)
           if (artifactData) {
             await this.hubService.recordArtifact(session.id, currentStepId, artifactType, artifactData)
           }
@@ -286,29 +318,6 @@ export class HubController {
     return parts.join('\n')
   }
 
-  /** 从 session metadata 中提取产物数据 */
-  private extractArtifactData(
-    agent: string,
-    metadata: Record<string, any>,
-  ): Record<string, unknown> | null {
-    switch (agent) {
-      case 'form-designer':
-        if (metadata?.draftSchema) return { schema: metadata.draftSchema }
-        return null
-      case 'workflow':
-        if (metadata?.draftWorkflow) return metadata.draftWorkflow as Record<string, unknown>
-        return null
-      case 'template':
-        if (metadata?.draftTemplate) return metadata.draftTemplate as Record<string, unknown>
-        return null
-      case 'submission':
-        if (metadata?.lastAnalysis) return metadata.lastAnalysis as Record<string, unknown>
-        return null
-      default:
-        return null
-    }
-  }
-
   private getArtifactType(agent: string): string {
     switch (agent) {
       case 'form-designer': return 'FormArtifact'
@@ -319,7 +328,7 @@ export class HubController {
     }
   }
 
-  /** POST /agent/chat/sync — 非流式聊天 */
+  /** POST /agent/chat/sync — 非流式聊天（只做路由预览，不执行 Agent） */
   @Post('chat/sync')
   async chatSync(
     @CurrentUser() user: { userId: string; workspaceId: string },
@@ -336,6 +345,24 @@ export class HubController {
       workspaceId: user.workspaceId || (body.context?.workspaceId as string) || '',
       scenario: body.scenario,
     })
+
+    // 引擎分流：两个引擎的路由器不是同一个实现，预览结果也得跟着走，
+    // 否则 langgraph 模式下这个端点会给出 legacy 的结论。
+    const engine = this.config.get<'legacy' | 'langgraph'>('engine.mode') ?? 'legacy'
+
+    if (engine === 'langgraph') {
+      const decision = await this.router.decide(body.message, {
+        scenario: body.scenario,
+        entityId: body.context?.entityId as string | undefined,
+        pageLabel: body.context?.pageLabel as string | undefined,
+      })
+      return {
+        sessionId: session.id,
+        targetAgent: decision.agent,
+        scenario: decision.scenario,
+        plan: decision.plan ?? null,
+      }
+    }
 
     const orchestration = await this.hubService.orchestrate(session, body.message, body.scenario)
 
@@ -425,7 +452,7 @@ export class HubController {
         description: '分析表单提交数据，生成洞察和图表建议',
         examplePrompts: [
           '分析本月客户反馈数据，找出主要问题',
-          '审批这个任务 T2026-001',
+          '统计各地区的提交量',
         ],
       },
     ]
