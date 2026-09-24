@@ -28,7 +28,7 @@
 | C1 | 跨领域编排 | 基于客服模板创建表单并配审批流 | form-builder | 多步 plan | plan 生成，多步执行 | ✅ | plan 三步全跑完：`template_search → form_assemble_schema →(继续) validate →(继续) form_save+flow_create+flow_validate →(继续) flow_save`。**需一路点「继续」推进计划** |
 | E1 | 错误-缺参数 | LLM调用 form_assemble_schema 不传 fields | form-builder | form-designer | 返回明确错误+重试，不超过3次失败 | ✅ | 模型拒绝照做，拆两层验（见 3.6）：**文案层已验**（HTTP 直打工具端点，拿到 `参数错误：…。请按正确格式重试。`）；**级联层**由 `graph-flow.spec.ts` 多条单测覆盖（第 3 次失败才 `[DEGRADE]`、错一次再成功不误报、两个工具都降级则放弃本轮），真机侧与 3.11 同一段代码 |
 | E2 | 错误-缺Token | 不登录直接调 agent | - | - | 返回 401 而非 500 | ✅ | 无 token → HTTP 401 |
-| E3 | 错误-Server断连 | Server 未启动时调 template_search | template-creator | template | 提示"后端未启动"而非模糊错误 | ✅ | 09-24 已测：停掉 apps/server 后调 template_search（代码路径在 context.service.ts:42 把 ECONNREFUSED 转成"后端服务未启动或不可达"） |
+| E3 | 错误-Server断连 | Server 未启动时调 template_search | template-creator | template | 提示"后端未启动"而非模糊错误 | ✅ | 09-24 已测：把 agent 的 `SERVER_API_BASE_URL` 指到没人听的端口后调 template_search（代码路径在 context.service.ts:42 把 ECONNREFUSED 转成"后端服务未启动或不可达"）。**注意别真去停 apps/server** —— 同属一个 turbo，会连带收掉 web/agent，理由见 3.13 |
 | D1 | SSE-流式 | 会产出文字的提示词（如"你能做什么？"） | form-builder | form-designer | delta 事件逐 token 到达，且只包含模型输出 | ✅ | 09-20：**langgraph 下 0 条 delta**（纯文字回复也一样；legacy 同场景 72 条）（见 3.2）。**09-21 复测通过**：168 条 delta / 290 字符，无提示词泄漏。原输入的"创建留言表"模型直接调工具、没有文字可流，已换成纯文字提示词（见 3.2） |
 | D2 | SSE-打字动画 | 创建表单 | form-builder | form-designer | 加载中显示圆点，回答完毕消失 | ✅ | 依赖 D1（D1 已通）；09-24 浏览器确认通过（见第四节） |
 | D3 | SSE-工具调用 | 创建表单 | form-builder | form-designer | tool_start/tool_result 事件正确显示 | ✅ | `form_assemble_schema` 1 组 start/result；C1 场景下 3 组 |
@@ -44,9 +44,25 @@
 | F10 | **精简/删除字段**（新增） | 建教职工信息登记表（17 字段）→ "缩减至10个字段" | form-builder | form-designer | 字段真的被删到 10 个，卡片/检查点产物同步 | ✅ | 09-22：修复前模型照做只回了 10 个字段，但工具按 key 合并**只增不减** → 仍是 17 个，卡片与用户要求不符（见 3.9）。改增量契约后（见 3.10）模型只发 `{target:'f1', removeFields:[要删的 key]}`，`已更新表单"…"，删除 7 个字段，共 10 个字段`，检查点产物同步 |
 | F11 | **改字段属性/选项不丢配置**（新增） | 建 5 字段表（含 radio 选项与必填）→ "精简到 3 个字段" → "用工性质加一个选项：返聘" | form-builder | form-designer | 保留下来的字段选项与必填一个不丢；改选项只动那一个字段 | ✅ | 09-22 `probe_ops.py`：精简后 `formWorksheet` 里的保留字段仍是 `name r1 / employment_type o4 / gender o2`（修前必是 o0/r0），加选项后 employment_type o5、其余字段未动（见 3.10） |
 
+## 二、自动化测试（单测）
+
+`vitest`，2026-09-24 实测 **7 个文件 / 806 条全绿**，`tsc --noEmit` 干净（注意 `tsconfig.json` 只 include `src/**/*`，spec 不在类型检查范围内）。
+
+跑法（WSL1 起不了 node，借 Windows node）：`cmd.exe /c "cd /d D:\frontend\低代码平台\apps\agent && npx vitest run"`。
+
+| 文件 | 条数 | 主要锁什么 |
+|---|---|---|
+| `test/checkpoint-saver.spec.ts` | 718 | 自研 MySQL checkpointer 的序列化与回填 |
+| `test/graph-flow.spec.ts` | 25 | 编排主链路：路由 / 多步计划 / 检查点 / 错误恢复级联（3.6、3.13 的单测侧证据） |
+| `test/worksheet.spec.ts` | 21 | 会话级工作台：多表寻址与增量契约（3.9、3.10） |
+| `test/langgraph-turn.spec.ts` | 15 | SSE 方言、`stopReason`、error code 过滤（3.5、3.13） |
+| `test/form-assemble-schema.spec.ts` | 14 | 按 key 合并字段（3.1） |
+| `test/tool-bridge.spec.ts` | 8 | 工具桥接与大结果截断（3.11） |
+| `test/session-preempt.spec.ts` | 5 | 执行权抢占（3.7） |
+
 ## 三、实测发现（按严重度）
 
-### 3.1 F3 追加字段会丢字段 —— P0（2026-09-21 已修，待浏览器复看）
+### 3.1 F3 追加字段会丢字段 —— P0（09-21 修，09-22 工作台改造后已复看）
 `form_assemble_schema` 是**整表重建**，不合并（`form-assemble-schema.tool.ts:30-52` 直接 `args.fields.map(...)`）。model 侧 prompt 要求"原有全部字段 + 新增字段"（`form-designer.prompt.ts`「修改已有表单」段），并明确说"上一轮成功创建的 schema 就是你当前的起点，直接从对话中取 fields 字段即可"。
 
 实测这个前提不成立：第一轮创建完客户登记表后（停在 schema-review 检查点），第二轮说"加一个备注字段"，模型输出只有 `['备注']`，**姓名/手机号被抹掉**；另一次跑模型干脆回"目前对话里还没有创建过表单"。
@@ -72,7 +88,7 @@
 
 验收见 F5/F6/F7/F8；单测见 `worksheet.spec.ts`(19) 与 `graph-flow.spec.ts` 的多表三例。旧探针 `probe_merge.py` 仍可复跑，但它只能观察单轮合并行为，多表场景请用 `probe_worksheet.py`。
 
-**已知差异：legacy 引擎不支持多表**（用户已确认，不属回归）。legacy 路径下 `ctx.formWorksheet === undefined`、`formTarget` 恒为空，注入行为与改造前一致 —— 仍是单槽草稿 + 无条件合并，F5–F8 在 legacy 下必然失败，**不作为验收项**。
+**历史记录（已无对照物）**：改造当时多表能力只做在 LangGraph 侧，legacy 路径 `ctx.formWorksheet === undefined`、`formTarget` 恒为空，仍是单槽草稿 + 无条件合并，所以 F5–F8 在 legacy 下必然失败、当时不作为验收项。legacy 已于 2026-09-24 删除（见 3.11），这条差异不复存在。
 
 ### 3.2 langgraph 下没有 token 流 —— P1（2026-09-21 已修）
 `graph-runner.service.ts:118` 只转发 `meta.langgraph_node` 以 `agent_` 开头的 token chunk；但 LLM 实际是在**子图内部**的 `think` 节点调用的（`subgraph.factory.ts:134,201`），`langgraph_node` 是 `'think'`，过滤器把所有 chunk 都丢掉了 → 一条 delta 都没有。legacy 的 `base.agent.ts:145` 正常发 delta。
@@ -95,13 +111,16 @@
 
 **拍板结论：承认切走是对的，强信号规则不动，改用例期望。** 复测 `agent=form-designer`、工具调用为空（只反问"请描述你想创建的表单"），未擅自建表。
 
-### 3.5 两个引擎的 SSE 方言不一致 —— P2
+### 3.5 两个引擎的 SSE 方言不一致 —— P2，已随 legacy 删除归档
+
 | 字段 | langgraph | legacy |
 |---|---|---|
 | `status.agent` | agent key（`form-designer`） | scenario key（`form-builder`） |
 | `meta.activeAgent` | agent key | 展示名（`Submission Agent`） |
 
-前端 `ChatPanel.vue` 的 `AGENT_LABEL` 是按 agent key 建的，所以在 legacy 下 `form-builder` / `workflow-node` 查不到标签、状态栏会显示原始字符串。langgraph 侧是对的。
+前端 `ChatPanel.vue` 的 `AGENT_LABEL` 是按 agent key 建的，所以在 legacy 下 `form-builder` / `workflow-node` 查不到标签、状态栏会显示原始字符串。langgraph 侧是对的，**不需要改任何代码**。
+
+2026-09-24 legacy 引擎整体删除（见 3.11）后本项已无对照物，`status.agent` / `meta.activeAgent` 只可能是 agent key —— 归档，不是待办。
 
 ### 3.6 E1 缺参数错误 —— 2026-09-24 拆两层验完（原 P2）
 
@@ -209,7 +228,7 @@ flow_create           {"nodes": "oops"}    → 参数错误：name: Required; no
 
 **同日（2026-09-24）legacy 已删除**：`hub.controller.ts` 的 legacy 分支（`runOrchestrationLoop` / `pickAgent` / `buildStepMessage` / `getArtifactType` / `confirmCallId` / `chatSync` 的 legacy 分支）、`hub.service.ts`、`hub.state-bar.ts`、`base.agent.ts` + 4 个 `*.agent.ts`、`llm.client.ts`、`llm.stream.ts` 全部移除；`AGENT_ENGINE` 开关、`engineConfig`、`validateEnv()` 里的校验、`.env.example` 的对应行也随之删掉。`CheckpointService.enabled` 不再看开关（恒为启用，缺 `AGENT_DATABASE_URL` 直接报错）。浏览器手测（F10/F11/F5/F6/F9 + 文字落位 + 流程卡片非表单分支 + 3.11 的错误恢复）已全绿后才执行删除。
 
-**验证**：`graph-flow.spec.ts` 加 3 条（超上限才降级 / 失败后成功不误报 / 两个工具都降级则放弃本轮）、`tool-bridge.spec.ts` 加 1 条（截断），全量 **802 条绿**，`tsc --noEmit` 干净。
+**验证**：`graph-flow.spec.ts` 加 3 条（超上限才降级 / 失败后成功不误报 / 两个工具都降级则放弃本轮）、`tool-bridge.spec.ts` 加 1 条（截断），全量 **802 条绿**（随后 3.13 又加 4 条，现为 806，见第二节），`tsc --noEmit` 干净。
 
 ### 3.12 legacy 为什么不能当"安全基线" —— 已随删除归档
 
@@ -249,7 +268,7 @@ flow_create           {"nodes": "oops"}    → 参数错误：name: Required; no
 | D2 打字动画（加载圆点 / 答完消失） | 浏览器 | ✅ |
 | 预览卡片在检查点待答复时自动展开、答完收起 | 浏览器 | ✅ |
 | 回执轮不出用户气泡（文字原地续写在带卡片的那条消息里） | 浏览器 | ✅ |
-| E3 Server 断连提示 | 停掉 apps/server 后调 template_search | ✅ |
+| E3 Server 断连提示 | 让 agent 出站地址不可达后调 template_search（详见 3.13 的注意事项） | ✅ |
 | 放弃出口（原 FALLBACK）：工具失败到收尾时无红条、气泡只有一条 | 浏览器 + `SERVER_API_BASE_URL` 指死端口 + `MAX_RETRIES=0/MAX_DEGRADE=0`（见 3.13） | ✅ |
 | 多步计划第一步放弃：后续步骤不再执行、不登记产物 | 浏览器（同上配置） | ✅ |
 | 检查点「中断」回归：仍是 `halted`，没被 gaveUp 抢走 | 浏览器 | ✅ |
