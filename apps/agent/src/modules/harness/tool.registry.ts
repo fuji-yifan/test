@@ -185,6 +185,19 @@ export class ToolRegistry implements OnModuleInit {
   private fixupArgs(name: string, args: Record<string, unknown>): Record<string, unknown> {
     // form_assemble_schema: 处理 DeepSeek 各种传参格式
     if (name === 'form_assemble_schema') {
+      // 模型偶尔用 placeholder 表达「提示文字」，而 tools 声明的参数名是 text。
+      // placeholder 没写进 inputSchema（免得模型被诱导不用 text），所以在这里把它
+      // 归一成 text —— 否则会被 zod 静默 strip，用户填的提示文字就凭空丢了。
+      const withAliases = (fs: unknown) =>
+        Array.isArray(fs)
+          ? fs.map((f) =>
+              f && typeof f === 'object' && !Array.isArray(f) && (f as any).text === undefined && typeof (f as any).placeholder === 'string'
+                ? { ...(f as any), text: (f as any).placeholder }
+                : f,
+            )
+          : fs
+      if (Array.isArray(args.fields)) args = { ...args, fields: withAliases(args.fields) }
+
       if (!args.fields || !Array.isArray(args.fields)) {
         // args 中有数组值 → 作为 fields
         for (const [key, val] of Object.entries(args)) {
@@ -195,7 +208,7 @@ export class ToolRegistry implements OnModuleInit {
             // 拍平时都必须原样带上，否则寻址、合并、删除会同时失效
             // （DeepSeek 偶发拍平参数时就会踩到）。
             return {
-              fields: val,
+              fields: withAliases(val),
               formTitle: args.formTitle || (args as any).form_title,
               labelPosition: args.labelPosition || (args as any).label_position,
               target: args.target,
@@ -211,7 +224,7 @@ export class ToolRegistry implements OnModuleInit {
           // 变成「整表重写」（实测 summary 会多出「修改 N 个字段」这种假变更）。
           if (key === 'existingSchema') continue
           if (val && typeof val === 'object' && !Array.isArray(val) && Array.isArray((val as any).fields)) {
-            return { ...args, fields: (val as any).fields, formTitle: args.formTitle || (val as any).formTitle || (val as any).settings?.formTitle }
+            return { ...args, fields: withAliases((val as any).fields), formTitle: args.formTitle || (val as any).formTitle || (val as any).settings?.formTitle }
           }
         }
         // 空参数 → 返回空 fields 让 LLM 看到错误（只给 removeFields 是合法调用，不塞空 fields）

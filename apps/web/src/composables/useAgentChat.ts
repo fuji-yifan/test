@@ -168,7 +168,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
       const decoder = new TextDecoder()
       let buffer = ''
 
-      while (true) {
+      for (;;) {
         const { done, value } = await reader.read()
         if (done) break
 
