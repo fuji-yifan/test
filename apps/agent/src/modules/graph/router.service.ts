@@ -84,22 +84,49 @@ export class RouterService {
 
     for (const { agent, re } of STRONG) {
       if (agent !== pageAgent && re.test(userMessage)) {
-        return {
-          agent,
-          scenario: this.catalog.scenarioByAgent(agent),
-          source: 'prompt',
-          reason: `提示词命中 ${agent} 的强信号，覆盖页面身份 ${pageAgent}`,
-          isCrossDomain: false,
-        }
+        return this.withFormHandoff(
+          {
+            agent,
+            scenario: this.catalog.scenarioByAgent(agent),
+            source: 'prompt',
+            reason: `提示词命中 ${agent} 的强信号，覆盖页面身份 ${pageAgent}`,
+            isCrossDomain: false,
+          },
+          userMessage,
+        )
       }
     }
 
+    return this.withFormHandoff(
+      {
+        agent: pageAgent,
+        scenario: page.scenario || this.catalog.scenarioByAgent(pageAgent),
+        source: 'page',
+        reason: `沿用当前页面身份（${page.scenario || '未知页面'}）`,
+        isCrossDomain: false,
+      },
+      userMessage,
+    )
+  }
+
+  /**
+   * 模板请求补一步表单设计助手。
+   *
+   * 模板 Agent 只会 template_instantiate —— 那是在会话里按模板拼一份 schema，没有
+   * 任何写接口（模板 Agent 的工具里根本没有 form_save）。而用户在「模板市场」页说
+   * 「寻找客户相关表单」时想要的是表单管理里真出现一张表。所以单步的模板请求也扩成
+   * [template, form-designer] 两步，落库交给拥有 form_save 的表单设计助手
+   * （它自带「这个表单是否加入当前空间？」检查点）。
+   *
+   * 已有计划（跨领域模板/流程）不动，避免重复编排。
+   */
+  private withFormHandoff(decision: RouteDecision, userMessage: string): RouteDecision {
+    if (decision.agent !== 'template' || decision.plan) return decision
     return {
-      agent: pageAgent,
-      scenario: page.scenario || this.catalog.scenarioByAgent(pageAgent),
-      source: 'page',
-      reason: `沿用当前页面身份（${page.scenario || '未知页面'}）`,
-      isCrossDomain: false,
+      ...decision,
+      isCrossDomain: true,
+      reason: `${decision.reason}；模板需经表单设计助手落库`,
+      plan: this.templateFormPlan(userMessage),
     }
   }
 
@@ -127,7 +154,7 @@ export class RouterService {
       const llmDecision = await this.classify(userMessage, page)
       if (llmDecision) {
         this.logger.log(`路由由 LLM 兜底：${base.agent} -> ${llmDecision.agent} (${llmDecision.reason})`)
-        return llmDecision
+        return this.withFormHandoff(llmDecision, userMessage)
       }
     } catch (err: any) {
       this.logger.warn(`LLM 路由失败，沿用确定性结论：${err.message}`)

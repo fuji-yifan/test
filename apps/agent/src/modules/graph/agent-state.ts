@@ -128,6 +128,21 @@ export const AgentState = Annotation.Root({
     default: () => ({}),
   }),
   /**
+   * 本轮真正写出过草稿的 Agent（替换语义，由 router 每轮清空）。
+   *
+   * `drafts` 是 merge 语义、且跨轮从 checkpoint 恢复，所以「某个 Agent 有草稿」
+   * **不等于**「它这一轮产出过」。planAdvance 不能只看 drafts 有没有值来判断上游
+   * 步骤是否成功 —— 否则上一轮的模板草稿会让「这一轮没搜到」的落库步骤照样拿到
+   * $1.schema 并凭空建一张表（真机 T2 踩到过）。
+   *
+   * 与 drafts 的分工：drafts 保存内容（要跨轮给 prepare 播种、给工具做合并），
+   * 本 channel 只记录「这一轮写过」，两者都保留才不会互相拖累。
+   */
+  turnDraftAgents: Annotation<string[]>({
+    reducer: (_p, n) => n ?? [],
+    default: () => [],
+  }),
+  /**
    * 会话级表单工作台（多张表 + 聚焦指针），form-designer 用。
    *
    * **替换语义**（不是 append）：act 每步返回完整的新工作台，resume 重放节点不会重复追加。

@@ -38,6 +38,9 @@ export class TemplateSearchTool {
           category: t.category,
           tags: t.tags,
           usageCount: t.usageCount,
+          // 带上完整 Schema：前端「模板预览」用 PreviewPanel 按表单结构渲染它。
+          // 只影响产物；LLM 侧看到的 ToolMessage 仍会被 MAX_TOOL_RESULT_CHARS 截断。
+          schema: t.schema,
         })),
       }
     } catch (err: any) {

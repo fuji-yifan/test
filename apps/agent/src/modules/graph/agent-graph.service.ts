@@ -134,6 +134,9 @@ export class AgentGraphService {
       stepIndex: 0,
       completedSteps: [],
       artifacts: {},
+      // drafts 本身跨轮保留（旧线程播种 / 工具合并要用），但「本轮写过谁」必须清零：
+      // 计划推进只看本轮，否则上一轮的草稿会替这一轮的步骤开路。
+      turnDraftAgents: [],
       halted: false,
       gaveUp: false,
       // 一轮新消息 = 一次全新的尝试：上一轮攒下的失败额度不能带进来，
@@ -164,10 +167,26 @@ export class AgentGraphService {
   private planDriver(state: AgentStateType): Partial<AgentStateType> {
     const plan = state.plan
     const steps = plan?.steps ?? []
-    const idx = state.stepIndex ?? 0
+    let idx = state.stepIndex ?? 0
 
-    if (state.halted || state.gaveUp || idx >= steps.length) {
+    if (state.halted || state.gaveUp) {
       return {} // 由 nextAfterPlanDriver 送去 aggregate
+    }
+
+    // 上游产物没到位（例如模板市场没搜到任何东西 → 第二步的 $1.schema 是 null）：
+    // 这一步没有输入可做，整步跳过。不跳的话下游 Agent 会拿着空引用照常执行，
+    // 凭空造一张跟请求无关的表，而用户还以为是自己要的那个。
+    const skipped: string[] = []
+    while (idx < steps.length && this.plan.hasUnresolvedRefs(steps[idx], state.artifacts)) {
+      this.logger.warn(`计划步骤 ${steps[idx].id}(${steps[idx].agent}) 引用的上游产物缺失，跳过该步骤`)
+      skipped.push(steps[idx].id)
+      idx += 1
+    }
+    const completedSteps = skipped.length ? [...state.completedSteps, ...skipped] : state.completedSteps
+
+    if (idx >= steps.length) {
+      // 剩下的全被跳过了；登记完跳过的步骤，由 nextAfterPlanDriver 判空后送去 aggregate
+      return { stepIndex: idx, completedSteps }
     }
 
     const step = steps[idx]
@@ -188,6 +207,7 @@ export class AgentGraphService {
       route: state.route ? ({ ...state.route, agent: step.agent } as RouteDecision) : null,
       stepIndex: idx,
       userMessage: isFirstStep ? state.userMessage : built.message,
+      completedSteps,
     }
   }
 
@@ -215,7 +235,11 @@ export class AgentGraphService {
     // 用户中断 / 系统放弃：不标记完成、不推进、不登记产物，直接收尾
     if (state.halted || state.gaveUp) return {}
 
-    const draft = state.drafts[step.agent]
+    // 只登记**本轮**写出过的草稿。drafts 跨轮保留（prepare 要用它给旧线程播种、
+    // 工具要拿它做合并），所以上一轮的模板草稿在这里还看得到 —— 直接取会把
+    // 「这一轮什么都没搜到」伪装成「有产物」，下游步骤拿到 $1.schema 就建出表来。
+    const producedThisTurn = (state.turnDraftAgents ?? []).includes(step.agent)
+    const draft = producedThisTurn ? state.drafts[step.agent] : undefined
     const artifacts = draft ? { ...state.artifacts, [step.id]: draft } : state.artifacts
 
     return {

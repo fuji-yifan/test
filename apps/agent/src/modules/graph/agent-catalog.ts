@@ -339,6 +339,17 @@ export class AgentCatalogService implements OnApplicationBootstrap {
           },
         ],
         extractArtifact: ({ toolName, result }) => {
+          // 搜索结果登记成产物：前端据此渲染「模板预览」多行清单（点开看表单结构）。
+          // 用 draftTemplate 同一个槽位——实例化后会被 template_instantiate 的
+          // {schema} 覆盖，正好完成「先看模板清单、选定后看生成结果」的过渡。
+          if (toolName === 'template_search') {
+            const templates = (result as any)?.templates
+            if (!Array.isArray(templates) || templates.length === 0) return null
+            return {
+              draftUpdate: { type: 'TemplateListArtifact', data: { templates } },
+              metadata: { draftTemplate: { templates } },
+            }
+          }
           if (toolName === 'template_instantiate') {
             const data = pick(result, ['name', 'description', 'category', 'tags', 'schema', 'templateId'])
             if (!data) return null

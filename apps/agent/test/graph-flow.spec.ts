@@ -401,6 +401,76 @@ describe('LangGraph 编排', () => {
     expect((agg?.steps as any[]).map((s) => s.done)).toEqual([true, true, true])
   })
 
+  it('模板没搜到结果：跳过落库步骤，不凭空造表', async () => {
+    // FakeGateway 没有 template_search 的 payload → 回 {ok:true}（没有 templates），
+    // 等价于「模板市场暂无相关模板」。这时第二步的 $1.schema 解析为空，整步跳过：
+    // 绝不能让表单设计助手拿着空引用自己造一张跟请求无关的表。
+    const h = buildHarness([
+      { calls: [{ id: 'c1', name: 'template_search', args: { keyword: '客户' } }] },
+      { content: '模板市场暂无相关模板' },
+    ])
+
+    const r = await runTurn(h, '寻找客户相关表单', 'template-creator')
+
+    // 模板请求被扩成两步：模板 Agent 没有 form_save，落库得靠表单设计助手
+    const route = h.events.find((e) => e.type === 'route')
+    expect((route?.steps as any[]).map((s) => s.agent)).toEqual(['template', 'form-designer'])
+
+    expect(r.interrupted).toBeUndefined()
+    expect(r.finalContent).toContain('暂无相关模板')
+    // 只搜了一次；表单设计助手一步没跑，更没碰 form_save
+    expect(h.gateway.calls.map((c) => c.name)).toEqual(['template_search'])
+
+    const agg = h.events.find((e) => e.type === 'aggregate')
+    expect(agg?.artifactKeys).toEqual([])
+    // 跳过的步骤也记成已完成，收敛报告才不会显示成「漏做了一步」
+    expect((agg?.steps as any[]).map((s) => s.done)).toEqual([true, true])
+  })
+
+  it('上一轮的模板草稿不能替这一轮的落库步骤开路', async () => {
+    // 跨轮残留的坑：drafts 是 merge 语义、跨轮从 checkpoint 恢复，所以
+    // 「某个 Agent 有草稿」不等于「它这一轮产出过」。第二轮没搜到东西时，
+    // 第一步登记的产物会从上一轮的模板草稿里拿到值 → 第二步照样跑起来，
+    // 于是「搜索 xyzabc123 模板」也真的建出一张表（真机 T2 实测踩到）。
+    const h = buildHarness([
+      // 第一轮：搜到模板 → 实例化（落一份 TemplateArtifact 草稿）→ 设计助手接手组装
+      { calls: [{ id: 'c1', name: 'template_search', args: { keyword: '请假' } }] },
+      { calls: [{ id: 'c2', name: 'template_instantiate', args: {} }] },
+      { content: '已按模板准备好表单结构' },
+      { calls: [{ id: 'c3', name: 'form_assemble_schema', args: {} }] },
+      // 第二轮：模板市场无结果
+      { calls: [{ id: 'c4', name: 'template_search', args: { keyword: 'xyzabc123' } }] },
+      { content: '模板市场暂无相关模板' },
+      // 下面两条只有在「第二步被错误地执行」时才消费得到
+      { calls: [{ id: 'c5', name: 'form_assemble_schema', args: {} }] },
+      { content: '我已经帮你建好了' },
+    ])
+
+    const first = await runTurn(h, '搜索请假模板', 'template-creator')
+    expect(first.interrupted?.checkpointId).toBe('instantiate-approval')
+    const afterInstantiate = await resumeTurn(h, { action: 'continue' })
+    expect(afterInstantiate.interrupted?.checkpointId).toBe('schema-review')
+    // 用户在检查点上改主意、直接发下一条（生产里由 turn service 先 resume(abort) 收尾）
+    await resumeTurn(h, { action: 'abort' })
+    expect(h.gateway.calls.map((c) => c.name)).toEqual([
+      'template_search',
+      'template_instantiate',
+      'form_assemble_schema',
+    ])
+
+    const second = await runTurn(h, '搜索 xyzabc123 模板', 'template-creator')
+    expect(second.interrupted).toBeUndefined()
+    expect(second.finalContent).toContain('暂无相关模板')
+    // 这一轮的 template_search 一个模板都没搜到 → 落库步骤必须跳过，
+    // 绝不能拿上一轮的模板草稿当输入
+    expect(h.gateway.calls.map((c) => c.name)).toEqual([
+      'template_search',
+      'template_instantiate',
+      'form_assemble_schema',
+      'template_search',
+    ])
+  })
+
   it('resume 以本次请求的身份为准：建会话时 workspaceId 为空也能救回来', async () => {
     // 真实登录 JWT 只签 sub/email，workspaceId 靠前端 context 带；首次请求若落在
     // 还没拿到 wsId 的页面上，thread 就是在 workspaceId=空 的状态下建起来的。
@@ -642,12 +712,39 @@ describe('路由与计划（纯函数）', () => {
     expect(d.plan?.steps[1].input.templateRef).toBe('$1.schema')
   })
 
+  it('单步模板请求补上表单设计助手落库（模板 Agent 没有 form_save）', () => {
+    // 模板市场页上「寻找客户相关表单」：页面身份就是 template，
+    // 但模板 Agent 只会拼 schema、不会落库，所以要扩成两步。
+    const d = router.decideDeterministic('寻找客户相关表单', { scenario: 'template-creator' })
+    expect(d.agent).toBe('template')
+    expect(d.isCrossDomain).toBe(true)
+    expect(d.plan?.steps.map((s) => s.agent)).toEqual(['template', 'form-designer'])
+    expect(d.plan?.steps[1].input.templateRef).toBe('$1.schema')
+
+    // 其他领域不受影响：落库步骤只加给模板
+    const other = router.decideDeterministic('创建一个客户登记表', { scenario: 'form-builder' })
+    expect(other.plan).toBeUndefined()
+  })
+
   it('$1.schema 这类引用能解析到上游产物', () => {
     const plan = new PlanService()
     const artifacts = { '1': { type: 'TemplateArtifact', data: { schema: { fields: [1, 2] } } } }
     const ref = plan.resolveRef('$1.schema', artifacts)
     expect(ref).toEqual({ fields: [1, 2] })
     expect(plan.resolveRef('$2.schema', artifacts)).toBeNull()
+  })
+
+  it('hasUnresolvedRefs：引用全解析不到才算缺产物', () => {
+    const plan = new PlanService()
+    const step: any = { id: '2', agent: 'form-designer', input: { templateRef: '$1.schema' } }
+    // 上游一步没登记产物 → 引用全空 → 该跳过
+    expect(plan.hasUnresolvedRefs(step, {})).toBe(true)
+    // 解析出来了就不跳过
+    expect(
+      plan.hasUnresolvedRefs(step, { '1': { type: 'TemplateArtifact', data: { schema: { fields: [] } } } }),
+    ).toBe(false)
+    // 没有引用的步骤永远不算缺产物（常量 input 不该被当成断链）
+    expect(plan.hasUnresolvedRefs({ id: '1', input: { query: '客户' } } as any, {})).toBe(false)
   })
 
   it('有歧义时才问 LLM，且 LLM 的跨领域结论能覆盖确定性结论', async () => {

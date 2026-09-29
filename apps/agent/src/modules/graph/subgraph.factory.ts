@@ -593,7 +593,10 @@ export class AgentSubgraphFactory {
         resolved: resolved ?? undefined,
       })
       if (extracted?.draftUpdate) {
+        // drafts 只写这一格（merge 语义，跨轮保留）；同时登记「本轮写过」，
+        // 供 planAdvance 判断这一步是真的产出了产物，还是捡了上一轮的残留。
         patch.drafts = { [spec.key]: extracted.draftUpdate }
+        patch.turnDraftAgents = [...(state.turnDraftAgents ?? []), spec.key]
       }
       if (extracted?.metadata) {
         const clean: Record<string, unknown> = {}

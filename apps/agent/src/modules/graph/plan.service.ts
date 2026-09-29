@@ -61,6 +61,24 @@ export class PlanService {
     return { resolved, message: parts.join('\n') }
   }
 
+  /**
+   * 这一步的输入「带引用、但引用全解析不出来」。
+   *
+   * 用来在推进计划时判定「上游产物没到位」：模板市场没搜到东西时，第一步不会登记
+   * 产物，第二步的 $1.schema 就是 null —— 这一步没有输入可做，应当整步跳过。
+   * 不跳的话下游 Agent 会拿着空引用照常执行，凭空造出一张跟请求无关的表。
+   *
+   * 判定用「全部解析不出来」而不是「有一个解析不出来」：input 里常混着
+   * description 这种常量，只有引用整体落空才说明产物链断了。
+   */
+  hasUnresolvedRefs(step: OrchestrationStep, artifacts: Record<string, StepArtifact>): boolean {
+    const refs = Object.values(step.input ?? {}).filter(
+      (v): v is string => typeof v === 'string' && v.startsWith('$'),
+    )
+    if (refs.length === 0) return false
+    return refs.every((r) => this.resolveRef(r, artifacts) == null)
+  }
+
   /** 解析单个引用："$1.schema" / "$2" / "$1.nodes[0].id" 的简化形式 */
   resolveRef(ref: string, artifacts: Record<string, StepArtifact>): unknown {
     const parts = ref.replace(/^\$/, '').split('.')
