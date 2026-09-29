@@ -45,13 +45,21 @@ const expandedPreview = ref<Record<string, boolean>>({})
 // 表单预览弹窗：卡片本身只显示一行摘要，真实渲染放到弹窗里（和模板市场一致）
 const previewVisible = ref(false)
 const previewSchema = ref<any>(null)
-const previewTitle = computed(() => previewSchema.value?.settings?.formTitle || '表单结构')
-// 入参可以是整条 message（result.schema），也可以是多表清单里的一个 entry（schema）
-function openFormPreview(payload: any) {
+/** 弹窗标题：调用方给了就用（如模板名，模板 schema 不一定有 formTitle），否则退回 schema 里的标题 */
+const previewTitle = ref('表单结构')
+// 入参可以是整条 message（result.schema）、多表清单里的一个 entry（schema），或一张模板（自带 name）
+function openFormPreview(payload: any, title?: string) {
   const schema = payload?.schema ?? payload?.result?.schema
   if (!schema) return
   previewSchema.value = schema
+  previewTitle.value = title || schema.settings?.formTitle || '表单结构'
   previewVisible.value = true
+}
+
+/** 表单预览条目归一：多表走 forms[]，单表就是 result 本身 */
+function formEntries(result: any): any[] {
+  if (!result) return []
+  return result.forms?.length ? result.forms : [result]
 }
 
 // 历史对话
@@ -181,7 +189,7 @@ watch(() => isLoading.value, (l, was) => {
             <div class="header-avatar">
               <el-icon :size="20"><ChromeFilled /></el-icon>
             </div>
-            <span class="float-title">Agent - X</span>
+            <span class="float-title">FlowX</span>
             <div class="agent-badge" :class="{ active: activeAgentLabel }">
               <template v-if="activeAgentLabel">
                 <span class="agent-badge-dot" />
@@ -225,7 +233,7 @@ watch(() => isLoading.value, (l, was) => {
             <div ref="messagesEl" class="messages-container">
               <!-- 空状态 -->
               <div v-if="messages.length === 0" class="empty-state">
-                <p class="empty-greeting">你好，我是 Agent - X 智能助手</p>
+                <p class="empty-greeting">你好，我是 FlowX 智能助手</p>
                 <p class="empty-hint">我可以根据当前页面帮你：</p>
                 <ul v-if="scenario === 'form-builder'">
                   <li>用自然语言描述需求，自动生成表单结构</li>
@@ -290,12 +298,25 @@ watch(() => isLoading.value, (l, was) => {
                       </div>
                     </div>
 
+                    <!-- 被新消息抢占、已自动中断的检查点：只留痕，不可再选 -->
+                    <div
+                      v-for="tc in (msg.toolCalls || []).filter((t: any) => t.status === 'interrupted')"
+                      :key="'interrupted-' + tc.callId"
+                      class="confirm-card interrupted"
+                    >
+                      <div class="confirm-prompt">{{ tc.prompt || tc.summary || '需要你的确认' }}</div>
+                      <div class="confirm-interrupted">
+                        <el-icon :size="12"><Close /></el-icon>
+                        <span>已自动中断</span>
+                      </div>
+                    </div>
+
                     <!-- 工具调用（可折叠） -->
                     <div v-if="msg.toolCalls?.length" class="collapsible-wrap">
                       <div class="collapse-toggle" @click="toggleTools(msg.id)">
                         <span class="collapse-toggle-text">
                           <el-icon :size="14"><Link /></el-icon>
-                          {{ msg.toolCalls.filter((t: any) => t.status === 'done').length }}/{{ msg.toolCalls.length }} 工具调用
+                          工具调用 ({{ msg.toolCalls.filter((t: any) => t.status === 'done').length }}/{{ msg.toolCalls.length }})
                         </span>
                         <el-icon :size="12"><component :is="expandedTools[msg.id] ? ArrowUp : ArrowDown" /></el-icon>
                       </div>
@@ -308,22 +329,58 @@ watch(() => isLoading.value, (l, was) => {
                       </div>
                     </div>
 
-                    <!-- 表单预览卡片：一表一行，点击弹出该表的真实预览（只有一张时就是一行） -->
-                    <div
-                      v-if="msg.result?.schema"
-                      class="preview-summary-list"
-                    >
-                      <div
-                        v-for="f in (msg.result.forms?.length ? msg.result.forms : [msg.result])"
-                        :key="f.key || f.schema?.settings?.formTitle || 'form'"
-                        class="preview-summary"
-                        @click="openFormPreview(f)"
-                      >
-                        <el-icon :size="14"><Postcard /></el-icon>
-                        <span class="preview-summary-title">{{ f.title || f.schema?.settings?.formTitle || '表单结构' }}</span>
-                        <span class="preview-summary-meta">{{ (f.fieldCount ?? f.schema?.fields?.length) || 0 }} 个字段</span>
-                        <span v-if="f.formId" class="preview-summary-tag">已保存</span>
-                        <span class="preview-summary-cta">点击预览 ›</span>
+                    <!-- 表单预览：默认收起（和工具调用一致），有待答复检查点时自动摊开当依据，
+                         答完自动收起。展开后一表一行，点击弹出该表的真实预览 -->
+                    <div v-if="msg.result?.schema" class="collapsible-wrap">
+                      <div class="collapse-toggle" @click="togglePreview(msg)">
+                        <span class="collapse-toggle-text">
+                          <el-icon :size="14"><Postcard /></el-icon>
+                          表单预览 ({{ formEntries(msg.result).length }})
+                        </span>
+                        <el-icon :size="12"><component :is="isPreviewOpen(msg) ? ArrowUp : ArrowDown" /></el-icon>
+                      </div>
+                      <div v-if="isPreviewOpen(msg)" class="collapse-body">
+                        <div class="preview-summary-list">
+                          <div
+                            v-for="f in formEntries(msg.result)"
+                            :key="f.key || f.schema?.settings?.formTitle || 'form'"
+                            class="preview-summary"
+                            @click="openFormPreview(f)"
+                          >
+                            <el-icon :size="14"><Postcard /></el-icon>
+                            <span class="preview-summary-title">{{ f.title || f.schema?.settings?.formTitle || '表单结构' }}</span>
+                            <span class="preview-summary-meta">{{ (f.fieldCount ?? f.schema?.fields?.length) || 0 }} 个字段</span>
+                            <span v-if="f.formId" class="preview-summary-tag">已保存</span>
+                            <span class="preview-summary-cta">点击预览 ›</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 模板预览：模板市场助手的搜索结果，默认收起、待确认时自动摊开。
+                         一行一张模板，点开用表单结构弹窗看它长什么样 -->
+                    <div v-else-if="msg.result?.templates?.length" class="collapsible-wrap">
+                      <div class="collapse-toggle" @click="togglePreview(msg)">
+                        <span class="collapse-toggle-text">
+                          <el-icon :size="14"><Postcard /></el-icon>
+                          模板预览 ({{ msg.result.templates.length }})
+                        </span>
+                        <el-icon :size="12"><component :is="isPreviewOpen(msg) ? ArrowUp : ArrowDown" /></el-icon>
+                      </div>
+                      <div v-if="isPreviewOpen(msg)" class="collapse-body">
+                        <div class="preview-summary-list">
+                          <div
+                            v-for="t in msg.result.templates"
+                            :key="t.id"
+                            class="preview-summary"
+                            @click="openFormPreview(t, t.name)"
+                          >
+                            <el-icon :size="14"><Postcard /></el-icon>
+                            <span class="preview-summary-title">{{ t.name }}</span>
+                            <span class="preview-summary-meta">{{ t.category || '未分类' }} · {{ t.schema?.fields?.length || 0 }} 个字段</span>
+                            <span class="preview-summary-cta">点击预览 ›</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
@@ -564,6 +621,11 @@ watch(() => isLoading.value, (l, was) => {
 .confirm-risk { color: #b88230; }
 .confirm-actions { display: flex; gap: 8px; margin-top: 8px; }
 
+/* 被抢占后自动中断的检查点：灰化留痕，不可交互 */
+.confirm-card.interrupted { background: #f4f4f5; border-color: #e4e7ed; }
+.confirm-card.interrupted .confirm-prompt { color: #909399; }
+.confirm-interrupted { display: flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 12px; color: #909399; }
+
 /* ===== 工具调用 & 预览卡片（可折叠） ===== */
 .collapsible-wrap { margin-top: 8px; overflow: hidden; }
 .collapse-toggle { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #909399; cursor: pointer; padding: 2px 0; user-select: none; }
@@ -575,12 +637,14 @@ watch(() => isLoading.value, (l, was) => {
 .tool-chip.error { background: #fef0f0; }
 .tool-chip.running { background: #ecf5ff; }
 .tool-chip.confirming { background: #fdf6ec; }
+.tool-chip.interrupted { background: #f4f4f5; }
 
 .tool-chip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .tool-chip.done .tool-chip-dot { background: #67c23a; }
 .tool-chip.running .tool-chip-dot { background: #409eff; animation: dot-pulse 1s infinite; }
 .tool-chip.error .tool-chip-dot { background: #f56c6c; }
 .tool-chip.confirming .tool-chip-dot { background: #e6a23c; animation: dot-pulse 1s infinite; }
+.tool-chip.interrupted .tool-chip-dot { background: #c0c4cc; }
 @keyframes dot-pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
 .tool-chip-name { font-weight: 600; color: #303133; font-family: 'SF Mono', Consolas, monospace; white-space: nowrap; flex-shrink: 0; }

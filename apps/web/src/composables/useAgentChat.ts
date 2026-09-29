@@ -15,6 +15,7 @@ export interface ConfirmOption {
 export interface AgentToolCall {
   callId: string
   tool: string
+  /** running / done / error / confirming / interrupted（被新消息抢占的检查点） */
   status: string
   summary?: string
   /** 人机协作检查点的问题文案 */
@@ -93,6 +94,11 @@ export function useAgentChat(options: UseAgentChatOptions) {
 
     // 乐观收掉检查点卡片：图侧续跑不一定再为该 callId 发 tool_result
     if (confirmCallId) markConfirmAnswered(confirmCallId, confirmAction)
+
+    // 发新消息 = 上一段作废（后端会对悬挂中断 resume(abort)，见 langgraph-turn.service.ts）。
+    // 前端不能继续把上一段的检查点留成可点状态，否则用户点到的是一段已被放弃的检查点。
+    // 回执（confirmCallId）是答检查点、属于同一段，不算新一轮，所以跳过。
+    if (!confirmCallId) interruptPendingConfirms()
 
     const scenario = scenarioOverride || resolve(options.scenario)
 
@@ -343,6 +349,23 @@ export function useAgentChat(options: UseAgentChatOptions) {
     if (!tc) return
     tc.status = 'done'
     tc.summary = tc.options?.find((o) => o.value === action)?.label || '已答复'
+  }
+
+  /**
+   * 把所有还挂着（confirming）的检查点标记为「已自动中断」。
+   *
+   * 由新消息触发：上一段的检查点已被后端按 abort 收尾，前端只剩视觉残留——
+   * 若不清掉按钮，用户还能点进一段已被放弃的检查点，发出无主的回执。
+   */
+  function interruptPendingConfirms(): void {
+    for (const msg of messages.value) {
+      for (const tc of msg.toolCalls || []) {
+        if (tc.status === 'confirming') {
+          tc.status = 'interrupted'
+          tc.summary = '已自动中断'
+        }
+      }
+    }
   }
 
   /** 从响应式数组中获取最后一条 assistant 消息（确保响应式更新） */
