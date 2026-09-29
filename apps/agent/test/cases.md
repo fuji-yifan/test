@@ -16,13 +16,14 @@
 | F2 | 表单-校验失败 | 创建表单，用不存在的控件类型 xyz | form-builder | form-designer | form_validate_schema 返回 type 不合法 | ✅ | **用例改法**：模型不会照做产出非法 type，改为把含 `type:"xyz"` 的 schema 显式给它校验 → `Schema validation FAILED: 1 errors` |
 | F3 | 表单-追加字段 | 已有表单，说"加一个备注字段" | form-builder | form-designer | form_assemble 的 fields 包含原有+新字段 | ✅ | 09-20：**丢字段**，追加后 fields 只剩 `['备注']`（见 3.1）。**09-21 复测通过**：追加后入参仍是 `['备注']`，但工具内按 key 合并，检查点产物 fields=`['姓名','手机号','备注']`，原有字段保住 |
 | F4 | 表单-tip-text | 创建表单包含提示文字"请如实填写" | form-builder | form-designer | props.text 不为空 | ✅ | `form_assemble_schema` 入参 text="请如实填写" |
-| T1 | 模板-有结果 | 搜索请假模板 | template-creator | template | template_search 被调用并返回结果 | ✅ | 返回 `请假申请单`（人事类） |
-| T2 | 模板-无结果 | 搜索 xyzabc123 模板 | template-creator | template | 回复"暂无"且不调 form 工具 | ✅ | 只调 template_search，回复"模板市场暂无相关模板" |
+| T1 | 模板-有结果 | 搜索请假模板 | template-creator | template→form-designer | template_search 返回结果，并接着由表单设计助手落库 | ✅ | 搜索段返回 `请假申请单`（人事类）。**09-29 起不再停在模板侧**：模板 Agent 没有 form_save，路由把请求扩成两步（见 3.14）—— 09-29 真机复测 ✅：一路点「继续」后表单真的出现在「表单管理」 |
+| T2 | 模板-无结果 | 搜索 xyzabc123 模板 | template-creator | template | 回复"暂无"且不调 form 工具 | ✅ | 只调 template_search，回复"模板市场暂无相关模板"。**09-29 真机首测 ❌ → 当天修完复测 ✅**：首测时同一会话先聊过模板，再问搜不到的关键词，第二步照样跑 `form_assemble_schema`、照着**上一轮的模板**建了张「客户信息登记表」（见 3.15）；修复后复测只调一次 `template_search`，无检查点、无表单卡片 |
+| T4 | **模板-独立落库**（新增） | 寻找客户相关表单 | template-creator | template→form-designer | 两步计划，`form_save` 真的把表写进当前空间 | ✅ | 09-29 修 3.14 前：模板助手回「已为你找到并创建好表单 ✅」但表单管理里什么都没有。修后共 **3 个检查点**（instantiate-approval → schema-review → space-approval）；**09-29 真机复测 ✅**：最后一步选「加入当前空间」后表单管理里真的多了这张表 |
 | T3 | 模板-强信号让位 | 在模板页说"帮我设计一个表单" | template-creator | form-designer | 切到 form-designer，且不擅自调 form_assemble_schema | ✅ | 09-20：**切到了 form-designer**（未调工具，只反问），与当时期望冲突（见 3.4）。**09-21 拍板改用例期望**：承认「设计…表单」是强信号，切走是对的；复测 `agent=form-designer`、工具=[]（只反问，未擅自建表） |
 | W1 | 流程-创建 | 创建三级审批流(组长→经理→总监) | workflow-node | workflow | flow_create + flow_validate 被调用 | ✅ | `['flow_create','flow_validate']` |
 | W2 | 流程-DAG校验 | 创建有环的流程 | workflow-node | workflow | flow_validate 返回 hasCycle | ✅ | **用例改法**：模型会直接凭描述拒绝建环流程、根本不调工具；改为把有环定义显式给它校验 → `Flow validation FAILED: 1 errors` |
-| R1 | 路由-页面优先 | 在模板页说"你好" | template-creator | template | 模板助手回复，不变成其他 | ✅ | status.agent=template |
-| R2 | 路由-跨页面 | 在表单页说"搜索请假模板" | form-builder | template | 切换到模板助手 | ✅ | 强信号覆盖页面 → template |
+| R1 | 路由-页面优先 | 在模板页说"你好" | template-creator | template | 模板助手回复，不变成其他 | ✅ | status.agent=template。09-29 补的模板→落库两步不影响本条：模板助手对「你好」不调工具、不产生产物，第二步因上游产物缺失被跳过。**09-29 强版本复测 ✅**：同一会话里先聊过模板（留下草稿）再发「你好」——模板助手回复、0 次工具调用、无检查点、无表单卡片，服务端只有一条「计划步骤 2(form-designer) 引用的上游产物缺失，跳过该步骤」 |
+| R2 | 路由-跨页面 | 在表单页说"搜索请假模板" | form-builder | template | 切换到模板助手 | ✅ | 强信号覆盖页面 → template。09-29 起 `route.isCrossDomain=true` 且带两步计划（`steps=['template','form-designer']`），agent 仍是 template |
 | R3 | 路由-表单信号 | 在流程页说"设计一个报销信息填写表" | workflow-node | form-designer | 不因为"审批"关键词误判为 workflow | ✅ | 切到 form-designer，未误判 |
 | R4 | 路由-短消息 | 在任意页面说"在吗" | 任意 | 页面Agent | 保持页面 Agent 不改变 | ✅ | 数据分析页说"在吗"仍为 submission（注：原注"任意"我按最易误判页取） |
 | C1 | 跨领域编排 | 基于客服模板创建表单并配审批流 | form-builder | 多步 plan | plan 生成，多步执行 | ✅ | plan 三步全跑完：`template_search → form_assemble_schema →(继续) validate →(继续) form_save+flow_create+flow_validate →(继续) flow_save`。**需一路点「继续」推进计划** |
@@ -46,19 +47,20 @@
 
 ## 二、自动化测试（单测）
 
-`vitest`，2026-09-24 实测 **7 个文件 / 806 条全绿**，`tsc --noEmit` 干净（注意 `tsconfig.json` 只 include `src/**/*`，spec 不在类型检查范围内）。
+`vitest`，2026-09-29 实测 **8 个文件 / 814 条全绿**，`tsc --noEmit` 干净（注意 `tsconfig.json` 只 include `src/**/*`，spec 不在类型检查范围内）。
 
 跑法（WSL1 起不了 node，借 Windows node）：`cmd.exe /c "cd /d D:\frontend\低代码平台\apps\agent && npx vitest run"`。
 
 | 文件 | 条数 | 主要锁什么 |
 |---|---|---|
 | `test/checkpoint-saver.spec.ts` | 718 | 自研 MySQL checkpointer 的序列化与回填 |
-| `test/graph-flow.spec.ts` | 25 | 编排主链路：路由 / 多步计划 / 检查点 / 错误恢复级联（3.6、3.13 的单测侧证据） |
+| `test/graph-flow.spec.ts` | 29 | 编排主链路：路由 / 多步计划 / 检查点 / 错误恢复级联 / 上游产物缺失跳步 / 跨轮草稿隔离（3.6、3.13、3.14、3.15 的单测侧证据） |
 | `test/worksheet.spec.ts` | 21 | 会话级工作台：多表寻址与增量契约（3.9、3.10） |
 | `test/langgraph-turn.spec.ts` | 15 | SSE 方言、`stopReason`、error code 过滤（3.5、3.13） |
 | `test/form-assemble-schema.spec.ts` | 14 | 按 key 合并字段（3.1） |
 | `test/tool-bridge.spec.ts` | 8 | 工具桥接与大结果截断（3.11） |
 | `test/session-preempt.spec.ts` | 5 | 执行权抢占（3.7） |
+| `test/tool-registry.spec.ts` | 4 | 工具注册与风险等级 |
 
 ## 三、实测发现（按严重度）
 
@@ -258,6 +260,39 @@ flow_create           {"nodes": "oops"}    → 参数错误：name: Required; no
 - **`phase='gave_up'` / `activeSubAgent=null` 查不了库**：`SESSION_STORE=memory`，session metadata 不落任何地方，前端也不消费 `phase`（`useAgentChat.ts` 的 `done` 分支只清 status）。`stopReason` 同理只在 SSE 里，界面看不到。
 
 **顺带清掉的死配置**：`.env` 的 `MAX_ITERATIONS` 原先读进 `configuration.ts` 的 `context.maxIterations` 后无人消费，图里用的是 `agent-catalog.ts` 里每个 agent 硬编码的 `maxIterations: 8`（数值相同，行为无差异）。2026-09-24 已把这条 env 与 config 一并删除。所以「轮次用尽」那条出口仍然没法用 env 触发 —— 要造这条得直接改 catalog 里的 `maxIterations`。
+
+### 3.14 模板助手说「已创建好表单」，表单管理里却没有 —— 2026-09-29 已修
+
+**症状**：在模板市场页说「寻找客户相关表单」，助手回「已为你找到并创建好表单 ✅（模板名称：客户信息表…）」，但「表单管理」里一张都没有。
+
+**根因不是话术，是能力缺口**：模板 Agent 的工具只有 `template_search` / `template_get_detail` / `template_validate` / `template_instantiate`，**没有 `form_save`**。`template_instantiate` 只是按模板在会话里拼一份 schema（`template-instantiate.tool.ts`），一步都没落库。而路由只给「模板 + 流程 + 创建」这类跨领域表达才拼多步计划，单步的模板请求（`agent-graph.service.ts` 的 `routerNode` 包成 1 步 `[template]`）跑完就结束 —— 落库的表单设计助手从头到尾没参与。
+
+**改法（两条）**：
+
+1. **模板请求一律补一步表单设计助手**。`router.service.ts` 新增 `withFormHandoff`：确定性路由里凡是落到 `template` 且还没有计划的结论（强信号覆盖、页面身份兜底），以及 `decide()` 里 LLM 兜底给出的单步 `template`，都补上 `templateFormPlan` → `[template, form-designer]`，落库交给拥有 `form_save` 的设计助手（它自带「这个表单是否加入当前空间？」检查点）。已有计划（跨领域模板/流程）不重复编排。
+2. **上游产物缺失就跳过整步**。`PlanService.hasUnresolvedRefs(step, artifacts)`：这一步的 input 里有 `$N...` 引用、且**全部**解析为空，说明产物链断了；`planDriver` 用 while 循环推进 `stepIndex` 跳过这类步骤（写 warn 日志，并把跳过的 id 记进 `completedSteps`，免得收敛报告显示成「漏做了一步」）。没有这条的话，模板没搜到结果时第二步的 `$1.schema` 是 null，设计助手会拿着空引用照常执行，**凭空造一张跟请求无关的表**。
+   - 判「全部为空」而不是「有一个为空」：input 里常混着 `description` 这种常量，只有引用整体落空才说明断链。
+   - 这条只对「全空」生效，所以 T2（无结果）、R1（模板页说"你好"）都自然退化成原来的单步行为。
+
+**话术同步**（`template.prompt.ts`）：加了「边界（重要）」段 —— 明说 `template_instantiate` 不写进表单管理、落库由后续设计助手完成，且**不许说「已创建好表单」**，只能说「已按模板准备好表单结构」。光改路由不改这句话，用户在落库完成前仍会读到「已创建」。
+
+**UX 代价**：一次模板建表要走 **3 个检查点** —— `instantiate-approval`（用这个模板）→ `schema-review`（结构是否可行）→ `space-approval`（是否加入当前空间）。比表单助手独立建表多一次确认，换来的是「模板请求也真能落库」。
+
+**验证**：`graph-flow.spec.ts` +4 条（单步模板请求补两步计划 / `hasUnresolvedRefs` 单元 / 模板没搜到结果时跳过落库步骤 / 跨轮草稿不得替本轮开路），全量 **814 条绿**（8 个文件），`tsc --noEmit` 干净，改动文件 eslint 0 error。**真机 2026-09-29 全部复测 ✅**：T1/T4（模板建表真的进「表单管理」）、T2（无结果不建表）、R1 强版本（闲聊不被拖进落库）。
+
+### 3.15 跨轮残留的草稿让「没搜到」也能建表 —— 2026-09-29 已修（T2 真机抓到）
+
+**症状**：同 3.14 的改动上线后，同一会话里先聊过模板、再问一个搜不到的关键词（T2：`搜索 xyzabc123 模板`），助手仍会回「已更新表单"客户信息登记表"，修改 9 个字段，共 9 个字段」——**照着上一轮的模板又建了一张表**。
+
+**为什么 3.14 的跳步保护没兜住**：`hasUnresolvedRefs` 判的是 `artifacts['1']`，而 `artifacts` 是每轮重建的（`routerNode` 里清空）——**但它是从 `state.drafts` 重建的**，`drafts` 却是 **merge 语义、跨轮从 checkpoint 恢复**的。第二轮 template_search 返回 0 条时 `extractArtifact` 返回 null、`drafts['template']` 纹丝不动，`planAdvance` 于是把**上一轮那份** TemplateArtifact 登记成 `artifacts['1']`，`$1.schema` 解析得到上一轮的模板 → 第二步照跑。
+
+单轮、新会话都测不出来（`drafts` 还是空的），只有「同一会话先聊过模板」才复发 —— 所以它躲过了 3.14 的三条单测，被真机 T2 抓到。修法见下，并补了跨轮单测。
+
+**改法**：新增 `turnDraftAgents` channel（**替换语义**，`routerNode` 每轮清空），`act` 写出 `draftUpdate` 时登记 `spec.key`；`planAdvance` 只登记**本轮**写过草稿的 Agent 的产物。
+
+**为什么不直接把 `drafts` 每轮清空**：`drafts` 有两处**故意**跨轮使用 —— `prepare` 用它给「有草稿没工作台」的旧线程补种 `formWorksheet`（`subgraph.factory.ts` 的 `seedFromDraft`），`toolCtx` 用它给 `form_assemble_schema` 传 `currentSchema`。而且它是 merge 语义，写 `{}` 只会被当成空增量（3.13 踩过的同一个坑）。所以分工保留：`drafts` 存内容（跨轮），`turnDraftAgents` 只记「这一轮写过」。
+
+**验证**：新增单测「上一轮的模板草稿不能替这一轮的落库步骤开路」（两轮同一会话：第一轮实例化出草稿并走到设计助手检查点，第二轮搜不到 → 断言 `gateway.calls` 里第二个 `template_search` 之后没有任何 form 工具）。修复前该用例失败（`interrupted.checkpointId === 'schema-review'`，toolCallId `c5`），修复后全量 **814 条绿**。**真机 2026-09-29 复测 ✅**：T2（同会话先聊模板再搜无结果关键词）与 R1 强版本（同会话留草稿后发「你好」）都只调一次 `template_search`、无检查点、无表单卡片。
 
 ## 四、人工验证（2026-09-24 已全部走完）
 
