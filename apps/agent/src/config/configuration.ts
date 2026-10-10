@@ -38,6 +38,8 @@ export const contextConfig = registerAs('context', () => ({
   maxOutputTokens: parseInt(process.env.MAX_OUTPUT_TOKENS || '2048', 10),
   maxRetries: parseInt(process.env.MAX_RETRIES || '2', 10),
   maxDegrades: parseInt(process.env.MAX_DEGRADE || '1', 10),
+  // L2 滚动摘要触发阈值（保留的近期轮数）；0 = 关闭（默认），回退到 L1 + L3
+  memorySummaryTrigger: parseInt(process.env.MEMORY_SUMMARY_TRIGGER || '0', 10),
 }))
 
 /** LangGraph checkpoint 持久化（与 server 共库，表结构由 Prisma migration 管理） */

@@ -194,6 +194,9 @@ export class GraphRunnerService {
       currentStepId: plan.steps?.[completed.length]?.id ?? null,
       completedSteps: completed,
       artifacts,
+      // 会话级状态从 **channel** 读（不是 sessionMetadataPatch）：供对外读取与前端状态栏（手册 D1/D4）
+      conversationGoal: values?.conversationGoal ?? undefined,
+      pendingClarification: values?.pendingClarification ?? null,
       activeSubAgent: stopped ? null : (values?.route?.agent ?? null),
       phase: waiting
         ? 'waiting_user'

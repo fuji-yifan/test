@@ -15,6 +15,7 @@
  * LangGraph 只重跑被中断的 gate，不会重放已执行过工具的 act。
  */
 import { Injectable, Logger } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { END, START, StateGraph, getWriter } from '@langchain/langgraph'
 import { RouterService } from './router.service'
 import { PlanService } from './plan.service'
@@ -22,6 +23,7 @@ import { AgentCatalogService } from './agent-catalog'
 import { AgentSubgraphFactory } from './subgraph.factory'
 import { CheckpointService } from './checkpoint.module'
 import { AgentState, type AgentKey, type AgentStateType, type RouteDecision } from './agent-state'
+import { buildStateBar, truncateGoal } from './conversation-state'
 import type { OrchestrationPlan } from '../hub/hub.types'
 
 function emit(event: Record<string, unknown>): void {
@@ -38,6 +40,9 @@ export function nodeNameOf(key: AgentKey): string {
   return `agent_${key.replace(/-/g, '_')}`
 }
 
+/** L3 近期窗口在 checkpoint 里保留的最大条数（超出后由 L2 摘要兜底或直接丢弃） */
+const HISTORY_MAX = 40
+
 @Injectable()
 export class AgentGraphService {
   private readonly logger = new Logger(AgentGraphService.name)
@@ -49,6 +54,7 @@ export class AgentGraphService {
     private readonly catalog: AgentCatalogService,
     private readonly subgraphs: AgentSubgraphFactory,
     private readonly checkpoint: CheckpointService,
+    private readonly config: ConfigService,
   ) {}
 
   /** 编译后的图（懒加载，只编译一次） */
@@ -98,7 +104,21 @@ export class AgentGraphService {
   // ==================== router ====================
 
   private async routerNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
-    const decision = await this.router.decide(state.userMessage, state.pageContext)
+    // state.route 来自 checkpoint，是上一轮落地的路由结果，用作会话连续性依据。
+    // 先读 pendingClarification（新消息 = 用户已回答），交给路由后本轮清空；由 respond 按本轮
+    // 是否仍以提问收尾重新写入（D6：先读后清）。
+    const pending = state.pendingClarification ?? null
+    const stateBar = buildStateBar({
+      activeSubAgent: state.route?.agent ?? null,
+      conversationGoal: state.conversationGoal,
+      pendingClarification: pending,
+      lastOutcome: pending ? 'waiting_user' : undefined,
+    })
+    const decision = await this.router.decide(state.userMessage, state.pageContext, {
+      priorAgent: state.route?.agent ?? null,
+      pendingClarification: pending,
+      stateBar,
+    })
 
     // 单 Agent 任务也包成一步计划，让后续只有一条代码路径
     const plan: OrchestrationPlan =
@@ -127,9 +147,27 @@ export class AgentGraphService {
       steps: plan.steps.map((s) => ({ id: s.id, agent: s.agent, action: s.action })),
     })
 
+    // L3 近期窗口：追加本轮 user（assistant 由 aggregate 收尾追加）。窗口溢出时，若开启了
+    // 摘要（context.memorySummaryTrigger>0），把最旧的溢出部分压缩进 L2 后再丢弃。
+    const prevTurns = state.historyTurns ?? []
+    let summary = state.memorySummary ?? ''
+    const trigger = this.config?.get<number>('context.memorySummaryTrigger') ?? 0
+    let kept = prevTurns
+    if (trigger > 0 && prevTurns.length > trigger) {
+      kept = prevTurns.slice(prevTurns.length - trigger)
+      summary = await this.router.summarizeTurns(prevTurns.slice(0, prevTurns.length - trigger), summary)
+    }
+    const historyTurns = [...kept, { role: 'user' as const, content: state.userMessage }].slice(-HISTORY_MAX)
+
     return {
       route: decision,
       plan,
+      // 会话级状态：目标仅在为空时写首轮值；pendingClarification 先读后清（本轮若仍以提问
+      // 收尾会由 respond 重新写入）。
+      conversationGoal: state.conversationGoal || truncateGoal(state.userMessage),
+      pendingClarification: null,
+      historyTurns,
+      memorySummary: summary,
       // 每轮对话重建计划上下文
       stepIndex: 0,
       completedSteps: [],
@@ -270,6 +308,16 @@ export class AgentGraphService {
       steps: steps.map((s) => ({ id: s.id, agent: s.agent, done: done.includes(s.id) })),
       artifactKeys: Object.keys(artifacts),
     })
+
+    // 收尾时把本轮 assistant 回复追加进 L3 近期窗口（中断/放弃的话术不具记忆价值，不入）。
+    // 每轮只跑一次 aggregate，故这里也是 assistant 轮的唯一追加点。
+    if (!state.halted && !state.gaveUp && state.finalContent) {
+      const historyTurns = [
+        ...(state.historyTurns ?? []),
+        { role: 'assistant' as const, content: state.finalContent },
+      ].slice(-HISTORY_MAX)
+      return { historyTurns }
+    }
 
     // 最终话术沿用最后一个子图的回复；中断时子图已经给过话术
     return {}

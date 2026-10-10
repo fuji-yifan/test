@@ -47,6 +47,16 @@ const CROSS_TEMPLATE_FORM = (msg: string): boolean => {
   return (t.includes('基于') || t.includes('模板')) && (t.includes('创建') || t.includes('生成'))
 }
 
+/** decide 的可选上下文：会话连续性所需的信息（手册 D5） */
+export interface DecideOptions {
+  /** 上一轮已经落地的领域身份（来自 checkpoint 的 state.route） */
+  priorAgent?: AgentKey | null
+  /** 上一轮以提问收尾、正在等待回答的领域（来自 state.pendingClarification） */
+  pendingClarification?: { agent: AgentKey; question: string } | null
+  /** 会话状态栏（<agent_status>…</agent_status>），拼进分类器的输入 */
+  stateBar?: string
+}
+
 @Injectable()
 export class RouterService {
   private readonly logger = new Logger(RouterService.name)
@@ -143,15 +153,50 @@ export class RouterService {
   }
 
   /**
-   * 完整决策：确定性 → 歧义时 LLM 兜底。
+   * 完整决策：确定性 → 待回答领域沿用 → 会话连续性 → 歧义时 LLM 兜底。
    * LLM 失败/输出不合法时一律回退到确定性结论，绝不让路由变脆。
+   *
+   * opts.priorAgent 是上一轮已经落地的领域身份（来自 checkpoint 的 state.route）。
+   * opts.pendingClarification 是上一轮「以提问收尾、正在等用户回答」的领域
+   * （来自 state.pendingClarification）。会话连续性靠它们维护：一段对话里补的
+   * 片段（如"教职工信息表单"）是回答上一轮的追问，不该被别的领域的弱信号改判成
+   * 「新建表单」而打断上下文。
    */
-  async decide(userMessage: string, page: PageContext): Promise<RouteDecision> {
+  async decide(
+    userMessage: string,
+    page: PageContext,
+    opts?: DecideOptions,
+  ): Promise<RouteDecision> {
+    const priorAgent = opts?.priorAgent ?? null
     const base = this.decideDeterministic(userMessage, page)
+
+    // D5 第 3 步：上一轮以提问收尾，且当前消息没有强换领域 → 直接回该领域，不调 LLM。
+    const pending = opts?.pendingClarification?.agent
+    if (pending && this.catalog.get(pending)) {
+      const hitsStrongForOther = STRONG.some(({ agent, re }) => agent !== pending && re.test(userMessage))
+      if (!hitsStrongForOther) {
+        this.logger.log(`路由沿用上一轮等待回答的领域：${pending}`)
+        return {
+          agent: pending,
+          scenario: this.catalog.scenarioByAgent(pending),
+          source: 'prompt',
+          reason: '沿用上一轮正在等待回答的领域',
+          isCrossDomain: false,
+        }
+      }
+    }
+
     if (!this.isAmbiguous(userMessage, base.agent)) return base
 
+    // 当前页面身份与上一轮一致时，保持上下文，不因弱信号交给无状态分类器改判。
+    // 真正的换领域会命中 STRONG，上面的 isAmbiguous 已判为不歧义，走不到这里。
+    if (priorAgent && priorAgent === base.agent) {
+      this.logger.log(`路由保持会话上下文：沿用上一轮 ${priorAgent}`)
+      return base
+    }
+
     try {
-      const llmDecision = await this.classify(userMessage, page)
+      const llmDecision = await this.classify(userMessage, page, opts)
       if (llmDecision) {
         this.logger.log(`路由由 LLM 兜底：${base.agent} -> ${llmDecision.agent} (${llmDecision.reason})`)
         return this.withFormHandoff(llmDecision, userMessage)
@@ -162,27 +207,66 @@ export class RouterService {
     return base
   }
 
+  // ==================== 会话摘要（§2.11 L2）====================
+
+  /**
+   * 把若干轮旧对话压缩成一段摘要（便宜模型）。失败时沿用旧摘要，绝不让记忆层变脆。
+   * 仅在 `context.memorySummaryTrigger` 打开且窗口溢出时被调用。
+   */
+  async summarizeTurns(
+    turns: { role: string; content: string }[],
+    prevSummary: string,
+  ): Promise<string> {
+    const transcript = turns.map((t) => `${t.role}: ${t.content}`).join('\n')
+    const system =
+      '把下面的多轮对话压缩成一段不超过 200 字的要点，保留已确认的目标、表单名、关键决策与结论。只输出摘要正文，不要解释。'
+    try {
+      const res = await this.llm.chat.invoke([new SystemMessage(system), new HumanMessage(transcript)])
+      const text = typeof res.content === 'string' ? res.content : JSON.stringify(res.content)
+      const merged = [prevSummary, text].map((s) => (s ?? '').trim()).filter(Boolean).join(' ')
+      return merged
+    } catch (err: any) {
+      this.logger.warn(`会话摘要失败，沿用旧摘要：${err?.message ?? err}`)
+      return prevSummary
+    }
+  }
+
   // ==================== LLM 分类 ====================
 
-  private async classify(userMessage: string, page: PageContext): Promise<RouteDecision | null> {
-    const system = `你是低代码平台的意图分类器。根据「用户当前所在页面」和「用户这句话」，判断该交给哪个领域 Agent。
+  private async classify(
+    userMessage: string,
+    page: PageContext,
+    opts?: DecideOptions,
+  ): Promise<RouteDecision | null> {
+    const priorAgent = opts?.priorAgent ?? null
+    const system = `你是低代码平台的意图分类器。根据「用户当前所在页面」「会话状态栏」「上一轮对话的领域」和「用户这句话」，判断该交给哪个领域 Agent。
 
-可选领域：
-- template：搜索/浏览/使用模板（"搜索XX模板"、"有什么模板"）
-- form-designer：设计/新建表单（"创建学生信息表"、"加一个手机号字段"）
-- workflow：创建/配置审批流程（"创建三级审批流"）
-- submission：数据分析（"分析本月提交数据"）
+每个领域都按「何时用 / 何时不用」判断，并给出反例：
+
+- submission：用户在询问某张表的提交数据、趋势、异常时使用。
+  不要用于「建表 / 改字段」（→ form-designer）；
+  也不要用于用户只是在回答上一轮追问的短片段（应沿用上一轮领域）。
+- form-designer：用户在创建新表单、增删字段时使用。
+  不要用于「分析数据 / 统计趋势」（→ submission）；
+  不要用于只是提及「表单」二字却在回答别的问题的场景。
+- workflow：用户要创建/配置审批流程时使用。
+- template：用户要搜索/浏览/套用模板时使用。
 
 跨领域（同时涉及多个领域）时给出 steps，每个 step 用 agent 表示领域：
 - "搜索客服工单模板，基于它创建表单" → template, form-designer
 - "搜索请假模板，基于它建表单并配一个审批流" → template, form-designer, workflow
 
+会话连续性（最高优先级）：若用户这句话只是对上一轮追问的补充或回答（例如状态栏显示上一轮在数据分析里问"要分析哪张表"，用户回"教职工信息表单"），应沿用「上一轮领域」，不要仅凭出现"表单/数据"等词就改判领域。真正换领域会明确说出「创建/设计表单」「搜索模板」这类意图。
+
 只输出 JSON（不要 markdown、不要解释）：
 {"isCrossDomain": false, "targetAgent": "form-designer", "reason": "一句话理由", "steps": [{"agent": "template", "action": "search+instantiate"}]}`
 
+    const bar = opts?.stateBar ? `${opts.stateBar}\n` : ''
     const res = await this.llm.chat.invoke([
       new SystemMessage(system),
-      new HumanMessage(`当前页面：${page.scenario || '未知'}\n用户消息：${userMessage}`),
+      new HumanMessage(
+        `${bar}当前页面：${page.scenario || '未知'}\n上一轮领域：${priorAgent || '无'}\n用户消息：${userMessage}`,
+      ),
     ])
     const text = typeof res.content === 'string' ? res.content : JSON.stringify(res.content)
     const match = text.match(/\{[\s\S]*\}/)

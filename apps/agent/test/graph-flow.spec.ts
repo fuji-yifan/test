@@ -201,7 +201,7 @@ function buildHarness(script: ScriptedLlm[''] extends never ? never : Constructo
   const router = new RouterService(catalog, llm as any)
   const plan = new PlanService()
   const checkpoint = { enabled: true, get saver() { return saver } } as any
-  const graphs = new AgentGraphService(router, plan, catalog, subgraphs, checkpoint)
+  const graphs = new AgentGraphService(router, plan, catalog, subgraphs, checkpoint, config)
   const sessions = {
     updateMetadata: async () => undefined,
     addMessage: async () => undefined,
@@ -664,6 +664,67 @@ describe('LangGraph 编排', () => {
     expect(system).toContain('客户登记表')
     expect(system).toContain('target')
   })
+
+  it('会话记忆：数据分析里补一句「教职工信息表单」仍落 submission，且子 Agent 看到状态栏', async () => {
+    const h = buildHarness([
+      { content: '要分析哪张表的数据？' },
+      { content: '好的，我来分析教职工信息表单。' },
+    ])
+
+    // 第一轮：数据分析页提问收尾 → 记为 pendingClarification（本对话目标 = 首轮消息）
+    const first = await runTurn(h, '分析本月提交数据', 'data-analysis')
+    expect(first.finalContent).toContain('？')
+
+    // 第二轮：用户只回一个片段「教职工信息表单」，不该被 form-designer 的弱信号改判
+    const second = await runTurn(h, '教职工信息表单', 'data-analysis')
+    const route = h.events.find((e) => e.type === 'route')
+    expect(route?.agent).toBe('submission')
+    expect(second.interrupted).toBeUndefined()
+
+    // 子 Agent 的上下文末尾带上了 <agent_status> 状态栏（含首轮目标）
+    const last = h.llm.seen[h.llm.seen.length - 1]
+    const bar = last.find((m) => String((m as any).content).includes('<agent_status>'))
+    expect(bar).toBeTruthy()
+    expect(String((bar as any).content)).toContain('分析本月提交数据')
+  })
+
+  it('长会话：多轮之后仍带首轮目标（L1）与近期窗口（L3）', async () => {
+    const script = Array.from({ length: 12 }, (_, i) => ({ content: `第${i + 1}轮答复。` }))
+    const h = buildHarness(script)
+
+    for (let i = 0; i < 10; i++) {
+      await runTurn(h, `第${i + 1}个问题`, 'data-analysis')
+    }
+
+    const lastMessages = h.llm.seen[h.llm.seen.length - 1]
+    const mem = lastMessages.find((m) => String((m as any).content).includes('<agent_status>'))
+    expect(mem).toBeTruthy()
+    const text = String((mem as any).content)
+    // L1：首轮目标不随轮次丢失
+    expect(text).toContain('本对话目标: 第1个问题')
+    // L3：近期窗口带上了前面几轮原文（窗口上限 6 条 → 至少含第 9 轮）
+    expect(text).toContain('<recent_context>')
+    expect(text).toContain('第9个问题')
+  })
+
+  it('跨 Agent：换 Agent 后新 Agent 仍看到同一份会话记忆（首轮目标）', async () => {
+    const h = buildHarness([
+      { content: '要分析哪张表的数据？' },
+      { content: '好的，我来创建三级审批流程。' },
+    ])
+
+    await runTurn(h, '分析本月提交数据', 'data-analysis')
+    await runTurn(h, '创建一个三级审批流程', 'data-analysis')
+
+    // 强信号把领域从 submission 切到 workflow
+    const route = h.events.find((e) => e.type === 'route')
+    expect(route?.agent).toBe('workflow')
+
+    // workflow 子 Agent 的上下文里有同一份记忆块（含首轮目标）——换 Agent 不必重问已知信息
+    const lastMessages = h.llm.seen[h.llm.seen.length - 1]
+    const mem = lastMessages.find((m) => String((m as any).content).includes('<agent_status>'))
+    expect(String((mem as any).content)).toContain('分析本月提交数据')
+  })
 })
 
 describe('路由与计划（纯函数）', () => {
@@ -776,6 +837,44 @@ describe('路由与计划（纯函数）', () => {
     const router = new RouterService(catalog, llm)
 
     const d = await router.decide('帮我处理审批', { scenario: 'form-builder' })
+    expect(d.agent).toBe('form-designer')
+    expect(d.source).toBe('page')
+  })
+
+  it('pendingClarification 存在且无强信号 → 直接沿用该领域，不调 LLM', async () => {
+    const llm = {
+      chat: {
+        invoke: async () => {
+          throw new Error('有 pendingClarification 时不该调用 LLM')
+        },
+      },
+    } as any
+    const router = new RouterService(catalog, llm)
+
+    const d = await router.decide('教职工信息表单', { scenario: 'data-analysis' }, {
+      priorAgent: 'submission',
+      pendingClarification: { agent: 'submission', question: '要分析哪张表？' },
+    })
+    expect(d.agent).toBe('submission')
+    expect(d.source).toBe('prompt')
+    expect(d.reason).toContain('等待回答')
+  })
+
+  it('pendingClarification 存在但消息命中别的领域强信号 → 仍按强信号换领域', async () => {
+    const router = new RouterService(catalog, {} as any)
+    const d = await router.decide('创建一个三级审批流程', { scenario: 'data-analysis' }, {
+      priorAgent: 'submission',
+      pendingClarification: { agent: 'submission', question: '要分析哪张表？' },
+    })
+    expect(d.agent).toBe('workflow')
+  })
+
+  it('没有 pendingClarification 时行为不变（沿用页面/priorAgent）', async () => {
+    const router = new RouterService(catalog, {} as any)
+    const d = await router.decide('加一个手机号字段', { scenario: 'form-builder' }, {
+      priorAgent: 'form-designer',
+      pendingClarification: null,
+    })
     expect(d.agent).toBe('form-designer')
     expect(d.source).toBe('page')
   })

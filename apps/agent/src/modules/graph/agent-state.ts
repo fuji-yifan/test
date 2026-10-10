@@ -97,6 +97,33 @@ export const AgentState = Annotation.Root({
   workspaceId: Annotation<string>({ reducer: (_p, n) => n, default: () => '' }),
   userToken: Annotation<string>({ reducer: (_p, n) => n, default: () => '' }),
 
+  /**
+   * 会话级目标：首轮用户消息原文（截断 ≤60 字），不调 LLM 摘要（手册 D4）。
+   * 跨轮从 checkpoint 恢复；仅在为空时由 routerNode 写入首轮值。
+   */
+  conversationGoal: Annotation<string>({ reducer: (_p, n) => n ?? '', default: () => '' }),
+  /**
+   * 上一轮以提问收尾、正在等待用户回答的领域（手册 D3）。
+   * routerNode 每轮先读后清，本轮若仍以提问收尾由 respond 重新写入。
+   */
+  pendingClarification: Annotation<{ agent: AgentKey; question: string } | null>({
+    reducer: (_p, n) => n ?? null,
+    default: () => null,
+  }),
+  /**
+   * L3 近期窗口：最近若干轮的 user/assistant 原文（替换语义）。
+   * routerNode 每轮追加本轮 user，aggregate 收尾追加 assistant；README 见 §2.11。
+   * 放 checkpoint 承载，无需额外持久层。
+   */
+  historyTurns: Annotation<{ role: 'user' | 'assistant'; content: string }[]>({
+    reducer: (_p, n) => n ?? [],
+    default: () => [],
+  }),
+  /**
+   * L2 滚动摘要：超出窗口的旧对话压缩成一段（替换语义，配置门控，默认关）。
+   */
+  memorySummary: Annotation<string>({ reducer: (_p, n) => n ?? '', default: () => '' }),
+
   // ---- 本轮输入 ----
   userMessage: Annotation<string>({ reducer: (_p, n) => n, default: () => '' }),
   pageContext: Annotation<PageContext>({

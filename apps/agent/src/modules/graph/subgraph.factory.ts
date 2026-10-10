@@ -28,6 +28,7 @@ import { SkillsLoader } from '../harness/skills.loader'
 import { ToolRegistry } from '../harness/tool.registry'
 import type { AgentStateType, PendingCall } from './agent-state'
 import { AgentState } from './agent-state'
+import { buildMemoryBlock, detectClarification } from './conversation-state'
 import { resolveFormTarget, seedFromDraft, toFormArtifact, type TargetResolution } from './worksheet'
 
 /** 图里用到的 LLM 能力（结构类型，便于测试注入假模型） */
@@ -155,7 +156,7 @@ export class AgentSubgraphFactory {
       .addNode('think', (s) => this.think(s, spec))
       .addNode('gate', (s) => this.gate(s, spec))
       .addNode('act', (s) => this.act(s, spec))
-      .addNode('respond', (s) => this.respond(s))
+      .addNode('respond', (s) => this.respond(s, spec))
       .addNode('halt', (s) => this.halt(s, spec))
       .addEdge(START, 'prepare')
       .addEdge('prepare', 'think')
@@ -204,9 +205,26 @@ export class AgentSubgraphFactory {
       : null
     const systemContent = hint ? `${system}\n\n${hint}` : system
 
+    // 会话记忆块：作为**末尾 user 消息**注入（手册 D2/§2.11），承载三层记忆
+    // （L1 状态栏 + L2 摘要 + L3 近期窗口），所有 sub-agent 看到同一份 —— 换 Agent 不重问已知信息。
+    // 只承载会话级字段，与 system 里的表清单（draftHint）不重叠；全空时不注入（老线程行为不变）。
+    const memory = buildMemoryBlock({
+      l1: {
+        activeSubAgent: spec.key,
+        conversationGoal: state.conversationGoal,
+        pendingClarification: state.pendingClarification,
+        lastOutcome: state.pendingClarification ? 'waiting_user' : undefined,
+      },
+      summary: state.memorySummary,
+      // historyTurns 末尾那条是本轮 user（routerNode 刚追加），注入时排除，避免与 userMessage 重复
+      recent: recentTurns(state),
+    })
+    const messages: BaseMessage[] = [new SystemMessage(systemContent), new HumanMessage(state.userMessage)]
+    if (memory) messages.push(new HumanMessage(memory))
+
     return {
       // 每个步骤用一份干净的 LLM 上下文；上游产物已经由 planDriver 写进指令里
-      messages: [new SystemMessage(systemContent), new HumanMessage(state.userMessage)],
+      messages,
       pendingCalls: [],
       lastTool: null,
       approved: false,
@@ -613,9 +631,23 @@ export class AgentSubgraphFactory {
 
   // ==================== respond / halt ====================
 
-  private respond(state: AgentStateType): Partial<AgentStateType> {
+  private respond(state: AgentStateType, spec: AgentSpec): Partial<AgentStateType> {
     emit({ type: 'message', role: 'assistant', content: state.finalContent })
-    return {}
+
+    // 只有计划**最后一步**（或单步）的收尾才写会话级状态：多步计划里 respond 每步都跑，
+    // 共享 channel 是替换语义、后写覆盖先写，中间步若以问句结尾会污染 pendingClarification。
+    const lastStep = (state.stepIndex ?? 0) >= ((state.plan?.steps?.length ?? 1) - 1)
+    if (!lastStep) return {}
+
+    // gaveUp 也会走到 respond（gate 收尾），故必须把 halted || gaveUp 一起传进去，
+    // 否则「认输话术」会被误判成「提问」（手册 D3 要点 2）。
+    const clarification = detectClarification({
+      agent: spec.key,
+      finalContent: state.finalContent,
+      producedArtifact: (state.turnDraftAgents ?? []).includes(spec.key),
+      haltedOrGaveUp: state.halted || state.gaveUp,
+    })
+    return clarification ? { pendingClarification: clarification } : {}
   }
 
   private halt(state: AgentStateType, spec: AgentSpec): Partial<AgentStateType> {
@@ -638,6 +670,14 @@ export class AgentSubgraphFactory {
       needThink: false,
     }
   }
+}
+
+/** 注入用的近期窗口：去掉末尾本轮 user（routerNode 刚追加），并只取最近 MEMORY_WINDOW 条 */
+const MEMORY_WINDOW = 6
+function recentTurns(state: AgentStateType): { role: 'user' | 'assistant'; content: string }[] {
+  const turns = state.historyTurns ?? []
+  const withoutCurrent = turns.length > 0 && turns[turns.length - 1].role === 'user' ? turns.slice(0, -1) : turns
+  return withoutCurrent.slice(-MEMORY_WINDOW)
 }
 
 /** 从图状态构造工具调用上下文（对齐 legacy base.agent 的注入字段） */
