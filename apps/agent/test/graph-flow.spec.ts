@@ -9,19 +9,14 @@
  * - 未声明业务检查点的中高风险工具，走风险确认门（ToolGateway 语义）。
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
-import { AIMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages'
 import { createConnection, createPool, type Pool } from 'mysql2/promise'
-import { z } from 'zod'
 import { AgentCatalogService } from '../src/modules/graph/agent-catalog'
 import { RouterService } from '../src/modules/graph/router.service'
 import { PlanService } from '../src/modules/graph/plan.service'
-import { AgentSubgraphFactory } from '../src/modules/graph/subgraph.factory'
-import { AgentGraphService } from '../src/modules/graph/agent-graph.service'
-import { GraphRunnerService } from '../src/modules/graph/graph-runner.service'
-import { LangChainToolBridge } from '../src/modules/graph/tool-bridge.service'
 import { MysqlCheckpointSaver } from '../src/modules/graph/mysql-checkpoint-saver'
 import { MysqlExecutor } from '../src/modules/graph/sql-executor'
-import type { GraphEvent } from '../src/modules/graph/graph-runner.service'
+import { FakeRegistry } from './harness/fakes'
+import { createBuildHarness, submissionSpec, toolContentsOf, runTurn, resumeTurn } from './harness/harness'
 
 const TEST_DB = 'langgraph_graphflow_test'
 const parsed = new URL(process.env.AGENT_DATABASE_URL!)
@@ -50,214 +45,8 @@ afterAll(async () => {
   await admin.end()
 })
 
-// ==================== 测试替身 ====================
-
-const TOOL_RISK: Record<string, 'low' | 'medium' | 'high'> = {
-  form_search_field_pool: 'low',
-  form_assemble_schema: 'low',
-  form_validate_schema: 'low',
-  form_preview: 'low',
-  form_save: 'low',
-  flow_create: 'low',
-  flow_validate: 'low',
-  flow_preview: 'low',
-  flow_save: 'low',
-  flow_bind_form: 'medium',
-  template_search: 'low',
-  template_get_detail: 'low',
-  template_validate: 'low',
-  template_instantiate: 'low',
-  data_list_forms: 'low',
-  data_query: 'low',
-  data_analyze: 'low',
-  // 高风险/中风险的通用替身：用来验检查点与工具级确认门，与具体领域无关
-  data_export: 'high',
-  data_merge: 'medium',
-}
-
-class FakeRegistry {
-  get(name: string) {
-    const risk = TOOL_RISK[name]
-    if (!risk) return undefined
-    return {
-      name,
-      description: `tool ${name}`,
-      riskLevel: risk,
-      parameters: { type: 'object', properties: {} },
-      zodSchema: z.object({}).passthrough(),
-      instance: {},
-    }
-  }
-  getRisk(name: string) {
-    return TOOL_RISK[name] ?? 'low'
-  }
-  list() {
-    return Object.keys(TOOL_RISK).map((name) => ({ name, description: name, parameters: {} }))
-  }
-  listByNames(names: string[]) {
-    return this.list().filter((t) => names.includes(t.name))
-  }
-}
-
-interface GwCall {
-  name: string
-  args: Record<string, unknown>
-  confirmed: boolean
-}
-
-class FakeGateway {
-  calls: GwCall[] = []
-  /** 放进来的工具名一律返回失败，用来验重试上限 / 降级 / 收尾 */
-  failTools = new Set<string>()
-  /** 失败时回给网关的 error 分类（默认按执行错处理） */
-  failError = 'execution_error'
-  async execute(name: string, args: Record<string, unknown>) {
-    this.calls.push({ name, args, confirmed: false })
-    if (this.failTools.has(name)) {
-      return { ok: false, summary: `${name} failed`, error: this.failError }
-    }
-    return this.result(name, args)
-  }
-  async executeConfirmed(name: string, args: Record<string, unknown>) {
-    this.calls.push({ name, args, confirmed: true })
-    return this.result(name, args)
-  }
-  private result(name: string, args: Record<string, unknown> = {}) {
-    // 组装的标题跟着 target 走，这样两张表各有各的标题，便于断言「各是各的」
-    const title =
-      typeof args.target === 'string' && args.target
-        ? args.target
-        : typeof args.formTitle === 'string' && args.formTitle
-          ? args.formTitle
-          : '新建表单'
-    const payloads: Record<string, unknown> = {
-      form_assemble_schema: {
-        schema: { settings: { formTitle: title }, fields: [{ key: 'name', type: 'string' }] },
-      },
-      form_validate_schema: { passed: true, issues: [] },
-      form_preview: { previewUrl: 'http://x/preview' },
-      form_save: { formId: 'F-1' },
-      flow_create: { nodes: [{ id: 'n1' }], edges: [] },
-      data_analyze: { summary: '本月投诉集中在物流', insights: [] },
-      template_instantiate: {
-        templateId: 'T-9',
-        name: '请假申请',
-        schema: { fields: [{ key: 'days', type: 'number' }] },
-      },
-    }
-    return { ok: true, summary: `${name} ok`, result: payloads[name] ?? { ok: true } }
-  }
-}
-
-/** 按脚本逐轮返回 AIMessage 的假模型 */
-class ScriptedLlm {
-  private cursor = 0
-  calls = 0
-  /** 每次 think 收到的完整上下文，用来断言步骤交接时指令里带了上游产物 */
-  seen: BaseMessage[][] = []
-  /** 路由兜底用的 chat 通道：这里统一「无意见」，让路由沿用确定性结论 */
-  chat = { invoke: async () => new AIMessage({ content: '' }) }
-  constructor(private readonly script: { content?: string; calls?: { id: string; name: string; args?: Record<string, unknown> }[] }[]) {}
-  withTools() {
-    return {
-      invoke: async (messages: BaseMessage[]) => {
-        this.seen.push(messages)
-        const step = this.script[Math.min(this.cursor, this.script.length - 1)]
-        this.cursor++
-        this.calls++
-        return new AIMessage({
-          content: step.content ?? '',
-          tool_calls: (step.calls ?? []).map((c) => ({ id: c.id, name: c.name, args: c.args ?? {} })),
-        })
-      },
-    }
-  }
-}
-
-interface Harness {
-  runner: GraphRunnerService
-  gateway: FakeGateway
-  llm: ScriptedLlm
-  events: GraphEvent[]
-  sessionId: string
-}
-
-function buildHarness(script: ScriptedLlm[''] extends never ? never : ConstructorParameters<typeof ScriptedLlm>[0], overrides?: { catalogSpec?: any }) {
-  const registry = new FakeRegistry() as any
-  const gateway = new FakeGateway()
-  const bridge = new LangChainToolBridge(registry, gateway as any)
-  const skills = { getAllMeta: () => [], loadFull: () => null } as any
-  const catalog = new AgentCatalogService(skills, registry)
-  if (overrides?.catalogSpec) {
-    catalog.list = () => [overrides.catalogSpec]
-  }
-  const llm = new ScriptedLlm(script)
-  // 假配置：错误恢复的阈值与 .env.example 的默认值一致
-  const config = {
-    get: (key: string) =>
-      ({ 'context.maxRetries': 2, 'context.maxDegrades': 1 } as Record<string, number>)[key],
-  } as any
-  const subgraphs = new AgentSubgraphFactory(bridge, llm as any, registry, skills, config)
-  const router = new RouterService(catalog, llm as any)
-  const plan = new PlanService()
-  const checkpoint = { enabled: true, get saver() { return saver } } as any
-  const graphs = new AgentGraphService(router, plan, catalog, subgraphs, checkpoint, config)
-  const sessions = {
-    updateMetadata: async () => undefined,
-    addMessage: async () => undefined,
-  } as any
-  const runner = new GraphRunnerService(graphs, sessions)
-  return { runner, gateway, llm, events: [], sessionId: `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }
-}
-
-/** 最小 submission spec：不带任何检查点，专门用来验工具失败后的错误恢复级联 */
-function submissionSpec(toolNames: string[], maxIterations = 8) {
-  return {
-    key: 'submission',
-    label: 'Submission Agent',
-    scenario: 'data-analysis',
-    toolNames,
-    serverTools: toolNames,
-    maxIterations,
-    systemPrompt: () => 'submission',
-    extractArtifact: () => null,
-    checkpoints: [],
-  }
-}
-
-/** 某次 think 收到的上下文里，ToolMessage 的文本内容 */
-function toolContentsOf(msgs: BaseMessage[]): string[] {
-  return msgs.filter((m) => ToolMessage.isInstance(m)).map((m) => String((m as ToolMessage).content))
-}
-
-async function runTurn(h: Harness, message: string, scenario = 'form-builder', workspaceId = 'w1') {
-  const events: GraphEvent[] = []
-  const result = await h.runner.run({
-    sessionId: h.sessionId,
-    userId: 'u1',
-    workspaceId,
-    userToken: 'tok',
-    message,
-    pageContext: { scenario },
-    onEvent: (e) => events.push(e),
-  })
-  h.events = events
-  return result
-}
-
-async function resumeTurn(h: Harness, resume: unknown, workspaceId = 'w1') {
-  const events: GraphEvent[] = []
-  const result = await h.runner.resume({
-    sessionId: h.sessionId,
-    userId: 'u1',
-    workspaceId,
-    userToken: 'tok',
-    resume,
-    onEvent: (e) => events.push(e),
-  })
-  h.events = events
-  return result
-}
+// saver 在 beforeAll 里才建好，用闭包延迟取值；harness 本体与 eval 共用
+const buildHarness = createBuildHarness(() => saver)
 
 // ==================== 用例 ====================
 

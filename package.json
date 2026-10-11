@@ -9,6 +9,7 @@
     "dev:web": "turbo run dev --filter=@furmx/web",
     "build": "turbo run build",
     "build:sdk": "turbo run build --filter=@furmx/sdk",
+    "test": "turbo run test",
     "lint": "turbo run lint",
     "check": "pnpm lint && pnpm format:check",
     "format": "prettier --write \"**/*.{ts,vue,json,md}\"",

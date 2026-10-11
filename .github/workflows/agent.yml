@@ -1,0 +1,57 @@
+name: agent-ci
+
+# 阶段 2（docs/AGENT_IMPROVEMENT_PLAN.md §3.1）：确定性回归网接 CI。
+# 入口是 vitest（不是 jest）—— `pnpm test` 经 turbo 跑到 @furmx/agent 与 @furmx/sdk；
+# 图/检查点套件要连 MySQL，故起一个 service 容器并把 AGENT_DATABASE_URL 指过去。
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: tsc + vitest (agent/sdk)
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      # 各 spec 解析出 host/port/user/password 后自建临时库（langgraph_*_test）并跑完 DROP，
+      # 所以库名用哪个都行；这里只是给 URL 一个合法形态。
+      AGENT_DATABASE_URL: mysql://root:root@127.0.0.1:3306/langgraph_ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # agent 的 vitest 会 import @furmx/sdk（dist 入口），必须先建 sdk
+      - name: Build sdk
+        run: pnpm build:sdk
+
+      - name: Typecheck (agent)
+        run: pnpm --filter @furmx/agent exec tsc --noEmit -p tsconfig.json
+
+      - name: Test (turbo → agent + sdk vitest)
+        run: pnpm test

@@ -47,20 +47,42 @@
 
 ## 二、自动化测试（单测）
 
-`vitest`，2026-09-29 实测 **8 个文件 / 814 条全绿**，`tsc --noEmit` 干净（注意 `tsconfig.json` 只 include `src/**/*`，spec 不在类型检查范围内）。
+`vitest`，2026-10-11 实测 **10 个文件 / 851 条全绿**，`tsc --noEmit` 干净（注意 `tsconfig.json` 只 include `src/**/*`，spec 不在类型检查范围内）。
 
 跑法（WSL1 起不了 node，借 Windows node）：`cmd.exe /c "cd /d D:\frontend\低代码平台\apps\agent && npx vitest run"`。
+
+CI（阶段 2 起）：`.github/workflows/agent.yml` 起 MySQL service 后 `pnpm test`（turbo → agent/sdk vitest）+ agent `tsc`。
 
 | 文件 | 条数 | 主要锁什么 |
 |---|---|---|
 | `test/checkpoint-saver.spec.ts` | 718 | 自研 MySQL checkpointer 的序列化与回填 |
-| `test/graph-flow.spec.ts` | 29 | 编排主链路：路由 / 多步计划 / 检查点 / 错误恢复级联 / 上游产物缺失跳步 / 跨轮草稿隔离（3.6、3.13、3.14、3.15 的单测侧证据） |
+| `test/graph-flow.spec.ts` | 35 | 编排主链路：路由 / 多步计划 / 检查点 / 错误恢复级联 / 上游产物缺失跳步 / 跨轮草稿隔离 / 会话记忆（3.6、3.13、3.14、3.15 的单测侧证据） |
 | `test/worksheet.spec.ts` | 21 | 会话级工作台：多表寻址与增量契约（3.9、3.10） |
+| `test/conversation-state.spec.ts` | 20 | 状态栏 `buildStateBar` / `detectClarification` / 记忆块拼接（阶段 1） |
 | `test/langgraph-turn.spec.ts` | 15 | SSE 方言、`stopReason`、error code 过滤（3.5、3.13） |
 | `test/form-assemble-schema.spec.ts` | 14 | 按 key 合并字段（3.1） |
 | `test/tool-bridge.spec.ts` | 8 | 工具桥接与大结果截断（3.11） |
 | `test/session-preempt.spec.ts` | 5 | 执行权抢占（3.7） |
 | `test/tool-registry.spec.ts` | 4 | 工具注册与风险等级 |
+| `test/eval/eval.spec.ts` | 11 | **确定性路由回归网**（阶段 2）：只用 `route.agent` / `isCrossDomain` / `plan.steps` 断言，见下 |
+
+### 2.1 eval 用例 ↔ 主用例表 对照
+
+`test/eval/routing.cases.ts` 的每条用例都带 `cases` 字段指向主用例表编号（反之此表列出 eval 用例名），改路由/提示词后 eval 变红可直接定位。
+
+| eval 用例名 | 对应主用例 | 锁的行为 |
+|---|---|---|
+| F1 表单页建表 → form-designer | F1 | 页面身份建表 |
+| R1 页面优先：模板页说「你好」仍留 template | R1 | 弱输入不换身份 |
+| R2 跨页面：表单页说「搜索请假模板」→ template | R2 | 强信号覆盖页面 + 模板落库两步 |
+| R3 表单强信号：流程页说「设计一个…表」→ form-designer | R3 | 不被「审批」弱信号误判 |
+| R4 短消息：数据分析页说「在吗」保持 submission | R4 | 短消息不换身份 |
+| W1 流程创建 → workflow | W1 | 流程强信号 |
+| T3 强信号让位：模板页说「帮我设计一个表单」→ form-designer | T3 | 强信号让位（沿用改期望后的口径） |
+| C1 跨领域：模板+流程+创建 → 三步计划 | C1 | 三步计划序列 |
+| M1 数据分析会话补「教职工信息表单」仍落 submission | （手册 §2.9 复现） | pendingClarification 沿用，不误建表 |
+| M2 同一会话里强信号「创建一个三级审批流程」仍切 workflow | （手册 §2.9 反例） | 记忆不盖过强信号 |
+| S1 数据分析页说「删掉…记录」仍落 submission | S1 | 只读领域不被写指令带偏 |
 
 ## 三、实测发现（按严重度）
 

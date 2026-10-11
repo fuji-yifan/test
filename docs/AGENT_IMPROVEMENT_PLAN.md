@@ -10,8 +10,8 @@
 | 阶段 | 主题 | 状态 |
 |---|---|---|
 | 0 | 规划（本文件） | ✅ 完成 |
-| 1 | **会话记忆（上下文工程）** | ⏳ 主体已落地（§2 + §2.11；`tsc` + `vitest` 837 绿，**待真机验证**） |
-| 2 | 失败迭代（eval 接 CI） | ⬜ 未开始 · 详案已备 §3.1 |
+| 1 | **会话记忆（上下文工程）** | ✅ 完成（§2 + §2.11；`tsc` + `vitest` 全绿 + 真机探针 6/6，已 commit `c046fd5`） |
+| 2 | 失败迭代（eval 接 CI） | ✅ 完成（§3.1；harness 抽取 + eval 11 例 + CI，`vitest` 851 绿 / `tsc` 干净） |
 | 3 | 持久化（会话/执行权/幂等） | ⬜ 未开始 · 详案已备 §3.2 |
 | 4 | 成本（token 预算 + usage） | ⬜ 未开始 · 详案已备 §3.3 |
 | 5 | 业务落地（寻址/diff/撤销） | ⬜ 未开始 · 详案已备 §3.4 |
@@ -339,7 +339,7 @@ buildStateBar(meta)  ← 纯函数，代码维护，不调 LLM
 - [x] D4 `persist` 从 channel 回写 metadata
 - [x] E1 `tsc --noEmit` 通过
 - [x] E2 `vitest` 全绿（含 `graph-flow.spec.ts` 同步）
-- [ ] E3 复现用例**真机**手工验证（`tsc`+`vitest` 已用 harness 断言，真机待跑）
+- [x] E3 复现用例**真机**手工验证（`tsc`+`vitest` 已用 harness 断言；2026-10-10 真机探针 6/6 通过）
 
 ### 2.9 验收标准
 
@@ -396,7 +396,7 @@ buildStateBar(meta)  ← 纯函数，代码维护，不调 LLM
 - [x] F1 定义 `SessionMemory`（`conversation-state.ts`：L1 结构化 + L2 摘要 + L3 窗口）
 - [x] F2 `prepare()` 统一注入给所有 sub-agent（router 可选消费）
 - [x] F3 滚动摘要挂点 + 阈值配置（`MEMORY_SUMMARY_TRIGGER`，默认 0=关；挂 `routerNode`，非 `prepare`）
-- [ ] F4 长会话与跨 Agent 切换的**真机**用例（20 轮 harness 用例已绿；真机待跑）
+- [x] F4 长会话与跨 Agent 切换的**真机**用例（20 轮 harness 用例已绿；2026-10-10 真机探针 6/6 通过，含 L1/L3 与跨 Agent 共享记忆）
 
 **验收标准**
 1. 会话任意长度，后一轮回答都体现前面已确认的目标 / 表 / 决策，不因轮次增加而丢失。
@@ -445,11 +445,16 @@ buildStateBar(meta)  ← 纯函数，代码维护，不调 LLM
 5. `cases.md` 每条用例标注对应 eval 用例名，双向可追。
 
 **任务清单**
-- [ ] 2.1 抽 `test/harness/`（ScriptedLlm + buildHarness）并迁移 graph-flow.spec
-- [ ] 2.2 建 `test/eval/*.cases.ts`（首批 ≥ 10 条，含 §2.9 两条）
-- [ ] 2.3 `eval.spec.ts` runner + 确定性断言
-- [ ] 2.4 CI workflow + turbo test 任务
-- [ ] 2.5 cases.md ↔ eval 双向引用
+- [x] 2.1 抽 `test/harness/`（`fakes.ts` + `harness.ts`；`buildHarness` 的 saver 改为可注入）并迁移 graph-flow.spec
+- [x] 2.2 建 `test/eval/routing.cases.ts`（11 条，含 §2.9 两条 M1/M2）
+- [x] 2.3 `test/eval/eval.spec.ts` runner + 确定性断言（`route.agent` / `isCrossDomain` / `plan.steps`）
+- [x] 2.4 `.github/workflows/agent.yml`（MySQL service）+ turbo/root `test` 任务
+- [x] 2.5 cases.md §2.1 双向对照表
+
+> **2026-10-11 落地记录**：`@furmx/agent` 的 `test` 脚本由 jest（空跑）改为 vitest；
+> 根 `pnpm test` = `turbo run test`（跑 agent + sdk）；CI 入口是 vitest 不是 jest。
+> eval 只锁确定性分支（脚本化 LLM），不锁 LLM 兜底质量。全量 **851 条绿**（原 840 + eval 11）。
+> **待办**：CI 生效需 push 后由远端验证（本机无 GitHub Actions 运行器）。
 
 **验收**：改路由/提示词后 eval 变红能直接定位到用例；CI 对 PR 自动跑；覆盖复现用例与换领域用例。
 
@@ -457,8 +462,10 @@ buildStateBar(meta)  ← 纯函数，代码维护，不调 LLM
 LLM 兜底质量靠阶段 6 的观测（Langfuse）抽样，不靠 eval。
 **CI 入口（可行性核查）**：真正入口是 **vitest**（`vitest.config.mts` `include: test/**/*.spec.ts`）；
 `pnpm test` 的 jest 因 `rootDir=src` **跑不到** `test/**`，CI 必须接 `vitest run --config vitest.config.mts`。
-另：`graph-flow.spec.ts:477` 自陈「第二次 run→resume 的 stream 不关闭」是**既有 flake**，
-**上 CI 前先处理**，否则不稳。
+另：`graph-flow.spec.ts` 自陈「同一 thread 第二次 run→resume 的 stream 不关闭」（现锚点 ≈:579）是
+**既有现象**（vitest + 共享 checkpointer 连接池；真实栈正常）。用例已按此**规避**——多表场景都留在
+单次 run 内、不开跨轮 run→resume→run 链条，跨轮注入语义另由 `tool-bridge.spec.ts` 覆盖。
+2026-10-11 全量 851 条连跑稳定绿，故 CI 无需改代码兜底。
 
 ### 3.2 阶段 3：持久化（会话 / 执行权 / 幂等）
 
@@ -857,6 +864,6 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 ---
 
 *本文档随实现推进更新；每完成一阶段，回来更新文首「进度」表与对应章节状态。*
-*续接提示：阶段 1 从 §2.8 任务清单开始（A→B→C→D→E）+ §2.11 会话记忆（F1–F4）；阶段 2–7 详案
-在 §3.1–§3.6，每节末尾都有各自的任务清单与验收标准；阶段 8（知识沉淀 + MCP）留待下个项目。
-**动手前先看 §5 实现可行性核查**（架构衔接点与高风险项）。*
+*续接提示：阶段 1、2 已完成（§2/§2.11、§3.1）；下一阶段 3（会话/执行权/幂等落 MySQL，**最大风险**）
+从 §3.2 任务清单开始；阶段 4–7 详案在 §3.3–§3.6，每节末尾都有各自的任务清单与验收标准；
+阶段 8（知识沉淀 + MCP）留待下个项目。**动手前先看 §5 实现可行性核查**（架构衔接点与高风险项）。*
