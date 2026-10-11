@@ -93,6 +93,7 @@ export type FieldType =
   | 'upload'
   | 'rich-text'
   | 'cascader'
+  | 'date-range-picker'
   | 'time-picker'
   | 'date-time-picker'
   | 'color-picker'

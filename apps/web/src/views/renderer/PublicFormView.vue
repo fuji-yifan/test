@@ -281,7 +281,7 @@ onMounted(async () => {
     if (schema.value?.fields) {
       const walk = (fields: FieldSchema[]) => {
         for (const f of fields) {
-          if (f.key && !isLayoutField(f.type)) formData[f.key] = f.defaultValue ?? (f.type === 'checkbox' ? [] : '')
+          if (f.key && !isLayoutField(f.type)) formData[f.key] = f.defaultValue ?? (['checkbox', 'date-range-picker'].includes(f.type) ? [] : '')
           if (f.children) walk(f.children)
         }
       }

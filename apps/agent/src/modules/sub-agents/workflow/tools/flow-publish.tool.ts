@@ -35,7 +35,7 @@ export class FlowPublishTool {
     })
 
     return {
-      summary: `Flow "${args.name}" published successfully`,
+      summary: `Flow "${args.name}" saved successfully`,
       processId: result?.id,
       result,
     }

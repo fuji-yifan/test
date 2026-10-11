@@ -22,6 +22,7 @@ export const builtinComponents: ComponentMeta[] = [
   { type: 'upload', display: '文件上传', icon: 'Upload', category: 'advanced', defaultProps: { accept: '', maxSize: 10, maxCount: 1 } },
   { type: 'rich-text', display: '富文本', icon: 'EditPen', category: 'advanced', defaultProps: { height: 400, placeholder: '请输入内容', maxLength: 200, toolbarMode: 'full' } },
   { type: 'cascader', display: '级联选择', icon: 'Connection', category: 'advanced', defaultProps: { options: [], placeholder: '请选择', templateMode: 'manual' } },
+  { type: 'date-range-picker', display: '日期范围', icon: 'Calendar', category: 'advanced', defaultProps: { format: 'YYYY-MM-DD', valueFormat: 'YYYY-MM-DD', rangeSeparator: '至', startPlaceholder: '开始', endPlaceholder: '结束' } },
 
 ]
 

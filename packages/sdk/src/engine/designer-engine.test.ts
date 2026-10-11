@@ -451,6 +451,7 @@ describe('DesignerEngine', () => {
       ['select', 12, 5],
       ['card', 24, 24],
       ['date-picker', 12, 6],
+      ['date-range-picker', 12, 8],
       ['upload', 24, 8],
     ]
 

@@ -20,6 +20,7 @@ export const elComponentMap: Record<string, string> = {
   radio: 'el-radio-group',
   checkbox: 'el-checkbox-group',
   'date-picker': 'el-date-picker',
+  'date-range-picker': 'el-date-picker',   // type="daterange"
   'time-picker': 'el-time-picker',
   'date-time-picker': 'el-date-time-picker',
   switch: 'el-switch',
@@ -101,6 +102,13 @@ const elementPlusAdapters: ComponentAdapter[] = [
   {
     type: 'cascader', display: '级联选择', icon: 'Connection', category: 'advanced',
     defaultProps: { options: [], placeholder: '请选择', templateMode: 'manual' },
+  },
+  {
+    type: 'date-range-picker', display: '日期范围', icon: 'Calendar', category: 'advanced',
+    defaultProps: {
+      format: 'YYYY-MM-DD', valueFormat: 'YYYY-MM-DD',
+      rangeSeparator: '至', startPlaceholder: '开始', endPlaceholder: '结束',
+    },
   },
 
   // 布局控件

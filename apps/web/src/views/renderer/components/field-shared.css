@@ -115,6 +115,38 @@
 /* 上传控件拖拽区撑满宽度 */
 .el-upload-dragger { width: 100% !important; }
 
+/* 日期范围：EP 默认固定 350px（--el-date-editor-daterange-width），窄栅格会溢出。
+   它不在上面那批 .el-input/.el-select/.el-cascader 里，得单独把宽度锁死：
+   - width 会被 min-width / 行内盒子的多余宽度顶回去，所以 max-width + min-width 一起锁
+   - EP 用的是 display:inline-flex，行内级盒子会额外吃掉一点基线/空白宽度，改块级 */
+.fc-ctrl.el-date-editor--daterange,
+.ff-control .el-date-editor--daterange,
+.pv-control .el-date-editor--daterange,
+.pv-ctrl.el-date-editor--daterange,
+.field-placeholder .el-date-editor--daterange {
+  display: flex !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box;
+}
+
+/* 内层两个输入框：EP 只给了 width:39%，但 flex 项默认 min-width:auto，
+   会卡在 <input> 的 min-content（约 20 字符宽）上不肯收缩，于是从边框里顶出来。
+   放开 min-width 才能真正跟着容器缩 */
+.fc-ctrl.el-date-editor--daterange .el-range-input,
+.ff-control .el-date-editor--daterange .el-range-input,
+.pv-control .el-date-editor--daterange .el-range-input,
+.pv-ctrl.el-date-editor--daterange .el-range-input,
+.field-placeholder .el-date-editor--daterange .el-range-input { min-width: 0; }
+
+/* 分隔符（「至」）与两个图标是定宽的，别让它们再抢空间 */
+.fc-ctrl.el-date-editor--daterange .el-range-separator,
+.ff-control .el-date-editor--daterange .el-range-separator,
+.pv-control .el-date-editor--daterange .el-range-separator,
+.pv-ctrl.el-date-editor--daterange .el-range-separator,
+.field-placeholder .el-date-editor--daterange .el-range-separator { flex: 0 1 auto; }
+
 /* 开关控件文案不换行 */
 .fc-ctrl.el-switch .el-switch__label,
 .ff-control .el-switch .el-switch__label,

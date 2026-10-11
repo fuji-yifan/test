@@ -11,7 +11,7 @@ export function submissionPrompt(_ctx: { skillMetas?: any[]; skillFull?: string 
 
 ## 数据分析工作流
 1. 用户未提供 formId → 先调 data_list_forms 列出可用表单，让用户选择
-2. 用户提供了 formId → 调 data_query 获取聚合数据
-3. 调 data_analyze 做本地统计分析
+2. 用户提供了 formId → 调 data_query 获取聚合数据（count/sum/avg/min/max/dist，可按 startDate/endDate 与 groupBy 分组）
+3. 调 data_analyze 做本地统计分析（把 data_query 返回的 series[字段].values / .labels 传入）
 4. 输出 insights、trends、anomalies、chartSuggestions`
 }

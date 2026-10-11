@@ -1138,6 +1138,7 @@ import http from '@/api/client'
 import { useAppStore } from '@/stores/app'
 import ProcessNodePalette from './ProcessNodePalette.vue'
 import type { ProcessDefinition, ProcessNode, ProcessEdge, ProcessSettings, NodeType } from '@furmx/sdk'
+import { FLOW_LAYOUT_GRID } from '@furmx/sdk'
 
 interface WorkspaceMember { id: string; userId: string; user: { id: string; email: string; nickname?: string }; role: string }
 interface WorkspaceRole { id: string; name: string; isSystem: boolean }
@@ -1233,6 +1234,12 @@ const CIRCLE_SIZE = 60
 const dragging = ref(false)
 const dragNodeId = ref<string | null>(null)
 const dragOffset = reactive({ x: 0, y: 0 })
+// 鼠标是否真的移动过 —— 用来区分「拖动」与「单击选中」：
+// 只按不动的单击不应改写坐标，更不该吸附到网格（否则节点会莫名其妙微调）
+const dragMoved = ref(false)
+const dragStart = reactive({ x: 0, y: 0 })
+/** 超过该像素位移才算拖动，滤掉手抖 */
+const DRAG_THRESHOLD = 3
 const connecting = ref(false)
 const connectSourceId = ref<string | null>(null)
 const tempLine = reactive({ show: false, d: '' })
@@ -1773,7 +1780,7 @@ function onCanvasDrop(e: DragEvent) {
   addNode(nodeType, Math.max(0, posX), Math.max(0, posY))
 }
 
-const GRID_SIZE = 15
+const GRID_SIZE = FLOW_LAYOUT_GRID
 
 function snapToGrid(val: number) {
   return Math.round(val / GRID_SIZE) * GRID_SIZE
@@ -1783,6 +1790,9 @@ function onNodeMouseDown(e: MouseEvent, node: ProcessNode) {
   if ((e.target as HTMLElement).classList.contains('port')) return
   dragging.value = true
   dragNodeId.value = node.id
+  dragMoved.value = false
+  dragStart.x = e.clientX
+  dragStart.y = e.clientY
   const rect = canvasRef.value!.getBoundingClientRect()
   dragOffset.x = e.clientX - rect.left - node.position.x
   dragOffset.y = e.clientY - rect.top - node.position.y
@@ -1805,6 +1815,13 @@ function onCanvasMouseMove(e: MouseEvent) {
     return
   }
   if (dragging.value && dragNodeId.value) {
+    // 未超过阈值前不动：单击时的手抖不该改写坐标
+    if (!dragMoved.value &&
+        Math.abs(e.clientX - dragStart.x) <= DRAG_THRESHOLD &&
+        Math.abs(e.clientY - dragStart.y) <= DRAG_THRESHOLD) {
+      return
+    }
+    dragMoved.value = true
     const node = nodes.value.find((n) => n.id === dragNodeId.value)
     if (!node) return
     const rect = canvasRef.value!.getBoundingClientRect()
@@ -1816,12 +1833,15 @@ function onCanvasMouseMove(e: MouseEvent) {
 
 function onCanvasMouseUp() {
   if (dragging.value && dragNodeId.value) {
-    const node = nodes.value.find((n) => n.id === dragNodeId.value)
-    if (node) {
-      node.position.x = snapToGrid(node.position.x)
-      node.position.y = snapToGrid(node.position.y)
+    // 只有真正拖动过才吸附落位；单击选中保持原坐标不动
+    if (dragMoved.value) {
+      const node = nodes.value.find((n) => n.id === dragNodeId.value)
+      if (node) {
+        node.position.x = snapToGrid(node.position.x)
+        node.position.y = snapToGrid(node.position.y)
+      }
     }
-    dragging.value = false; dragNodeId.value = null; updateCanvasSize()
+    dragging.value = false; dragNodeId.value = null; dragMoved.value = false; updateCanvasSize()
   }
 }
 

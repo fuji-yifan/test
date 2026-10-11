@@ -285,12 +285,12 @@ export class AgentCatalogService implements OnApplicationBootstrap {
           }),
         checkpoints: [
           {
-            id: 'publish-approval',
+            id: 'save-approval',
             beforeTool: 'flow_save',
-            prompt: '流程定义已就绪，是否发布到当前工作空间？',
+            prompt: '流程定义已就绪，是否保存到当前工作空间？',
             options: [
-              { value: 'continue', label: '发布', style: 'primary' },
-              { value: 'abort', label: '先不发布', style: 'danger' },
+              { value: 'continue', label: '保存', style: 'primary' },
+              { value: 'abort', label: '先不保存', style: 'danger' },
             ],
             coversRisk: true,
           },
@@ -304,7 +304,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
         ],
         extractArtifact: ({ toolName, result }) => {
           if (toolName === 'flow_create' || toolName === 'flow_validate') {
-            const data = pick(result, ['nodes', 'edges', 'bindings', 'validation'])
+            const data = pick(result, ['name', 'nodes', 'edges', 'bindings', 'validation'])
             if (!data?.nodes && !data?.edges) return null
             return {
               draftUpdate: { type: 'WorkflowArtifact', data },

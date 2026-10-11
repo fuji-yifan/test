@@ -89,6 +89,7 @@ export class SubmissionService {
           id: true,
           formId: true,
           formVersion: true,
+          data: true,
           status: true,
           submitterId: true,
           createdAt: true,

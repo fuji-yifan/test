@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
+import { layoutFlow, normalizeFlowType } from '@furmx/sdk'
 
 @Injectable()
 export class ContextService {
@@ -72,7 +73,7 @@ export class ContextService {
     if (params?.startDate) sp.set('startDate', params.startDate)
     if (params?.endDate) sp.set('endDate', params.endDate)
     const qs = sp.toString()
-    return this.fetch(`/api/v1/submissions?formId=${formId}${qs ? '&' + qs : ''}`, token)
+    return this.fetch(`/api/v1/forms/${formId}/submissions${qs ? '?' + qs : ''}`, token)
   }
 
   async getTask(token: string, taskId: string): Promise<any> {
@@ -147,21 +148,29 @@ export class ContextService {
 
   async saveProcessDraft(token: string, data: Record<string, unknown>): Promise<any> {
     const wsId = data.workspaceId || 'default'
-    // 规范化节点：补 position、label→name、格点对齐
     const rawNodes = (data.nodes as any[]) || []
-    const normalizedNodes = rawNodes.map((n, i) => ({
+    const rawEdges = (data.edges as any[]) || []
+
+    // 用 SDK 的共享布局纯函数算真实坐标：轴对齐后各节点在同一条竖直中线上，
+    // 与预览卡片（FlowPreviewGraph）和设计器看到的效果一致。
+    const layout = layoutFlow(rawNodes, rawEdges)
+    const posById = new Map(layout.nodes.map((n) => [n.id, { x: Math.round(n.x), y: Math.round(n.y) }]))
+
+    // 规范化节点：类型归一（notify→cc / service→auto-task）、label→name、真实 position
+    const normalizedNodes = rawNodes.map((n) => ({
       id: n.id,
-      type: n.type,
+      type: normalizeFlowType(n.type),
       name: n.label || n.name || n.id,
-      position: { x: 200, y: 80 + i * 120 },
+      position: posById.get(n.id) || { x: 0, y: 0 },
       config: n.config || {},
     }))
-    // 规范化边：source→sourceNodeId, target→targetNodeId
-    const rawEdges = (data.edges as any[]) || []
+    // 规范化边：source→sourceNodeId, target→targetNodeId，保留 label 与 condition（原先会丢）
     const normalizedEdges = rawEdges.map((e) => ({
       id: e.id,
       sourceNodeId: e.source || e.sourceNodeId,
       targetNodeId: e.target || e.targetNodeId,
+      label: e.label || e.condition || '',
+      condition: e.condition || '',
     }))
     return this.fetch(`/api/v1/workspaces/${wsId}/workflows`, token, {
       method: 'POST',

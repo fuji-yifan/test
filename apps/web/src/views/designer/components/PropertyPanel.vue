@@ -275,8 +275,8 @@
           </el-form-item>
         </template>
 
-        <!-- date-picker: 格式 -->
-        <template v-if="selectedField.type === 'date-picker'">
+        <!-- date-picker / date-range-picker: 格式 -->
+        <template v-if="selectedField.type === 'date-picker' || selectedField.type === 'date-range-picker'">
           <el-form-item label="日期格式">
             <el-select
               :model-value="selectedField.props?.format || 'YYYY-MM-DD'"

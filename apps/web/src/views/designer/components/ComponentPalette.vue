@@ -91,6 +91,7 @@ const iconMap: Record<string, any> = {
   upload: Upload,
   'rich-text': Notebook,
   cascader: Connection,
+  'date-range-picker': Calendar,
 }
 function getIcon(type: string) { return iconMap[type] || CircleCheck }
 

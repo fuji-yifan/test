@@ -36,6 +36,7 @@ form_search_field_pool 只是参考，不是唯一来源：
 | `upload` | 文件上传 | accept, maxSize, maxCount |
 | `rich-text` | 富文本 | height, placeholder, maxLength |
 | `cascader` | 级联选择 | options: [{label,value,children}], placeholder |
+| `date-range-picker` | 日期范围 | format, valueFormat（值为 `[开始, 结束]` 两元素数组） |
 
 ## 平台支持的校验规则（严格使用，不可自创）
 

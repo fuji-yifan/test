@@ -3,9 +3,10 @@ import { ref, watch, nextTick, computed, markRaw } from 'vue'
 import { useAgentChat, type ConfirmOption } from '@/composables/useAgentChat'
 import { marked } from 'marked'
 import PreviewPanel from '@/components/PreviewPanel.vue'
+import FlowPreviewGraph from '@/components/flow/FlowPreviewGraph.vue'
 import {
   DocumentCopy, ScaleToOriginal, Files, PieChart, Close,
-  ArrowDown, ArrowUp, ArrowLeft, Link, ChatSquare, ChatLineSquare, Postcard, ChromeFilled,
+  ArrowDown, ArrowUp, ArrowLeft, Link, ChatSquare, ChatLineSquare, Postcard, ChromeFilled, Top,
 } from '@element-plus/icons-vue'
 
 const props = defineProps<{
@@ -56,10 +57,28 @@ function openFormPreview(payload: any, title?: string) {
   previewVisible.value = true
 }
 
+// 流程预览弹窗：卡片只显示一行摘要，真实分层图放到弹窗里（和表单预览一致）
+const flowPreviewVisible = ref(false)
+const flowPreview = ref<Record<string, unknown> | null>(null)
+function openFlowPreview(result: unknown) {
+  // result 是 SSE 传来的未类型化 JSON，这里只确认它是带节点的流程 artifact
+  const artifact = result as Record<string, unknown> | null
+  if (!Array.isArray(artifact?.nodes) || artifact.nodes.length === 0) return
+  flowPreview.value = artifact
+  flowPreviewVisible.value = true
+}
+
 /** 表单预览条目归一：多表走 forms[]，单表就是 result 本身 */
 function formEntries(result: any): any[] {
   if (!result) return []
   return result.forms?.length ? result.forms : [result]
+}
+
+/** 结果里是否有可展示的预览内容——没有就整块不渲染，避免出现点开是空的「预览卡片」 */
+function hasPreview(msg: any): boolean {
+  const r = msg?.result
+  if (!r) return false
+  return !!(r.schema || r.templates?.length || r.nodes?.length || r.decision || r.insights || r.stats)
 }
 
 // 历史对话
@@ -249,14 +268,18 @@ watch(() => isLoading.value, (l, was) => {
                   <li>支持审批、条件分支、并行等节点，校验 DAG 合法性</li>
                 </ul>
                 <ul v-else-if="scenario === 'data-analysis'">
-                  <li>根据表单数据进行统计分析</li>
-                  <li>统计趋势、异常检测，推荐图表类型</li>
-                  <li>数据写入前先预览确认</li>
+                  <li>查看全部表单的名称、状态与提交量</li>
+                  <li>按时间范围、分组维度聚合查询</li>
+                  <li>数值统计、趋势判断与 Z-Score 异常检测</li>
+                  <li>输出洞察、趋势、异常点与图表建议</li>
                 </ul>
                 <ul v-else>
                   <li>设计表单、编排流程、搜索模板、分析数据</li>
                   <li>跨领域任务自动切换对应助手协作完成</li>
                 </ul>
+                <p v-if="scenario === 'data-analysis'" class="empty-hint">
+                  仅支持只读分析，无法修改或删除数据。
+                </p>
               </div>
 
               <!-- 消息列表 -->
@@ -384,24 +407,35 @@ watch(() => isLoading.value, (l, was) => {
                       </div>
                     </div>
 
-                    <!-- 预览卡片（可折叠） -->
-                    <div v-else-if="msg.result" class="collapsible-wrap">
+                    <!-- 流程预览：卡片只留一行摘要，点开用弹窗看分层图（和表单/模板预览一致） -->
+                    <div v-else-if="msg.result?.nodes?.length" class="collapsible-wrap">
+                      <div class="collapse-toggle" @click="togglePreview(msg)">
+                        <span class="collapse-toggle-text">
+                          <el-icon :size="14"><Postcard /></el-icon>
+                          流程预览 ({{ msg.result.nodes.length }} 个节点)
+                        </span>
+                        <el-icon :size="12"><component :is="isPreviewOpen(msg) ? ArrowUp : ArrowDown" /></el-icon>
+                      </div>
+                      <div v-if="isPreviewOpen(msg)" class="collapse-body">
+                        <div class="preview-summary-list">
+                          <div class="preview-summary" @click="openFlowPreview(msg.result)">
+                            <el-icon :size="14"><Postcard /></el-icon>
+                            <span class="preview-summary-title">{{ msg.result.name || '流程定义' }}</span>
+                            <span class="preview-summary-meta">{{ msg.result.nodes.length }} 节点 · {{ msg.result.edges?.length || 0 }} 连线</span>
+                            <span class="preview-summary-cta">点击预览 ›</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 预览卡片（可折叠）：只有当结果里确有可展示内容时才出现 -->
+                    <div v-else-if="hasPreview(msg)" class="collapsible-wrap">
                       <div class="collapse-toggle" @click="togglePreview(msg)">
                         <span class="collapse-toggle-text"><el-icon :size="14"><Postcard /></el-icon>预览卡片</span>
                         <el-icon :size="12"><component :is="isPreviewOpen(msg) ? ArrowUp : ArrowDown" /></el-icon>
                       </div>
                       <div v-if="isPreviewOpen(msg)" class="collapse-body">
-                        <div v-if="msg.result.nodes" class="preview-card flow-preview">
-                          <div class="card-title">流程定义</div>
-                          <div class="flow-nodes">
-                            <div v-for="(n, i) in msg.result.nodes" :key="i" class="flow-node"><span :class="['node-badge', n.type]">{{ n.type }}</span> {{ n.label || n.id }}</div>
-                          </div>
-                          <div v-if="msg.result.edges?.length" class="flow-edges">
-                            <div v-for="(e, i) in msg.result.edges.slice(0, 5)" :key="i" class="flow-edge">{{ e.source }} → {{ e.target }} <span v-if="e.label" class="edge-label">({{ e.label }})</span></div>
-                            <div v-if="msg.result.edges.length > 5" class="more-hint">... 共 {{ msg.result.edges.length }} 条连线</div>
-                          </div>
-                        </div>
-                        <div v-else-if="msg.result.decision" class="preview-card decision-preview">
+                        <div v-if="msg.result.decision" class="preview-card decision-preview">
                           <div class="card-title">审批建议</div>
                           <div :class="['decision-badge', msg.result.decision]">{{ msg.result.decision === 'approve' ? '建议通过' : '建议驳回' }} <span class="confidence">{{ ((msg.result.confidence || 0) * 100).toFixed(0) }}%</span></div>
                           <div v-if="msg.result.reasons?.length" class="reasons"><div v-for="(r, i) in msg.result.reasons" :key="i">{{ r }}</div></div>
@@ -455,7 +489,7 @@ watch(() => isLoading.value, (l, was) => {
                   :disabled="!inputText.trim()"
                   @click="handleSend"
                 >
-                  <el-icon :size="18"><ArrowUp /></el-icon>
+                  <el-icon :size="18"><Top /></el-icon>
                 </el-button>
               </div>
             </div>
@@ -475,6 +509,21 @@ watch(() => isLoading.value, (l, was) => {
       <div class="form-preview-box">
         <PreviewPanel v-if="previewSchema" :schema="previewSchema" hide-actions hide-title />
       </div>
+    </el-dialog>
+
+    <!-- 流程预览弹窗：artifact 没有坐标，图由 FlowPreviewGraph 自己算分层布局 -->
+    <el-dialog
+      v-model="flowPreviewVisible"
+      :title="flowPreview?.name || '流程定义'"
+      width="860px"
+      append-to-body
+      :z-index="3200"
+    >
+      <FlowPreviewGraph
+        v-if="flowPreview"
+        :nodes="flowPreview.nodes"
+        :edges="flowPreview.edges"
+      />
     </el-dialog>
   </Teleport>
 </template>
@@ -677,16 +726,6 @@ watch(() => isLoading.value, (l, was) => {
 
 /* 弹窗里的真实渲染容器 */
 .form-preview-box { max-height: 60vh; overflow: auto; }
-
-.flow-nodes { display: flex; flex-wrap: wrap; gap: 6px; }
-.flow-node { font-size: 12px; display: flex; align-items: center; gap: 6px; }
-.node-badge {
-  display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; color: #fff; font-weight: 600;
-  text-transform: uppercase;
-}
-.node-badge.start { background: #67c23a; } .node-badge.end { background: #909399; }
-.node-badge.approval { background: #409eff; } .node-badge.condition { background: #e6a23c; }
-.node-badge.parallel { background: #b37feb; } .node-badge.notify { background: #f56c6c; }
 
 .decision-badge {
   display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px;

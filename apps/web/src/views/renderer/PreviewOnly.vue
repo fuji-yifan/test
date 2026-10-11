@@ -59,6 +59,8 @@
                 :is="resolveControl(field.type)"
                 v-else
                 v-model="formData[field.key]"
+                class="pv-ctrl"
+                :type="field.type === 'date-range-picker' ? 'daterange' : undefined"
                 v-bind="field.props"
               />
             </el-form-item>
@@ -98,7 +100,7 @@ onMounted(() => {
     try {
       schema.value = JSON.parse(raw) as FormSchema
       schema.value.fields.forEach((f) => {
-        if (f.key) formData[f.key] = f.defaultValue ?? ''
+        if (f.key) formData[f.key] = f.defaultValue ?? (f.type === 'date-range-picker' ? [] : '')
       })
     } catch { /* */ }
   }
@@ -118,7 +120,8 @@ function resolveControl(type: string): string {
   const map: Record<string, string> = {
     input: 'el-input', textarea: 'el-input', 'input-number': 'el-input-number',
     select: 'el-select', radio: 'el-radio-group', checkbox: 'el-checkbox-group',
-    'date-picker': 'el-date-picker', switch: 'el-switch', rate: 'el-rate',
+    'date-picker': 'el-date-picker', 'date-range-picker': 'el-date-picker',
+    switch: 'el-switch', rate: 'el-rate',
     slider: 'el-slider',
   }
   return map[type] || 'el-input'

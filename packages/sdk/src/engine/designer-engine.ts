@@ -233,6 +233,13 @@ const fieldConfigs: Record<string, FieldTypeConfig> = {
   upload:         { defaultProps: { accept: '', maxSize: 10, maxCount: 1 },         defaultCol: 24, minCol: 8 },
   'rich-text':    { defaultProps: { height: 400, placeholder: '请输入内容', maxLength: 200, toolbarMode: 'full' }, defaultCol: 24, minCol: 12 },
   cascader:       { defaultProps: { options: [], placeholder: '请选择', templateMode: 'manual' }, defaultCol: 12, minCol: 6 },
+  'date-range-picker': {
+    defaultProps: {
+      format: 'YYYY-MM-DD', valueFormat: 'YYYY-MM-DD',
+      rangeSeparator: '至', startPlaceholder: '开始', endPlaceholder: '结束',
+    },
+    defaultCol: 12, minCol: 8,
+  },
   // 布局容器
   card:           { defaultProps: { header: '', shadow: 'always' },                 defaultCol: 24, minCol: 24 },
   collapse:       { defaultProps: { accordion: false },                             defaultCol: 24, minCol: 24 },

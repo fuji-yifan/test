@@ -9,7 +9,7 @@ import { z } from 'zod'
 const simpleField = z.object({
   key: z.string().describe('字段标识，英文下划线。改已有字段时原样填它的 key'),
   name: z.string().optional().describe('字段标签，中文显示名。新增字段必填；改已有字段不传即保持不变'),
-  type: z.string().optional().describe('控件类型: input/textarea/input-number/select/radio/checkbox/date-picker/switch/rate/file-upload/tip-text。新增字段必填；改已有字段不传即保持不变'),
+  type: z.string().optional().describe('控件类型: input/textarea/input-number/select/radio/checkbox/date-picker/date-range-picker/switch/rate/file-upload/rich-text/cascader/tip-text。新增字段必填；改已有字段不传即保持不变'),
   required: z.boolean().optional().describe('是否必填。不传 = 保持原样（把必填改成不必填要显式传 false）'),
   options: z.array(z.object({ label: z.string(), value: z.string() })).optional().describe('选项(仅select/radio/checkbox)。不传 = 保持原选项；传了 = 整体替换（要加一项就把原有项一并列出）'),
   text: z.string().optional().describe('tip-text控件的显示文本内容 / input的placeholder提示文字。不传 = 保持原样'),

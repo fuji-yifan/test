@@ -5,7 +5,7 @@ import { z } from 'zod'
 const ALLOWED_TYPES = [
   'input', 'textarea', 'input-number', 'select', 'radio', 'checkbox',
   'date-picker', 'switch', 'rate', 'slider', 'tip-text',
-  'upload', 'rich-text', 'cascader',
+  'upload', 'rich-text', 'cascader', 'date-range-picker',
 ]
 
 const ALLOWED_RULES = ['required', 'string', 'number', 'email', 'url', 'phone']

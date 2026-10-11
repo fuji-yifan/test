@@ -78,6 +78,15 @@
     class="fc-ctrl"
     @update:model-value="$emit('update:modelValue', $event)"
   />
+  <el-date-picker
+    v-else-if="field.type === 'date-range-picker'"
+    type="daterange"
+    :model-value="modelValue || null"
+    v-bind="rangePickerProps"
+    :size="size"
+    class="fc-ctrl"
+    @update:model-value="$emit('update:modelValue', $event)"
+  />
   <el-switch
     v-else-if="field.type === 'switch'"
     :model-value="modelValue"
@@ -275,6 +284,17 @@ const numProps = computed(() => {
 const selectProps = computed(() => {
   const { options: _, ...rest } = (props.field.props || {}) as Record<string, any>
   return rest
+})
+
+/** 日期范围：剥离 props 里的 type（由模板固定为 daterange），并补齐区间文案兜底 */
+const rangePickerProps = computed(() => {
+  const { type: _, ...rest } = (props.field.props || {}) as Record<string, any>
+  return {
+    rangeSeparator: '至',
+    startPlaceholder: '开始',
+    endPlaceholder: '结束',
+    ...rest,
+  }
 })
 
 // ---- 富文本 (WangEditor) ----
