@@ -43,7 +43,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, onMounted, computed } from 'vue'
+import { reactive, ref, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useWorkspaceStore } from '@/stores/workspace'
 import http from '@/api/client'
@@ -57,7 +57,7 @@ const wsId = computed(() => route.params.wsId as string)
 const stats = reactive({ formCount: 0, submissionCount: 0, pendingCount: 0 })
 const recentForms = ref<any[]>([])
 
-onMounted(async () => {
+async function load() {
   try {
     const overviewRes = await http.get(`/analytics/overview?workspaceId=${wsId.value}`) as any
     const overview = overviewRes.data || overviewRes
@@ -71,7 +71,11 @@ onMounted(async () => {
     const data = res.data || res
     recentForms.value = data?.list || []
   } catch { /* ignore */ }
-})
+}
+
+onMounted(load)
+// 切换工作空间时路由参数变化，但组件实例被复用，需要手动重新拉数据
+watch(wsId, load)
 
 function openDesigner(form: any) {
   router.push(`/workspace/${wsId.value}/forms/${form.id}/designer`)

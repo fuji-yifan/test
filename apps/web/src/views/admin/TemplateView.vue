@@ -8,7 +8,7 @@
           placeholder="搜索模板..."
           style="width:260px"
           clearable
-          @change="fetchList"
+          @input="onSearch"
         />
         <el-button type="primary" @click="openCreate">创建模板</el-button>
       </div>
@@ -251,7 +251,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch, computed } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '@/api/client'
@@ -317,6 +317,14 @@ async function fetchList() {
 
 function onCategoryChange() { page.value = 1; fetchList() }
 
+// 搜索做 300ms 防抖，与表单管理一致：输入/删除都等停顿后再发请求，不走回车
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+function onSearch() {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => { page.value = 1; fetchList() }, 300)
+}
+onBeforeUnmount(() => clearTimeout(searchTimer))
+
 function previewTemplate(tpl: any) {
   previewTpl.value = tpl
   previewVisible.value = true
@@ -375,11 +383,14 @@ async function editTemplateInDesigner() {
 async function useTemplate(tpl: any) {
   try {
     await ElMessageBox.confirm(`确定使用「${tpl.name}」模板？将在当前工作空间创建表单。`, '确认', { type: 'info' })
-    const res = await http.post(`/templates/${tpl.id}/use`, { workspaceId: wsId }) as any
+    const res = await http.post(`/templates/${tpl.id}/use`, { workspaceId: wsId.value }) as any
     const form = res?.data || res
     ElMessage.success('模板已安装，正在跳转...')
     router.push(`/workspace/${wsId.value}/forms/${form.id}/designer`)
-  } catch { /* cancel */ }
+  } catch (e: any) {
+    if (e === 'cancel' || e === 'close' || e?.__handled) return
+    ElMessage.error(e?.response?.data?.message || e?.message || '使用模板失败')
+  }
 }
 
 onMounted(() => { fetchList() })

@@ -93,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, nextTick, onBeforeUnmount, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import http from '@/api/client'
@@ -210,6 +210,14 @@ onMounted(async () => {
   if (trendChartRef.value) trendChart = echarts.init(trendChartRef.value)
   if (rankChartRef.value) rankChart = echarts.init(rankChartRef.value)
   if (pieChartRef.value) pieChart = echarts.init(pieChartRef.value)
+  fetchTrend()
+  fetchRanking()
+  fetchPie()
+})
+
+// 切换工作空间时路由参数变化，但组件实例被复用，需要手动重新拉数据（图表实例无需重建）
+watch(wsId, () => {
+  fetchOverview()
   fetchTrend()
   fetchRanking()
   fetchPie()

@@ -323,6 +323,13 @@ html.dark .el-dropdown-menu__item:not(.is-disabled):hover { background: #263348;
 /* 弹出框 */
 html.dark .el-popover { background: #1e293b; border-color: #334155; color: var(--app-text-regular); }
 
+/* 侧边栏收拢态工作空间切换弹层 */
+.sidebar-ws-popover {
+  --el-popover-padding: 8px;
+  border-radius: 10px;
+  box-shadow: var(--app-shadow-lg);
+}
+
 /* 卡片 */
 html.dark .el-card { background: var(--app-bg-card); border-color: var(--app-border-color); }
 html.dark .form-card,
@@ -389,6 +396,10 @@ html.dark .default-layout .sidebar .el-menu-item.is-active { background: #1a2744
 html.dark .default-layout .sidebar .el-sub-menu__title { color: #94a3b8; }
 html.dark .default-layout .sidebar .el-sub-menu__title:hover { background: #1e293b !important; color: #e2e8f0; }
 html.dark .default-layout .sidebar .el-sub-menu .el-menu { background: transparent !important; }
+
+/* 侧边栏收拢态工作空间切换按钮 */
+html.dark .ws-trigger:hover,
+html.dark .ws-trigger.is-open { background: #1e293b; color: #e2e8f0; }
 
 /* 顶栏 */
 html.dark .default-layout .topbar { background: #1e293b; border-bottom-color: #334155; }

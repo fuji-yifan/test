@@ -7,8 +7,9 @@
         <span v-else>F</span>
       </div>
       <!-- 工作空间下拉选择 -->
-      <div v-if="!app.sidebarCollapsed" class="sidebar-ws-select">
+      <div v-if="!app.sidebarCollapsed" key="ws-expanded" class="sidebar-ws-select">
         <el-select
+          ref="wsSelectRef"
           :model-value="sidebarWsValue"
           placeholder="选择工作空间"
           popper-class="sidebar-ws-popper"
@@ -23,8 +24,49 @@
           />
         </el-select>
       </div>
-      <div v-else class="sidebar-ws-collapsed">
-        <el-icon :size="20" @click="goHome"><House /></el-icon>
+      <div v-else key="ws-collapsed" class="sidebar-ws-collapsed">
+        <el-popover
+          v-model:visible="wsPopoverVisible"
+          placement="right-start"
+          :width="208"
+          :offset="10"
+          trigger="click"
+          popper-class="sidebar-ws-popover"
+        >
+          <template #reference>
+            <div
+              class="ws-trigger"
+              :class="{ 'is-open': wsPopoverVisible }"
+              :title="currentWsName"
+            >
+              <el-icon :size="20"><Grid /></el-icon>
+            </div>
+          </template>
+          <div class="ws-pop-list">
+            <div class="ws-pop-label">
+              工作空间
+            </div>
+            <div
+              v-for="ws in wsStore.list"
+              :key="ws.id"
+              class="ws-pop-item"
+              :class="{ active: ws.id === sidebarWsValue }"
+              @click="onCollapsedWsPick(ws.id)"
+            >
+              <span class="ws-pop-name">{{ ws.name }}</span>
+              <el-icon v-if="ws.id === sidebarWsValue" class="ws-pop-check"><Check /></el-icon>
+            </div>
+            <div class="ws-pop-divider" />
+            <div
+              class="ws-pop-item"
+              :class="{ active: sidebarWsValue === '__home__' }"
+              @click="onCollapsedWsPick('__home__')"
+            >
+              <span class="ws-pop-name">首页</span>
+              <el-icon v-if="sidebarWsValue === '__home__'" class="ws-pop-check"><Check /></el-icon>
+            </div>
+          </div>
+        </el-popover>
       </div>
 
       <el-menu
@@ -137,8 +179,7 @@
             class="ai-btn"
             @click="chatVisible = true"
           >
-            <el-icon class="ai-btn-icon"><ChatDotRound /></el-icon>
-            Agent - X
+            FlowX
           </el-button>
           <!-- 用户 -->
           <el-dropdown trigger="click">
@@ -182,7 +223,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
@@ -190,6 +231,8 @@ import { useWorkspaceStore } from '@/stores/workspace'
 import {
   Monitor,
   House,
+  Grid,
+  Check,
   DocumentCopy,
   ScaleToOriginal,
   Files,
@@ -202,12 +245,13 @@ import {
   ArrowDown,
   Sunny,
   Moon,
-  ChatDotRound,
 } from '@element-plus/icons-vue'
 import NotificationBell from '@/components/global/NotificationBell.vue'
 import ChatPanel from '@/components/ChatPanel.vue'
 
 const chatVisible = ref(false)
+const wsPopoverVisible = ref(false)
+const wsSelectRef = ref<{ blur: () => void } | null>(null)
 
 // 根据当前路由自动推断 Agent 场景
 const agentScenario = computed(() => {
@@ -267,8 +311,20 @@ function onSidebarWsChange(val: string) {
   switchWorkspace(val)
 }
 
-function goHome() {
-  router.push('/home')
+/** 收拢态弹层里当前工作空间的名字，用于 hover 提示 */
+const currentWsName = computed(() => {
+  const ws = wsStore.list.find((w) => w.id === sidebarWsValue.value)
+  return ws ? ws.name : '选择工作空间'
+})
+
+/** 收拢态弹层选择：首页或某个工作空间 */
+function onCollapsedWsPick(val: string) {
+  wsPopoverVisible.value = false
+  if (val === '__home__') {
+    router.push('/home')
+    return
+  }
+  switchWorkspace(val)
 }
 
 const breadcrumbs = computed(() => {
@@ -341,6 +397,13 @@ onMounted(async () => {
   if (wsStore.list.length === 0) {
     localStorage.removeItem('current_workspace_id')
   }
+})
+
+// 侧边栏展开/收起时，先关掉可能还开着的下拉与弹层：
+// 否则残留的浮层会跟着切换形态，位置错乱
+watch(() => app.sidebarCollapsed, () => {
+  wsSelectRef.value?.blur()
+  wsPopoverVisible.value = false
 })
 
 function switchWorkspace(id: string) {
@@ -432,10 +495,6 @@ function handleLogout() {
 .ai-btn:active {
   background: #c0dcf7;
 }
-.ai-btn-icon {
-  font-size: 20px;
-  margin-right: 4px;
-}
 .topbar-right {
   display: flex;
   align-items: center;
@@ -510,12 +569,74 @@ function handleLogout() {
 .sidebar-ws-collapsed {
   display: flex;
   justify-content: center;
-  padding: 12px 0;
-  color: #bfcbd9;
-  cursor: pointer;
+  padding: 6px 0;
 }
-.sidebar-ws-collapsed:hover {
-  color: #409eff;
+/* 与收拢态菜单项同尺寸(48×44 / 8px 圆角)，视觉上对齐成一列 */
+.ws-trigger {
+  width: 48px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--app-text-regular);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.ws-trigger:hover,
+.ws-trigger.is-open {
+  background: #f0f4ff;
+  color: var(--el-color-primary);
+}
+
+/* 收拢态空间弹层 */
+.ws-pop-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.ws-pop-label {
+  padding: 0 8px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--app-text-secondary);
+}
+.ws-pop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--app-text-primary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.ws-pop-item:hover {
+  background: rgba(128,128,128,0.08);
+}
+.ws-pop-item.active {
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+.ws-pop-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ws-pop-check {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+.ws-pop-divider {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--app-border-light);
 }
 
 .content {

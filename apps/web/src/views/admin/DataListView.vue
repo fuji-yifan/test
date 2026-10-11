@@ -1,6 +1,12 @@
 <template>
   <div>
     <div class="page-header">
+      <el-button
+        text
+        @click="$router.back()"
+      >
+        <el-icon><ArrowLeft /></el-icon> 返回
+      </el-button>
       <h2>提交数据</h2>
       <div class="header-actions">
         <el-button size="small" @click="exportCSV">导出 CSV</el-button>
@@ -82,8 +88,14 @@
           </el-button>
         </template>
       </el-table-column>
+      <!-- 空态：放进表格内，替换掉 el-table 自带的「暂无数据」 -->
+      <template #empty>
+        <el-empty
+          description="暂无提交数据"
+          :image-size="80"
+        />
+      </template>
     </el-table>
-    <el-empty v-if="!list.length" description="暂无提交数据" />
 
     <el-pagination
       v-if="total > pageSize"
@@ -100,6 +112,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowLeft } from '@element-plus/icons-vue'
 import http from '@/api/client'
 import type { Submission } from '@/types/models'
 
@@ -167,9 +180,9 @@ function formatDate(d: string) { return d ? new Date(d).toLocaleString('zh-CN') 
 </script>
 
 <style scoped>
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-shrink: 0; }
+.page-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-shrink: 0; }
 .page-header h2 { margin: 0; }
-.header-actions { display: flex; gap: 12px; }
+.header-actions { display: flex; gap: 12px; margin-left: auto; }
 .mono { font-family: monospace; font-size: 12px; }
 .pagination { margin-top: 16px; justify-content: center; flex-shrink: 0; }
 </style>

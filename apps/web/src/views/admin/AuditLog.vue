@@ -100,12 +100,15 @@
           {{ formatDate(row.createdAt) }}
         </template>
       </el-table-column>
+      <!-- 空态：放进表格内，替换掉 el-table 自带的「暂无数据」 -->
+      <template #empty>
+        <el-empty
+          v-if="!loading"
+          description="暂无审计日志"
+          :image-size="80"
+        />
+      </template>
     </el-table>
-
-    <el-empty
-      v-if="!loading && logs.length === 0"
-      description="暂无审计日志"
-    />
 
     <el-pagination
       v-if="total > pageSize"

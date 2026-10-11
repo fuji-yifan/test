@@ -12,14 +12,14 @@
         placeholder="搜索流程名称"
         clearable
         style="width: 240px"
-        @input="fetchList"
+        @input="onSearch"
       />
       <el-select
         v-model="statusFilter"
         placeholder="状态筛选"
         clearable
         style="width: 140px"
-        @change="fetchList"
+        @change="onFilterChange"
       >
         <el-option
           label="全部"
@@ -129,8 +129,15 @@
           </el-button>
         </template>
       </el-table-column>
+
+      <!-- 空态：图标 + 文案放进表格内，替换掉 el-table 自带的「暂无数据」 -->
+      <template #empty>
+        <el-empty
+          description="暂无流程"
+          :image-size="80"
+        />
+      </template>
     </el-table>
-    <el-empty v-if="!list.length" description="暂无流程" />
 
     <!-- 分页 -->
     <el-pagination
@@ -182,7 +189,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '@/api/client'
@@ -223,6 +230,15 @@ async function fetchList() {
 }
 
 function changePage(p: number) { page.value = p; fetchList() }
+
+// 搜索做 300ms 防抖：输入/删除都等停顿后再发请求，避免每敲一键刷一次；并重置到第 1 页
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+function onSearch() {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => { page.value = 1; fetchList() }, 300)
+}
+function onFilterChange() { page.value = 1; fetchList() }
+onBeforeUnmount(() => clearTimeout(searchTimer))
 
 async function doCreate() {
   if (!createForm.value.name.trim()) return ElMessage.warning('请输入流程名称')

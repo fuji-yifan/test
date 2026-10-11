@@ -88,12 +88,15 @@
           </el-button>
         </template>
       </el-table-column>
+      <!-- 空态：放进表格内，替换掉 el-table 自带的「暂无数据」 -->
+      <template #empty>
+        <el-empty
+          v-if="!loading"
+          description="暂无 Webhook"
+          :image-size="80"
+        />
+      </template>
     </el-table>
-
-    <el-empty
-      v-if="!loading && webhooks.length === 0"
-      description="暂无 Webhook"
-    />
 
     <!-- 创建/编辑对话框 -->
     <el-dialog

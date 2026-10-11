@@ -128,24 +128,16 @@ function formatDate(d: string) { return d ? new Date(d).toLocaleString('zh-CN') 
 </script>
 
 <style scoped>
-.detail-page {
-  min-height: 100vh;
-  padding: 24px 16px 80px;
-  background: var(--app-bg-page);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
+.detail-page { display: contents; }
 
 .page-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 20px;
-  width: 100%;
-  max-width: 800px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
 }
-.page-header h2 { margin: 0; font-size: 18px; }
+.page-header h2 { margin: 0; }
 
 .loading-area { max-width: 800px; width: 100%; min-height: 400px; }
 

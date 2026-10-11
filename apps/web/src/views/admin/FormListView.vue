@@ -8,6 +8,7 @@
           placeholder="搜索表单..."
           clearable
           class="search-input"
+          @input="onSearch"
         />
         <el-select
           v-model="statusFilter"
@@ -72,9 +73,9 @@
       />
     </el-tabs>
 
-    <!-- 骨架屏 -->
+    <!-- 骨架屏：只在「整个页面首次加载」时展示；之后任何刷新都不再换骨架，避免闪一下 -->
     <div
-      v-if="loading"
+      v-if="loading && !loadedOnce"
       class="form-grid"
     >
       <div
@@ -226,7 +227,7 @@
       </div>
     </div>
     <el-empty
-      v-if="!filteredList.length"
+      v-else
       description="暂无表单"
     />
 
@@ -343,7 +344,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -369,6 +370,8 @@ const { list, total, page, pageSize, loading, fetch: _fetch } = usePagedList<For
 )
 
 const search = ref('')
+/** 是否完成过至少一次加载 —— 用来把骨架屏限定在首次进入，避免空列表时反复闪骨架 */
+const loadedOnce = ref(false)
 const statusFilter = ref('')
 const activeCategory = ref('')
 const showCreate = ref(false)
@@ -407,7 +410,7 @@ function fetchList() {
   if (statusFilter.value) extra.status = statusFilter.value
   if (activeCategory.value) extra.category = activeCategory.value
   if (search.value) extra.keyword = search.value
-  return _fetch(extra)
+  return _fetch(extra).finally(() => { loadedOnce.value = true })
 }
 
 async function fetchBindings() {
@@ -422,6 +425,14 @@ watch([page, statusFilter], () => fetchList())
 watch(() => route.params.wsId, () => { page.value = 1; fetchList(); fetchBindings() })
 
 function onCategoryChange() { page.value = 1; fetchList() }
+// 搜索框原来没绑事件、watch 里也没有 search，导致输入不触发请求。
+// 这里做 300ms 防抖：输入/删除都等停顿后再发一次请求，避免每敲一键刷一次。
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+function onSearch() {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => { page.value = 1; fetchList() }, 300)
+}
+onBeforeUnmount(() => clearTimeout(searchTimer))
 
 // ==================== 表单操作 ====================
 function createForm() { showCreate.value = true }

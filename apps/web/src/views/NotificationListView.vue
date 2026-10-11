@@ -99,13 +99,16 @@
             </el-button>
           </template>
         </el-table-column>
+        <!-- 空态：放进表格内，替换掉 el-table 自带的「暂无数据」 -->
+        <template #empty>
+          <el-empty
+            v-if="!loading"
+            description="暂无通知"
+            :image-size="80"
+          />
+        </template>
       </el-table>
     </div>
-
-    <el-empty
-      v-if="!loading && list.length === 0"
-      description="暂无通知"
-    />
     <el-pagination
       v-if="total > pageSize"
       v-model:current-page="page"
