@@ -21,6 +21,7 @@ import { ToolGateway, type GatewayResult } from '../harness/tool-gateway'
 import { ToolConfirmationRequiredError } from './tool-confirmation.error'
 import { charsForTokens } from './conversation-state'
 import { entryOf, targetKeyOf, type FormWorksheet, type TargetResolution } from './worksheet'
+import { wrapUntrusted } from './untrusted'
 
 /**
  * 摘要化的单字段阈值（阶段 4 / 4.3）：某个值序列化后超过这个字符数，判为「大字段」，
@@ -87,7 +88,7 @@ export class LangChainToolBridge {
         const res = await this.run(name, (input ?? {}) as Record<string, unknown>, ctx, {
           requestId: resolveToolCallId(config),
         })
-        return this.formatResult(res)
+        return this.formatResult(res, name)
       },
       {
         name: meta.name,
@@ -141,9 +142,9 @@ export class LangChainToolBridge {
     return this.registry.getRisk(name) !== 'low'
   }
 
-  /** 把 GatewayResult 格式化成喂给 LLM 的 tool 消息内容 */
-  toToolMessageContent(res: GatewayResult): string {
-    return this.formatResult(res)
+  /** 把 GatewayResult 格式化成喂给 LLM 的 tool 消息内容（带工具名 → 决定是否走不可信封装） */
+  toToolMessageContent(res: GatewayResult, toolName?: string): string {
+    return this.formatResult(res, toolName)
   }
 
   /** 用户确认后重放工具（跳过确认门），返回与正常执行一致的 JSON 字符串 */
@@ -152,7 +153,7 @@ export class LangChainToolBridge {
     args: Record<string, unknown>,
     opts?: { requestId?: string; userId?: string; workspaceId?: string },
   ): Promise<string> {
-    return this.formatResult(await this.gateway.executeConfirmed(name, args, opts))
+    return this.formatResult(await this.gateway.executeConfirmed(name, args, opts), name)
   }
 
   // ==================== 内部方法 ====================
@@ -202,8 +203,8 @@ export class LangChainToolBridge {
     return out
   }
 
-  /** LLM 看到的工具结果是 ok/summary/data/error 的 JSON（超预算时摘要化/硬截） */
-  private formatResult(res: GatewayResult): string {
+  /** LLM 看到的工具结果是 ok/summary/data/error 的 JSON（超预算时摘要化/硬截；不可信工具再封装） */
+  private formatResult(res: GatewayResult, toolName?: string): string {
     const payload = {
       ok: res.ok,
       summary: res.summary ?? (res.ok ? 'OK' : 'failed'),
@@ -212,6 +213,13 @@ export class LangChainToolBridge {
     }
     const full = JSON.stringify(payload)
     const budget = this.resultCharBudget()
+    // 先按体积格式化，再对不可信工具做注入防护封装（包裹开销不进预算计算，避免把数据挤掉）
+    const formatted = this.fitBudget(full, payload, budget)
+    return toolName ? wrapUntrusted(toolName, formatted) : formatted
+  }
+
+  /** 按预算逐步降级：原样 → 摘要化 → 头尾硬截 */
+  private fitBudget(full: string, payload: Record<string, unknown>, budget: number): string {
     // 1) 在预算内：原样返回（绝大多数工具结果走这条）
     if (full.length <= budget) return full
     // 2) 超预算：摘要化 —— 丢掉大字段（如整份 schema），保住 id/name/desc/summary 等小字段
