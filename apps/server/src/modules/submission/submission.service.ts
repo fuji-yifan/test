@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common'
 import { PrismaClient } from '@prisma/client'
 import { WorkflowService } from '../workflow/workflow.service'
 
@@ -75,7 +75,27 @@ export class SubmissionService {
     return form?.workspaceId || ''
   }
 
-  async list(formId: string, query: { page?: number; pageSize?: number }) {
+  /**
+   * 断言当前用户属于该表单所在工作空间（阶段 6 / S1.3，fail-closed）。
+   * 与 `PermissionGuard` 互为 defense-in-depth：查不到表单 / 无归属 / 非成员一律拒绝，
+   * 绝不「静默放行」。服务层独立校验可防「某路由漏挂 guard」这类漏判。
+   */
+  private async assertWorkspaceMember(userId: string | undefined, formId: string): Promise<void> {
+    if (!userId) throw new ForbiddenException('未登录')
+    const form = await this.prisma.form.findUnique({
+      where: { id: formId },
+      select: { workspaceId: true },
+    })
+    if (!form?.workspaceId) throw new ForbiddenException('表单不存在或无归属工作空间')
+    const member = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId: form.workspaceId, userId } },
+      select: { role: true },
+    })
+    if (!member) throw new ForbiddenException('您无权访问该工作空间的数据')
+  }
+
+  async list(formId: string, query: { page?: number; pageSize?: number }, userId?: string) {
+    await this.assertWorkspaceMember(userId, formId)
     const page = Number(query.page) || 1
     const pageSize = Number(query.pageSize) || 20
 
@@ -107,7 +127,8 @@ export class SubmissionService {
     }
   }
 
-  async getById(formId: string, id: string) {
+  async getById(formId: string, id: string, userId?: string) {
+    await this.assertWorkspaceMember(userId, formId)
     const submission = await this.prisma.formSubmission.findFirst({
       where: { id, formId },
       include: {
@@ -118,7 +139,8 @@ export class SubmissionService {
     return submission
   }
 
-  async exportSubmissions(formId: string, format: 'csv' | 'excel') {
+  async exportSubmissions(formId: string, format: 'csv' | 'excel', userId?: string) {
+    await this.assertWorkspaceMember(userId, formId)
     // 获取表单以拿到字段 keys
     const form = await this.prisma.form.findUnique({
       where: { id: formId },
@@ -195,11 +217,17 @@ export class SubmissionService {
     return val
   }
 
-  async deleteSubmission(id: string) {
+  async deleteSubmission(id: string, userId?: string) {
+    const sub = await this.prisma.formSubmission.findUnique({ where: { id }, select: { formId: true } })
+    if (!sub) throw new NotFoundException('提交数据不存在')
+    await this.assertWorkspaceMember(userId, sub.formId)
     return this.prisma.formSubmission.delete({ where: { id } })
   }
 
-  async updateStatus(id: string, status: string) {
+  async updateStatus(id: string, status: string, userId?: string) {
+    const sub = await this.prisma.formSubmission.findUnique({ where: { id }, select: { formId: true } })
+    if (!sub) throw new NotFoundException('提交数据不存在')
+    await this.assertWorkspaceMember(userId, sub.formId)
     return this.prisma.formSubmission.update({
       where: { id },
       data: { status },

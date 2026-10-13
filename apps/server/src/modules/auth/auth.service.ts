@@ -26,7 +26,7 @@ export class AuthService {
 
     await this.ensureWorkspace(user.id, dto.nickname)
 
-    return this.generateToken(user.id, user.email)
+    return await this.generateToken(user.id, user.email)
   }
 
   async login(dto: LoginDto) {
@@ -44,7 +44,7 @@ export class AuthService {
     // 兼容旧用户：如果没有工作空间，自动补建
     await this.ensureWorkspace(user.id, user.nickname || user.email.split('@')[0])
 
-    return this.generateToken(user.id, user.email)
+    return await this.generateToken(user.id, user.email)
   }
 
   /** 确保用户至少有一个工作空间，没有则自动创建 */
@@ -118,8 +118,20 @@ export class AuthService {
     await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } })
   }
 
-  private generateToken(userId: string, email: string) {
-    const payload = { sub: userId, email }
+  private async generateToken(userId: string, email: string) {
+    // 身份贯通（阶段 6 / S1.1）：把 workspaceId 签进 JWT，作为**可信**的工作空间身份来源。
+    // 此前 JWT 只有 sub/email，工作空间只能靠前端 context/query 补 —— 那是可伪造的。
+    // 取用户最早的成员关系作为「当前工作空间」；多空间切换属后续（前端可显式传且服务端校验成员）。
+    const member = await this.prisma.workspaceMember.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'asc' },
+      select: { workspaceId: true },
+    })
+    const payload = {
+      sub: userId,
+      email,
+      ...(member?.workspaceId ? { workspaceId: member.workspaceId } : {}),
+    }
     return {
       accessToken: this.jwtService.sign(payload),
       user: { id: userId, email },

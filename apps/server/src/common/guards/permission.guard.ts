@@ -60,12 +60,19 @@ export class PermissionGuard implements CanActivate {
     )
     if (!required) return true
 
-    // 解析 workspaceId
-    let wsId = request.params.wsId || request.params.workspaceId
-      || request.query?.workspaceId || request.body?.workspaceId
-
-    if (!wsId) {
+    // 解析 workspaceId（阶段 6 / S1.3，堵「伪造 wsId」）
+    // - 资源作用域路由（带 formId/id/instanceId）：以**资源真实所属** workspace 为准，
+    //   忽略客户端 query/body 传入的 workspaceId —— 否则可拿别的空间 id 蒙混成员校验。
+    // - 其余路由：优先用 JWT 里**可信**的 workspaceId，其次才是路径参数/客户端值。
+    const resourceScopedId = request.params.formId || request.params.id || request.params.instanceId
+    let wsId: string | undefined
+    if (resourceScopedId) {
       wsId = await this.resolveWorkspaceId(request)
+    } else {
+      wsId = request.user?.workspaceId
+        || request.params.wsId || request.params.workspaceId
+        || request.query?.workspaceId || request.body?.workspaceId
+      if (!wsId) wsId = await this.resolveWorkspaceId(request)
     }
 
     if (!wsId) {

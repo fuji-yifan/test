@@ -69,8 +69,9 @@ export class SubmissionController {
   list(
     @Param('formId') formId: string,
     @Query() query: { page?: number; pageSize?: number },
+    @CurrentUser('userId') userId: string,
   ) {
-    return this.submissionService.list(formId, query)
+    return this.submissionService.list(formId, query, userId)
   }
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -97,7 +98,7 @@ export class SubmissionController {
         })
       }
     } catch { /* 审计记录失败不阻断导出 */ }
-    const result = await this.submissionService.exportSubmissions(formId, format || 'csv')
+    const result = await this.submissionService.exportSubmissions(formId, format || 'csv', userId)
     res.setHeader('Content-Type', result.contentType)
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(result.filename)}`)
     res.send(result.content)
@@ -107,8 +108,12 @@ export class SubmissionController {
   @RequiredPermission('submission:view')
   @ApiBearerAuth()
   @Get('forms/:formId/submissions/:id')
-  getById(@Param('formId') formId: string, @Param('id') id: string) {
-    return this.submissionService.getById(formId, id)
+  getById(
+    @Param('formId') formId: string,
+    @Param('id') id: string,
+    @CurrentUser('userId') userId: string,
+  ) {
+    return this.submissionService.getById(formId, id, userId)
   }
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -118,15 +123,19 @@ export class SubmissionController {
   updateStatus(
     @Param('id') id: string,
     @Body() dto: { status: string },
+    @CurrentUser('userId') userId: string,
   ) {
-    return this.submissionService.updateStatus(id, dto.status)
+    return this.submissionService.updateStatus(id, dto.status, userId)
   }
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequiredPermission('submission:delete')
   @ApiBearerAuth()
   @Delete('forms/:formId/submissions/:id')
-  deleteSubmission(@Param('id') id: string) {
-    return this.submissionService.deleteSubmission(id)
+  deleteSubmission(
+    @Param('id') id: string,
+    @CurrentUser('userId') userId: string,
+  ) {
+    return this.submissionService.deleteSubmission(id, userId)
   }
 }
