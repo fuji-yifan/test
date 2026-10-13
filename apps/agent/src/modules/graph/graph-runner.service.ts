@@ -197,6 +197,10 @@ export class GraphRunnerService {
       // 会话级状态从 **channel** 读（不是 sessionMetadataPatch）：供对外读取与前端状态栏（手册 D1/D4）
       conversationGoal: values?.conversationGoal ?? undefined,
       pendingClarification: values?.pendingClarification ?? null,
+      // 轮次台账（对话进展/已答）一并对外暴露，供前端与排查（手册 §2.12-D1）
+      turnLedger: values?.turnLedger ?? [],
+      // 领域事实（跨 Agent 交接用），供对外读取（手册 §2.12-D1）
+      sessionFacts: values?.sessionFacts ?? {},
       activeSubAgent: stopped ? null : (values?.route?.agent ?? null),
       phase: waiting
         ? 'waiting_user'

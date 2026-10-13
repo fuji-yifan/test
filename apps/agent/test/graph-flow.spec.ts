@@ -514,6 +514,81 @@ describe('LangGraph 编排', () => {
     const mem = lastMessages.find((m) => String((m as any).content).includes('<agent_status>'))
     expect(String((mem as any).content)).toContain('分析本月提交数据')
   })
+
+  // ==================== §2.12 会话上下文治理（端到端接线） ====================
+
+  // 从「本轮最后一次 think 收到的上下文」里取注入的记忆块文本（末尾那条 user 消息）
+  function memoryBlockOf(h: Harness): string {
+    const last = h.llm.seen[h.llm.seen.length - 1]
+    const mem = last.find((m) => String((m as any).content).includes('<agent_status>'))
+    return String((mem as any).content)
+  }
+
+  it('§2.12 Ledger：第二轮记忆块渲染上一轮的「会话进展」（已答复）', async () => {
+    const h = buildHarness([{ content: '本月提交已分析完成。' }, { content: '好的，已再次核对。' }])
+
+    await runTurn(h, '分析本月提交数据', 'data-analysis')
+    await runTurn(h, '分析本月提交数据', 'data-analysis')
+
+    // 第二轮 prepare 时，Ledger 里上一轮已定稿为 answered → 渲染进 <session_progress>
+    const block = memoryBlockOf(h)
+    expect(block).toContain('<session_progress>')
+    expect(block).toContain('- submission: 分析本月提交数据 → 已答复')
+    // 本轮（pending）也在台账里，但只以「进行中」出现，不误报已答复
+    expect(block).toContain('→ 进行中')
+  })
+
+  it('§2.12 Facts：跨 Agent 后仍看得到上一棒产出的领域事实', async () => {
+    const h = buildHarness([
+      { calls: [{ id: 'c1', name: 'flow_create', args: { name: '三级审批', nodes: [{ id: 'n1' }] } }] },
+      { content: '流程已创建。' },
+      { content: '好的，我来建表。' },
+    ])
+
+    // 第一轮：workflow 建流程 → flow_create 回填 sessionFacts.workflow
+    await runTurn(h, '创建一个三级审批流程', 'workflow-node')
+    expect(memoryBlockOf(h)).not.toContain('<session_facts>') // 首轮尚未有事实（本轮才产出）
+
+    // 第二轮：换回表单页 → form-designer 的记忆块里仍带 workflow 的事实（跨 Agent 交接）
+    await runTurn(h, '再帮我建一张客户表', 'form-builder')
+    const block = memoryBlockOf(h)
+    expect(block).toContain('<session_facts>')
+    expect(block).toContain('- workflow: nodes=1')
+  })
+
+  it('§2.12 D5：目标跳过寒暄，取首个实质消息（存全文）', async () => {
+    const h = buildHarness([{ content: '你好，有什么可以帮你？' }, { content: '本月提交已分析完成。' }])
+
+    // 首轮是纯寒暄 → 不占用目标
+    await runTurn(h, '你好', 'data-analysis')
+    expect(memoryBlockOf(h)).not.toContain('本对话目标')
+
+    // 次轮是实质请求 → 目标落在它身上
+    await runTurn(h, '分析本月提交数据', 'data-analysis')
+    expect(memoryBlockOf(h)).toContain('本对话目标: 分析本月提交数据')
+  })
+
+  it('§2.12 D3：短会话零摘要；长会话预算溢出才触发 L2 摘要', async () => {
+    // 每轮回复较长 + 中等预算：长会话必然溢出，且投影仍留有空间放摘要。
+    // （预算过小 —— 如 60 token —— 会让状态栏 + 领域事实 + 进展台账先吃光预算，摘要段被饿死；
+    //   那是 §2.12-D3 优先级（事实/台账 > 摘要）的预期结果，不是本用例要测的「触发」行为。）
+    const turnReply =
+      '本轮数据分析已完成。整体趋势保持平稳，各项指标处于正常区间，未发现明显异常，暂无需特别关注。'
+    const h = buildHarness([{ content: turnReply }], { config: { 'context.memoryBudgetTokens': 300 } })
+    // 路由/摘要共用 chat 通道；让摘要返回可断言的文本（非 JSON → 路由解析失败会稳妥回退确定性结论）
+    ;(h.llm as any).chat = { invoke: async () => ({ content: '早前对话摘要。' }) }
+
+    // 短会话：两轮远未溢出 → 不产生摘要
+    await runTurn(h, '第一轮分析数据', 'data-analysis')
+    await runTurn(h, '第二轮分析数据', 'data-analysis')
+    expect(memoryBlockOf(h)).not.toContain('<conversation_summary>')
+
+    // 长会话：继续跑，窗口溢出 → 最旧几轮压进 L2 摘要并注入记忆块
+    for (let i = 3; i <= 12; i++) await runTurn(h, `第${i}轮分析这批提交数据`, 'data-analysis')
+    const block = memoryBlockOf(h)
+    expect(block).toContain('<conversation_summary>')
+    expect(block).toContain('早前对话摘要。')
+  })
 })
 
 describe('路由与计划（纯函数）', () => {

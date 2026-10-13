@@ -211,7 +211,7 @@ export class RouterService {
 
   /**
    * 把若干轮旧对话压缩成一段摘要（便宜模型）。失败时沿用旧摘要，绝不让记忆层变脆。
-   * 仅在 `context.memorySummaryTrigger` 打开且窗口溢出时被调用。
+   * 仅在近期窗口**预算溢出**时被调用（手册 §2.12-D3；触发由固定轮次改为预算驱动）。
    */
   async summarizeTurns(
     turns: { role: string; content: string }[],

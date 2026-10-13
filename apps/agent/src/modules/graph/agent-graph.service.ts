@@ -22,8 +22,15 @@ import { PlanService } from './plan.service'
 import { AgentCatalogService } from './agent-catalog'
 import { AgentSubgraphFactory } from './subgraph.factory'
 import { CheckpointService } from './checkpoint.module'
-import { AgentState, type AgentKey, type AgentStateType, type RouteDecision } from './agent-state'
-import { buildStateBar, truncateGoal } from './conversation-state'
+import {
+  AgentState,
+  type AgentKey,
+  type AgentStateType,
+  type RouteDecision,
+  type TurnLedgerEntry,
+  type LedgerOutcome,
+} from './agent-state'
+import { buildStateBar, truncateGoal, normalizeAsk, deriveGoal, turnsToSummarize } from './conversation-state'
 import type { OrchestrationPlan } from '../hub/hub.types'
 
 function emit(event: Record<string, unknown>): void {
@@ -42,6 +49,9 @@ export function nodeNameOf(key: AgentKey): string {
 
 /** L3 近期窗口在 checkpoint 里保留的最大条数（超出后由 L2 摘要兜底或直接丢弃） */
 const HISTORY_MAX = 40
+
+/** 轮次台账在 checkpoint 里保留的最大条数（超出后丢弃最旧的） */
+const LEDGER_MAX = 20
 
 @Injectable()
 export class AgentGraphService {
@@ -147,26 +157,41 @@ export class AgentGraphService {
       steps: plan.steps.map((s) => ({ id: s.id, agent: s.agent, action: s.action })),
     })
 
-    // L3 近期窗口：追加本轮 user（assistant 由 aggregate 收尾追加）。窗口溢出时，若开启了
-    // 摘要（context.memorySummaryTrigger>0），把最旧的溢出部分压缩进 L2 后再丢弃。
+    // L3 近期窗口：追加本轮 user（assistant 由 aggregate 收尾追加）。窗口**预算溢出**时，把最旧的
+    // 溢出部分压缩进 L2 摘要后再丢弃（§2.12-D3：触发由「固定轮次」改「预算溢出」，短会话零摘要）。
+    // 预算与 projectMemory 同一口径（context.memoryBudgetTokens）；置 0 即关闭摘要。
     const prevTurns = state.historyTurns ?? []
     let summary = state.memorySummary ?? ''
-    const trigger = this.config?.get<number>('context.memorySummaryTrigger') ?? 0
+    const budgetTokens = this.config?.get<number>('context.memoryBudgetTokens') ?? 0
+    const overflow = turnsToSummarize(prevTurns, budgetTokens)
     let kept = prevTurns
-    if (trigger > 0 && prevTurns.length > trigger) {
-      kept = prevTurns.slice(prevTurns.length - trigger)
-      summary = await this.router.summarizeTurns(prevTurns.slice(0, prevTurns.length - trigger), summary)
+    if (overflow > 0) {
+      kept = prevTurns.slice(overflow)
+      summary = await this.router.summarizeTurns(prevTurns.slice(0, overflow), summary)
     }
     const historyTurns = [...kept, { role: 'user' as const, content: state.userMessage }].slice(-HISTORY_MAX)
+
+    // 轮次台账：先读旧数组、清掉可能残留的 pending（上一轮被抢占/中断没定稿的），再追加本轮
+    // （outcome 先记 pending，由 aggregate 收尾定稿）。跨轮从 checkpoint 恢复，只保留最近 LEDGER_MAX 条。
+    const turnLedger: TurnLedgerEntry[] = [
+      ...(state.turnLedger ?? []).filter((e) => e.outcome !== 'pending'),
+      {
+        normAsk: normalizeAsk(state.userMessage),
+        ask: truncateGoal(state.userMessage),
+        agent: decision.agent,
+        outcome: 'pending' as const,
+      },
+    ].slice(-LEDGER_MAX)
 
     return {
       route: decision,
       plan,
-      // 会话级状态：目标仅在为空时写首轮值；pendingClarification 先读后清（本轮若仍以提问
-      // 收尾会由 respond 重新写入）。
-      conversationGoal: state.conversationGoal || truncateGoal(state.userMessage),
+      // 会话级状态：目标仅在为空时写**首个实质消息**（跳过寒暄，存全文，渲染时截断 120，
+      // 手册 §2.12-D5）；pendingClarification 先读后清（本轮若仍以提问收尾会由 respond 重写）。
+      conversationGoal: state.conversationGoal || deriveGoal(state.userMessage),
       pendingClarification: null,
       historyTurns,
+      turnLedger,
       memorySummary: summary,
       // 每轮对话重建计划上下文
       stepIndex: 0,
@@ -311,15 +336,41 @@ export class AgentGraphService {
 
     // 收尾时把本轮 assistant 回复追加进 L3 近期窗口（中断/放弃的话术不具记忆价值，不入）。
     // 每轮只跑一次 aggregate，故这里也是 assistant 轮的唯一追加点。
+    const patch: Partial<AgentStateType> = { turnLedger: this.finalizeLedger(state) }
     if (!state.halted && !state.gaveUp && state.finalContent) {
-      const historyTurns = [
+      patch.historyTurns = [
         ...(state.historyTurns ?? []),
         { role: 'assistant' as const, content: state.finalContent },
       ].slice(-HISTORY_MAX)
-      return { historyTurns }
     }
 
     // 最终话术沿用最后一个子图的回复；中断时子图已经给过话术
-    return {}
+    return patch
+  }
+
+  /**
+   * 台账定稿（手册 §2.12-D2）：每轮只跑一次 aggregate，是 assistant 轮的唯一收尾点，
+   * 也就在这里把 routerNode 记下的 pending 条目按本轮实际结局定稿。
+   * 结局判定全部确定性（无 LLM）：中断 > 放弃 > 待用户 > 有产物 > 已答复。
+   */
+  private finalizeLedger(state: AgentStateType): TurnLedgerEntry[] {
+    const ledger = state.turnLedger ?? []
+    if (ledger.length === 0) return ledger
+    const last = ledger[ledger.length - 1]
+    if (last.outcome !== 'pending') return ledger
+
+    const outcome: LedgerOutcome = state.halted
+      ? 'halted'
+      : state.gaveUp
+        ? 'gaveup'
+        : state.pendingClarification
+          ? 'waiting'
+          : (state.turnDraftAgents?.length ?? 0) > 0
+            ? 'artifact'
+            : 'answered'
+    const produced =
+      outcome === 'artifact' ? Object.keys(state.artifacts ?? {}) : undefined
+
+    return [...ledger.slice(0, -1), { ...last, outcome, produced }]
   }
 }

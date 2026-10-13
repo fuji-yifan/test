@@ -6,7 +6,7 @@
  *
  * 本文件只做「已知字段 → 文本」的确定性拼装，不调 LLM、不做推断，便于单测。
  */
-import type { AgentKey } from './agent-state'
+import type { AgentKey, TurnLedgerEntry } from './agent-state'
 
 /** 会话级状态：跨轮保留，注入状态栏时只承载这些字段（表清单仍由 draftHint 贴 system） */
 export interface ConversationMeta {
@@ -20,14 +20,47 @@ export interface ConversationMeta {
   lastOutcome?: 'completed' | 'waiting_user' | 'halted' | 'giveup'
 }
 
-/** 目标截断上限（手册 D4） */
-const GOAL_MAX = 60
+/** 目标渲染截断上限（手册 §2.4-D4 修订：由 60 放宽到 120，长需求约束不丢） */
+const GOAL_MAX = 120
 
 /** 单行化 + 截断：多行空白折成一个空格，超长加 …（D4：存与显示共用同一口径） */
 export function truncateGoal(goal: string | undefined): string {
   const oneLine = (goal ?? '').replace(/\s+/g, ' ').trim()
   if (!oneLine) return ''
   return oneLine.length > GOAL_MAX ? `${oneLine.slice(0, GOAL_MAX)}…` : oneLine
+}
+
+/**
+ * 归一化一句请求，仅用于**确定性**的重复判定（手册 §2.12-D4）：
+ * 去空白、去常见中英标点、转小写。刻意保守 —— 拿不准就当「不同」，宁可漏判不可误判。
+ */
+export function normalizeAsk(ask: string | undefined): string {
+  return (ask ?? '')
+    .toLowerCase()
+    .replace(/[\s，。、！？；：,.!?;:"'“”‘’（）()【】\[\]《》<>～~\-—_]/g, '')
+}
+
+/**
+ * 纯寒暄/客套短句（手册 §2.12-D5）。只认**极短且整句就是客套**的消息，双重约束：
+ * 长度 ≤ 12 且整句锚定。这样「你好，帮我建一张表」「谢谢，再改一版」都不会被误判成寒暄。
+ */
+const SMALL_TALK =
+  /^(你好|您好|hi|hello|hey|嗨|哈喽|在吗|在不在|早上好|中午好|下午好|晚上好|谢谢|多谢|thanks|thank you|ok|okay|好的|嗯|哦|收到)[!！。.？?~～,，、；;\s]*$/i
+
+export function isSmallTalk(msg: string | undefined): boolean {
+  const text = (msg ?? '').trim()
+  if (!text) return false
+  return text.length <= 12 && SMALL_TALK.test(text)
+}
+
+/**
+ * 取会话目标（手册 §2.12-D5）：跳过寒暄，返回**首个实质消息全文**（空串表示本轮仍不算目标，
+ * 让后续轮继续找）。渲染时再由 buildStateBar 截断到 120 —— 存全文、显截断，两者分开。
+ */
+export function deriveGoal(msg: string | undefined): string {
+  const text = (msg ?? '').trim()
+  if (!text || isSmallTalk(text)) return ''
+  return text
 }
 
 /**
@@ -62,39 +95,215 @@ export interface SessionMemory {
   summary?: string
   /** L3 近期窗口（最近 N 轮原文） */
   recent?: { role: 'user' | 'assistant'; content: string }[]
+  /** 轮次台账：最后一条是本轮（outcome=pending），供「会话进展」与重复判定（§2.12.3） */
+  ledger?: TurnLedgerEntry[]
+  /** 领域事实：agentKey -> 标量键值（§2.12.3 Facts），供跨 Agent 交接 */
+  facts?: Record<string, Record<string, unknown>>
 }
 
-/** 单条近期上下文的最大字符数，避免一条长回复撑爆记忆块 */
-const RECENT_LINE_MAX = 300
+/** projectMemory 的入参（手册 §2.12-D3） */
+export interface ProjectMemoryOptions {
+  /** 记忆块 token 预算；缺省用 DEFAULT_MEMORY_BUDGET_TOKENS */
+  budgetTokens?: number
+  /** 是否注入「重复提问」提示（可选增强，默认关，见 buildRepeatNotice） */
+  repeatNotice?: boolean
+}
 
-function recentLine(turn: { role: 'user' | 'assistant'; content: string }): string {
-  const text = (turn.content ?? '').replace(/\s+/g, ' ').trim()
-  const clipped = text.length > RECENT_LINE_MAX ? `${text.slice(0, RECENT_LINE_MAX)}…` : text
-  return `- ${turn.role}: ${clipped}`
+/** 记忆块默认 token 预算（近似折算成字符预算，见 charsForTokens） */
+export const DEFAULT_MEMORY_BUDGET_TOKENS = 1600
+/**
+ * 近似换算系数：CJK 正文约 2 字符/token（保守取值）。
+ * 预算的意义是「有界 + 单一截断口径」，不追求精确 —— 留量靠下调预算，
+ * 超长再靠各段自身字符硬上限兜底（手册 §2.12-D3）。
+ */
+const CHARS_PER_TOKEN = 2
+function charsForTokens(tokens: number | undefined): number {
+  const t = Number.isFinite(tokens) ? (tokens as number) : DEFAULT_MEMORY_BUDGET_TOKENS
+  return Math.max(0, Math.floor(t * CHARS_PER_TOKEN))
 }
 
 /**
- * 把三层记忆拼成注入末尾 user 消息的记忆块：L1 状态栏 + L2 摘要 + L3 近期窗口。
- * 空段跳过；全空返回 `''`（调用方据此不注入）。
- *
- * 关键顺序（手册 §2.11「隔离优于压缩」）：能结构化的绝不靠摘要 —— 目标/表/待办走 L1，
- * L2 只兜底纯对话叙事，L3 保最近原文。
+ * 预算溢出判定（手册 §2.12-D3）：从最新往回累计近似 token，超出预算的最旧几轮应压进 L2 摘要。
+ * 返回要摘要的**最旧轮数**；0 = 窗口在预算内（短会话零摘要）。始终保留最新 1 轮不摘要。
+ * 纯函数、无 LLM —— 只回答「压几轮」，是否/如何摘要由调用方决定。
  */
-export function buildMemoryBlock(mem: SessionMemory): string {
-  const parts: string[] = []
+export function turnsToSummarize(
+  turns: { role: string; content: string }[] | undefined,
+  budgetTokens: number,
+): number {
+  const list = turns ?? []
+  if (budgetTokens <= 0 || list.length <= 1) return 0
+  const budgetChars = charsForTokens(budgetTokens)
+  let used = 0
+  let i = list.length - 1
+  for (; i >= 0; i--) {
+    used += (list[i].content ?? '').length
+    if (used > budgetChars) break
+  }
+  // i 是第一轮致溢出的；把它及更旧的 0..i 摘要，保留 i+1..末尾（至少留住最新 1 轮）
+  return Math.min(i + 1, list.length - 1)
+}
+
+/** 单条近期上下文的默认字符上限；有预算时按剩余预算自适应收缩（§2.12-D3） */
+const RECENT_LINE_MAX = 800
+/** 「会话进展」段最多渲染多少条台账（取最近 N 条） */
+const LEDGER_RENDER_MAX = 8
+/** 摘要段字符硬上限 */
+const SUMMARY_MAX = 800
+/** 每个 Agent 最多渲染多少条领域事实 */
+const FACTS_PER_AGENT_MAX = 5
+/** 单条事实值的字符上限 */
+const FACT_VALUE_MAX = 60
+
+/** 台账结局 → 中文短标签 */
+const OUTCOME_LABEL: Record<string, string> = {
+  pending: '进行中',
+  answered: '已答复',
+  artifact: '已产出',
+  waiting: '待你回答',
+  halted: '已中断',
+  gaveup: '未完成',
+}
+
+/** 领域事实段（Facts 渲染，手册 §2.12.3）：只渲染标量，让换 Agent 后仍看得到上一棒产出的对象 */
+function buildFactsBlock(
+  facts: Record<string, Record<string, unknown>> | undefined,
+  budgetChars: number,
+): string {
+  const agents = Object.keys(facts ?? {})
+  if (agents.length === 0 || budgetChars <= 0) return ''
+  const lines: string[] = []
+  let used = 0
+  for (const agent of agents) {
+    const f = facts?.[agent]
+    if (!f || typeof f !== 'object') continue
+    const pairs: string[] = []
+    for (const [k, v] of Object.entries(f)) {
+      if (v === undefined || v === null || v === '') continue
+      if (typeof v === 'object') continue // 只渲染标量，避免把大对象塞进记忆
+      const text = String(v)
+      pairs.push(`${k}=${text.length > FACT_VALUE_MAX ? `${text.slice(0, FACT_VALUE_MAX)}…` : text}`)
+      if (pairs.length >= FACTS_PER_AGENT_MAX) break
+    }
+    if (pairs.length === 0) continue
+    const line = `- ${agent}: ${pairs.join(' / ')}`
+    if (used + line.length > budgetChars && lines.length > 0) break
+    lines.push(line)
+    used += line.length + 1
+  }
+  if (lines.length === 0) return ''
+  return `<session_facts>\n${lines.join('\n')}\n</session_facts>`
+}
+
+/** 会话进展段（Ledger 渲染，手册 §2.12.3/D4）：让「这句刚才答过、这轮做到哪」可见 */
+function buildProgressBlock(ledger: TurnLedgerEntry[] | undefined, budgetChars: number): string {
+  const entries = (ledger ?? []).filter((e) => (e?.ask ?? '').trim())
+  if (entries.length === 0 || budgetChars <= 0) return ''
+  const recent = entries.slice(-LEDGER_RENDER_MAX)
+  const lines: string[] = []
+  let used = 0
+  // 从最近往前填，超预算就停；最后按时间正序输出
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const e = recent[i]
+    const label = OUTCOME_LABEL[e.outcome] ?? e.outcome
+    const produced = e.produced && e.produced.length > 0 ? `（${e.produced.join('、')}）` : ''
+    const line = `- ${e.agent}: ${truncateGoal(e.ask)} → ${label}${produced}`
+    if (used + line.length > budgetChars && lines.length > 0) break
+    lines.unshift(line)
+    used += line.length + 1
+  }
+  if (lines.length === 0) return ''
+  return `<session_progress>\n${lines.join('\n')}\n</session_progress>`
+}
+
+/** 近期窗口段：从最近往前填，单行按「剩余预算」与默认上限的较小值自适应（§2.12-D3） */
+function buildRecentBlock(
+  recent: { role: 'user' | 'assistant'; content: string }[] | undefined,
+  budgetChars: number,
+): string {
+  const turns = (recent ?? []).filter((t) => (t?.content ?? '').trim())
+  if (turns.length === 0) return ''
+  const header = '<recent_context>\n'
+  const footer = '\n</recent_context>'
+  const avail = budgetChars - header.length - footer.length
+  if (avail <= 0) return ''
+  const lines: string[] = []
+  let used = 0
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const text = (turns[i].content ?? '').replace(/\s+/g, ' ').trim()
+    const cap = Math.min(RECENT_LINE_MAX, Math.max(40, avail - used))
+    const clipped = text.length > cap ? `${text.slice(0, cap)}…` : text
+    const line = `- ${turns[i].role}: ${clipped}`
+    if (used + line.length > avail && lines.length > 0) break
+    lines.unshift(line)
+    used += line.length + 1
+  }
+  if (lines.length === 0) return ''
+  return `${header}${lines.join('\n')}${footer}`
+}
+
+/** 摘要段：按剩余预算与硬上限的较小值截断（§2.12-D3） */
+function buildSummaryBlock(summary: string | undefined, budgetChars: number): string {
+  const text = (summary ?? '').trim()
+  if (!text) return ''
+  const header = '<conversation_summary>\n'
+  const footer = '\n</conversation_summary>'
+  const avail = Math.min(SUMMARY_MAX, budgetChars - header.length - footer.length)
+  if (avail <= 0) return ''
+  const clipped = text.length > avail ? `${text.slice(0, avail)}…` : text
+  return `${header}${clipped}${footer}`
+}
+
+/**
+ * 可选增强（手册 §2.12-D4）：当前 ask 与**最近某轮已作答/已产出**的 ask 归一化后完全一致时，
+ * 注入一条代码提示，提醒模型「这句刚答过，如无新信息勿整段复读」。
+ * 只做精确匹配（保守），默认关；刻意**不做硬缓存短路** —— 用户可能就是要再说一遍或换角度。
+ */
+export function buildRepeatNotice(ledger: TurnLedgerEntry[] | undefined): string {
+  const entries = (ledger ?? []).filter((e) => (e?.normAsk ?? '').trim())
+  if (entries.length < 2) return ''
+  const current = entries[entries.length - 1]
+  const prior = entries
+    .slice(0, -1)
+    .some((e) => e.normAsk === current.normAsk && (e.outcome === 'answered' || e.outcome === 'artifact'))
+  if (!prior) return ''
+  return '<repeat_notice>\n这一句与上一轮已作答的请求相同。若无新增信息，请勿整段重复，直接说明「已就此作答」或给出本轮的差异/增量。\n</repeat_notice>'
+}
+
+/**
+ * 会话上下文的**唯一投影出口**（手册 §2.12.3 Projection）：把会话工作集渲染成注入
+ * 末尾 user 消息的记忆块。替换过去分散的 `buildMemoryBlock`，统一 L1/L2/L3/Ledger 的
+ * 截断口径与 token 预算。
+ *
+ * 预算优先级（§2.11「隔离优于压缩」）：L1 结构 > 领域事实 > 进展台账 > 摘要 > 近期原文。
+ * 渲染顺序：L1 状态栏 → 领域事实 → 重复提示 → 会话进展 → 摘要 → 近期窗口。
+ *
+ * 摘要在**预算分配**上排在近期原文之前：摘要承载的是已被裁掉、别处看不到的旧轮叙事，
+ * 若把它排到最后，近期窗口一填满预算就会把它饿死 —— 那样「摘要」白算（花了 LLM 却不注入）。
+ * 渲染顺序仍是时间序（旧摘要在前、新原文在后）。
+ * 空段跳过；全空返回 `''`（调用方据此不注入）。
+ */
+export function projectMemory(mem: SessionMemory, opts: ProjectMemoryOptions = {}): string {
+  const budget = charsForTokens(opts.budgetTokens)
 
   const bar = buildStateBar(mem.l1)
-  if (bar) parts.push(bar)
+  const notice = opts.repeatNotice ? buildRepeatNotice(mem.ledger) : ''
 
-  const summary = (mem.summary ?? '').trim()
-  if (summary) parts.push(`<conversation_summary>\n${summary}\n</conversation_summary>`)
+  let used = bar ? bar.length + 1 : 0
+  if (notice) used += notice.length + 1
 
-  const recent = (mem.recent ?? []).filter((t) => (t.content ?? '').trim())
-  if (recent.length > 0) {
-    parts.push(`<recent_context>\n${recent.map(recentLine).join('\n')}\n</recent_context>`)
-  }
+  const facts = buildFactsBlock(mem.facts, budget - used)
+  if (facts) used += facts.length + 1
 
-  return parts.join('\n')
+  const progress = buildProgressBlock(mem.ledger, budget - used)
+  if (progress) used += progress.length + 1
+
+  const summary = buildSummaryBlock(mem.summary, budget - used)
+  if (summary) used += summary.length + 1
+
+  const recent = buildRecentBlock(mem.recent, budget - used)
+
+  return [bar, facts, notice, progress, summary, recent].filter(Boolean).join('\n')
 }
 
 /**

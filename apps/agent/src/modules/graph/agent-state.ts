@@ -84,6 +84,28 @@ export interface ToolConfirmAnswer {
   args?: Record<string, unknown>
 }
 
+/** 轮次台账里单轮的结局（手册 §2.12.3 Ledger） */
+export type LedgerOutcome = 'pending' | 'answered' | 'artifact' | 'waiting' | 'halted' | 'gaveup'
+
+/**
+ * 会话轮次台账：每轮一条，让「会话进展 / 这句刚才答过没有」作为**一等状态**可见
+ * （手册 §2.12.3）。全部由代码写入，不调 LLM；只承载 router/aggregate 能确定的字段。
+ *
+ * 跨轮从 checkpoint 恢复（替换语义，routerNode 读旧 + 追加本轮、aggregate 收尾定稿）。
+ */
+export interface TurnLedgerEntry {
+  /** 归一化后的本轮请求（去空白/标点、小写），仅用于确定性重复判定 */
+  normAsk: string
+  /** 本轮请求原文（单行化 + 截断后，用于渲染） */
+  ask: string
+  /** 本轮路由到的领域 Agent */
+  agent: AgentKey
+  /** 结局：routerNode 先写 pending，aggregate 收尾按本轮实际结果定稿 */
+  outcome: LedgerOutcome
+  /** 产出过的产物 key（outcome=artifact 时填） */
+  produced?: string[]
+}
+
 export const AgentState = Annotation.Root({
   /** 图内 LLM 对话（替换语义） */
   messages: Annotation<BaseMessage[]>({
@@ -98,8 +120,8 @@ export const AgentState = Annotation.Root({
   userToken: Annotation<string>({ reducer: (_p, n) => n, default: () => '' }),
 
   /**
-   * 会话级目标：首轮用户消息原文（截断 ≤60 字），不调 LLM 摘要（手册 D4）。
-   * 跨轮从 checkpoint 恢复；仅在为空时由 routerNode 写入首轮值。
+   * 会话级目标：首个**实质**用户消息全文（跳过寒暄；渲染时由 buildStateBar 截断 120），
+   * 不调 LLM 摘要（手册 §2.12-D5）。跨轮从 checkpoint 恢复；仅在为空时由 routerNode 写入。
    */
   conversationGoal: Annotation<string>({ reducer: (_p, n) => n ?? '', default: () => '' }),
   /**
@@ -123,6 +145,17 @@ export const AgentState = Annotation.Root({
    * L2 滚动摘要：超出窗口的旧对话压缩成一段（替换语义，配置门控，默认关）。
    */
   memorySummary: Annotation<string>({ reducer: (_p, n) => n ?? '', default: () => '' }),
+  /**
+   * 会话轮次台账（替换语义）：每轮一条，记录 ask / agent / 结局 / 产物，
+   * 让「这句刚才答过没有、这轮进展如何」可被确定性看见（手册 §2.12.3 Ledger）。
+   *
+   * routerNode 每轮读旧数组、追加本轮（先记 pending）；aggregate 收尾把最后一条
+   * 定稿为 answered/artifact/waiting/halted/gaveup。跨轮从 checkpoint 恢复。
+   */
+  turnLedger: Annotation<TurnLedgerEntry[]>({
+    reducer: (_p, n) => n ?? [],
+    default: () => [],
+  }),
 
   // ---- 本轮输入 ----
   userMessage: Annotation<string>({ reducer: (_p, n) => n, default: () => '' }),
@@ -178,6 +211,17 @@ export const AgentState = Annotation.Root({
   formWorksheet: Annotation<FormWorksheet>({
     reducer: (_p, n) => n ?? { forms: [], focusKey: null },
     default: () => ({ forms: [], focusKey: null }),
+  }),
+  /**
+   * 领域事实（Facts，手册 §2.12.3）：`agentKey -> { 键: 标量 }`，跨轮保留（merge 语义）。
+   *
+   * 与 formWorksheet 同源思路，但面向**跨 Agent 交接**：worksheet 只服务 form-designer 的
+   * 表清单，而 Facts 由 projectMemory 渲染进共享记忆块，让换 Agent 后仍看得到「上一棒产出了
+   * 什么对象」（模板 ID / 流程名 / 已分析条数等），不必回头重问。只承载标量，避免大对象撑爆记忆。
+   */
+  sessionFacts: Annotation<Record<string, Record<string, unknown>>>({
+    reducer: (prev, next) => ({ ...(prev ?? {}), ...(next ?? {}) }),
+    default: () => ({}),
   }),
   /** 需要回写 session.metadata 的补丁（保持与 legacy 前端/接口兼容） */
   sessionMetadataPatch: Annotation<Record<string, unknown>>({

@@ -38,8 +38,12 @@ export const contextConfig = registerAs('context', () => ({
   maxOutputTokens: parseInt(process.env.MAX_OUTPUT_TOKENS || '2048', 10),
   maxRetries: parseInt(process.env.MAX_RETRIES || '2', 10),
   maxDegrades: parseInt(process.env.MAX_DEGRADE || '1', 10),
-  // L2 滚动摘要触发阈值（保留的近期轮数）；0 = 关闭（默认），回退到 L1 + L3
-  memorySummaryTrigger: parseInt(process.env.MEMORY_SUMMARY_TRIGGER || '0', 10),
+  // 会话记忆块 token 预算（projectMemory 的单一截断口径，手册 §2.12-D3）。
+  // L2 摘要不再有独立开关：由本预算的「溢出」驱动（短会话零摘要）。置 0 = 关闭预算化投影
+  // （记忆块仅剩 L1 状态栏）与摘要。
+  memoryBudgetTokens: parseInt(process.env.MEMORY_BUDGET_TOKENS || '1600', 10),
+  // 重复提问提示（可选增强，手册 §2.12-D4）；默认关
+  memoryRepeatNotice: (process.env.MEMORY_REPEAT_NOTICE || 'false') === 'true',
 }))
 
 /** LangGraph checkpoint 持久化（与 server 共库，表结构由 Prisma migration 管理） */

@@ -28,7 +28,7 @@ import { SkillsLoader } from '../harness/skills.loader'
 import { ToolRegistry } from '../harness/tool.registry'
 import type { AgentStateType, PendingCall } from './agent-state'
 import { AgentState } from './agent-state'
-import { buildMemoryBlock, detectClarification } from './conversation-state'
+import { projectMemory, detectClarification } from './conversation-state'
 import { resolveFormTarget, seedFromDraft, toFormArtifact, type TargetResolution } from './worksheet'
 
 /** 图里用到的 LLM 能力（结构类型，便于测试注入假模型） */
@@ -205,20 +205,29 @@ export class AgentSubgraphFactory {
       : null
     const systemContent = hint ? `${system}\n\n${hint}` : system
 
-    // 会话记忆块：作为**末尾 user 消息**注入（手册 D2/§2.11），承载三层记忆
-    // （L1 状态栏 + L2 摘要 + L3 近期窗口），所有 sub-agent 看到同一份 —— 换 Agent 不重问已知信息。
-    // 只承载会话级字段，与 system 里的表清单（draftHint）不重叠；全空时不注入（老线程行为不变）。
-    const memory = buildMemoryBlock({
-      l1: {
-        activeSubAgent: spec.key,
-        conversationGoal: state.conversationGoal,
-        pendingClarification: state.pendingClarification,
-        lastOutcome: state.pendingClarification ? 'waiting_user' : undefined,
+    // 会话记忆块：作为**末尾 user 消息**注入（手册 D2/§2.11/§2.12），由 projectMemory 单出口
+    // 渲染 L1 状态栏 + 进展台账 + L2 摘要 + L3 近期窗口，所有 sub-agent 看到同一份 ——
+    // 换 Agent 不重问已知信息。只承载会话级字段，与 system 里的表清单（draftHint）不重叠；
+    // 全空时不注入（老线程行为不变）。
+    const memory = projectMemory(
+      {
+        l1: {
+          activeSubAgent: spec.key,
+          conversationGoal: state.conversationGoal,
+          pendingClarification: state.pendingClarification,
+          lastOutcome: state.pendingClarification ? 'waiting_user' : undefined,
+        },
+        summary: state.memorySummary,
+        // historyTurns 末尾那条是本轮 user（routerNode 刚追加），注入时排除，避免与 userMessage 重复
+        recent: recentTurns(state),
+        ledger: state.turnLedger,
+        facts: state.sessionFacts,
       },
-      summary: state.memorySummary,
-      // historyTurns 末尾那条是本轮 user（routerNode 刚追加），注入时排除，避免与 userMessage 重复
-      recent: recentTurns(state),
-    })
+      {
+        budgetTokens: this.config?.get<number>('context.memoryBudgetTokens'),
+        repeatNotice: this.config?.get<boolean>('context.memoryRepeatNotice') ?? false,
+      },
+    )
     const messages: BaseMessage[] = [new SystemMessage(systemContent), new HumanMessage(state.userMessage)]
     if (memory) messages.push(new HumanMessage(memory))
 
@@ -624,6 +633,13 @@ export class AgentSubgraphFactory {
       if (extracted?.worksheet) {
         patch.formWorksheet = extracted.worksheet
       }
+      if (extracted?.facts) {
+        // 领域事实：与 agent 已有的 facts 做**内层合并**（顶层 reducer 只合一层），
+        // 这样同一 Agent 多轮产出的事实能累加（先 templateCount、后 templateId…）。
+        patch.sessionFacts = {
+          [spec.key]: { ...(state.sessionFacts?.[spec.key] ?? {}), ...extracted.facts },
+        }
+      }
     }
 
     return patch
@@ -672,12 +688,16 @@ export class AgentSubgraphFactory {
   }
 }
 
-/** 注入用的近期窗口：去掉末尾本轮 user（routerNode 刚追加），并只取最近 MEMORY_WINDOW 条 */
-const MEMORY_WINDOW = 6
+/**
+ * 注入用的近期窗口候选：去掉末尾本轮 user（routerNode 刚追加）。
+ * 只做条数**上限**兜底（防止极端长会话把整段历史塞进投影），真正的截断口径交给
+ * projectMemory 的 token 预算（手册 §2.12-D3：由固定窗口 MEMORY_WINDOW=6 改为预算驱动）。
+ */
+const RECENT_CANDIDATE_MAX = 20
 function recentTurns(state: AgentStateType): { role: 'user' | 'assistant'; content: string }[] {
   const turns = state.historyTurns ?? []
   const withoutCurrent = turns.length > 0 && turns[turns.length - 1].role === 'user' ? turns.slice(0, -1) : turns
-  return withoutCurrent.slice(-MEMORY_WINDOW)
+  return withoutCurrent.slice(-RECENT_CANDIDATE_MAX)
 }
 
 /** 从图状态构造工具调用上下文（对齐 legacy base.agent 的注入字段） */

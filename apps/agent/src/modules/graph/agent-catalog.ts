@@ -83,6 +83,11 @@ export interface AgentSpec {
     metadata?: Record<string, unknown>
     /** 更新后的会话工作台（仅 form-designer 用）；由 act 写进 formWorksheet channel */
     worksheet?: FormWorksheet
+    /**
+     * 领域事实（手册 §2.12.3 Facts）：跨 Agent 交接用的**标量**键值，由 act 合并进
+     * sessionFacts[agent]，再经 projectMemory 渲染进共享记忆块。只放标量（id/名称/计数）。
+     */
+    facts?: Record<string, unknown>
   } | null
   /**
    * 把「当前会话的产物」渲染成一段提示词（返回 null 表示不带），prepare 会贴到
@@ -109,6 +114,17 @@ function pick(obj: unknown, keys: string[]): Record<string, unknown> | null {
   const out: Record<string, unknown> = {}
   for (const k of keys) if (src[k] !== undefined) out[k] = src[k]
   return Object.keys(out).length > 0 ? out : null
+}
+
+/** 收敛出「领域事实」：只留有值的标量，丢掉 undefined/空串/嵌套对象（避免大对象进记忆块） */
+function compactFacts(src: Record<string, unknown>): Record<string, unknown> | undefined {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(src)) {
+    if (v === undefined || v === null || v === '') continue
+    if (typeof v === 'object') continue
+    out[k] = v
+  }
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 @Injectable()
@@ -309,10 +325,18 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             return {
               draftUpdate: { type: 'WorkflowArtifact', data },
               metadata: { draftWorkflow: data },
+              facts: compactFacts({
+                workflowName: data.name,
+                nodes: Array.isArray(data.nodes) ? (data.nodes as unknown[]).length : undefined,
+              }),
             }
           }
           if (toolName === 'flow_save') {
-            return { metadata: { savedWorkflowId: (result as any)?.id ?? (result as any)?.workflowId } }
+            const id = (result as any)?.id ?? (result as any)?.workflowId
+            return {
+              metadata: { savedWorkflowId: id },
+              facts: compactFacts({ savedWorkflowId: id }),
+            }
           }
           return null
         },
@@ -348,6 +372,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             return {
               draftUpdate: { type: 'TemplateListArtifact', data: { templates } },
               metadata: { draftTemplate: { templates } },
+              facts: compactFacts({ templateCount: templates.length }),
             }
           }
           if (toolName === 'template_instantiate') {
@@ -356,6 +381,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             return {
               draftUpdate: { type: 'TemplateArtifact', data },
               metadata: { draftTemplate: data },
+              facts: compactFacts({ templateId: data.templateId, templateName: data.name }),
             }
           }
           return null
@@ -373,12 +399,19 @@ export class AgentCatalogService implements OnApplicationBootstrap {
         systemPrompt: (ctx) => submissionPrompt({ skillMetas: ctx.skillMetas, skillFull: ctx.skillFull }),
         checkpoints: [],
         extractArtifact: ({ toolName, result }) => {
+          if (toolName === 'data_query') {
+            const total = (result as any)?.total
+            return typeof total === 'number' ? { facts: compactFacts({ analyzedCount: total }) } : null
+          }
           if (toolName === 'data_analyze') {
             const data = pick(result, ['summary', 'insights', 'trends', 'anomalies', 'chartSuggestions'])
             if (!data) return null
             return {
               draftUpdate: { type: 'AnalysisArtifact', data },
               metadata: { lastAnalysis: data },
+              facts: compactFacts({
+                insightCount: Array.isArray(data.insights) ? (data.insights as unknown[]).length : undefined,
+              }),
             }
           }
           return null

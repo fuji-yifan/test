@@ -22,7 +22,10 @@ export interface Harness {
  * 这样同一套 harness 既服务 graph-flow.spec，也服务 eval.spec，且不把库绑定写死。
  */
 export function createBuildHarness(getSaver: () => unknown) {
-  return function buildHarness(script: Script, overrides?: { catalogSpec?: any }): Harness {
+  return function buildHarness(
+    script: Script,
+    overrides?: { catalogSpec?: any; config?: Record<string, unknown> },
+  ): Harness {
     const registry = new FakeRegistry() as any
     const gateway = new FakeGateway()
     const bridge = new LangChainToolBridge(registry, gateway as any)
@@ -32,10 +35,13 @@ export function createBuildHarness(getSaver: () => unknown) {
       catalog.list = () => [overrides.catalogSpec]
     }
     const llm = new ScriptedLlm(script)
-    // 假配置：错误恢复的阈值与 .env.example 的默认值一致
+    // 假配置：错误恢复的阈值与 .env.example 的默认值一致；可用 overrides.config 覆盖/补充
     const config = {
       get: (key: string) =>
-        ({ 'context.maxRetries': 2, 'context.maxDegrades': 1 } as Record<string, number>)[key],
+        ({ 'context.maxRetries': 2, 'context.maxDegrades': 1, ...(overrides?.config ?? {}) } as Record<
+          string,
+          unknown
+        >)[key],
     } as any
     const subgraphs = new AgentSubgraphFactory(bridge, llm as any, registry, skills, config)
     const router = new RouterService(catalog, llm as any)
