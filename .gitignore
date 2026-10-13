@@ -44,6 +44,9 @@ coverage/
 # Lint results
 lint_result.txt
 
+# Local scratch build logs
+*-out.txt
+
 # Misc
 *.tsbuildinfo
 .cache/
