@@ -64,6 +64,11 @@ export interface AgentSpec {
   toolNames: string[]
   /** 需要注入 token/workspaceId 的工具 */
   serverTools: string[]
+  /**
+   * 写工具白名单（阶段 6 / S7.2 幻觉守卫用）：这些工具一旦**声称完成**却无成功结果，
+   * 就判为幻觉并纠正。空数组 = 该 Agent 无写能力（如 submission 只读），守卫不介入。
+   */
+  produceTools: string[]
   maxIterations: number
   /** 构造 system prompt（复用 legacy 的 prompt 模块，保持人设一致） */
   systemPrompt: (ctx: {
@@ -220,6 +225,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
           'form_rollback',
         ],
         serverTools: ['form_preview', 'form_save', 'form_rollback'],
+        produceTools: ['form_save', 'form_rollback'],
         maxIterations: 8,
         // 会话里有哪些表（key/标题/字段全列出），模型据此分辨「改哪张、建哪张」
         draftHint: ({ worksheet }) => toWorksheetBlock(worksheet),
@@ -321,6 +327,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
         scenario: 'workflow-node',
         toolNames: ['flow_create', 'flow_validate', 'flow_bind_form', 'flow_preview', 'flow_save'],
         serverTools: ['flow_bind_form', 'flow_save'],
+        produceTools: ['flow_save', 'flow_bind_form'],
         maxIterations: 8,
         systemPrompt: (ctx) =>
           workflowPrompt({
@@ -377,6 +384,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
         scenario: 'template-creator',
         toolNames: ['template_search', 'template_get_detail', 'template_validate', 'template_instantiate'],
         serverTools: ['template_search', 'template_get_detail', 'template_instantiate'],
+        produceTools: ['template_instantiate'],
         maxIterations: 8,
         systemPrompt: (ctx) =>
           templatePrompt({ skillMetas: ctx.skillMetas, skillFull: ctx.skillFull }),
@@ -425,6 +433,8 @@ export class AgentCatalogService implements OnApplicationBootstrap {
         // 因此也就没有写前的业务检查点（写路径已随审批辅助一起下线）。
         toolNames: ['data_list_forms', 'data_query', 'data_analyze'],
         serverTools: ['data_list_forms', 'data_query', 'data_analyze'],
+        // 只读分析：无写工具 → 幻觉守卫不介入
+        produceTools: [],
         maxIterations: 8,
         systemPrompt: (ctx) => submissionPrompt({ skillMetas: ctx.skillMetas, skillFull: ctx.skillFull }),
         checkpoints: [],

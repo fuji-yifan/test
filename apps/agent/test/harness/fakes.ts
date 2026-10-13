@@ -63,8 +63,11 @@ export class FakeGateway {
   failTools = new Set<string>()
   /** 失败时回给网关的 error 分类（默认按执行错处理） */
   failError = 'execution_error'
+  /** 延迟钩子（毫秒）：用来验超时熔断（S7.1）。返回 Promise，测试自行用 withTimeout 包裹。 */
+  delayMs = 0
   async execute(name: string, args: Record<string, unknown>) {
     this.calls.push({ name, args, confirmed: false })
+    if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs))
     if (this.failTools.has(name)) {
       return { ok: false, summary: `${name} failed`, error: this.failError }
     }
@@ -72,6 +75,7 @@ export class FakeGateway {
   }
   async executeConfirmed(name: string, args: Record<string, unknown>) {
     this.calls.push({ name, args, confirmed: true })
+    if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs))
     return this.result(name, args)
   }
   private result(name: string, args: Record<string, unknown> = {}) {

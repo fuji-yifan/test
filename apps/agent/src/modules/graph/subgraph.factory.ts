@@ -39,6 +39,8 @@ import {
   type WorksheetEntry,
 } from './worksheet'
 import { diffFields, isDiffEmpty, type FormFieldDiff } from './form-diff'
+import { guardHallucination, hallucinationCorrection } from './hallucination-guard'
+import { degradeReply } from './degrade'
 
 /** 图里用到的 LLM 能力（结构类型，便于测试注入假模型） */
 export interface GraphLlm {
@@ -266,6 +268,7 @@ export class AgentSubgraphFactory {
       messages,
       pendingCalls: [],
       lastTool: null,
+      turnToolOk: [],
       approved: false,
       toolConfirm: null,
       needThink: false,
@@ -284,9 +287,16 @@ export class AgentSubgraphFactory {
     if (iterations > spec.maxIterations) {
       // 和工具反复失败那条出口共用 gaveUp：都是「系统放弃」，都该停掉整条计划，
       // 而不是被父图当成正常完成、带着缺失的产物继续跑后面的步骤。
+      // 分级降级（S7.4）：有草稿走规则层（保留草稿），无草稿走静态话术。
+      const reply = degradeReply({
+        hasDraft: this.hasDraft(state, spec),
+        reason: `达到最大迭代轮次 ${spec.maxIterations}`,
+        modelUnavailable: false,
+      })
+      emit({ type: 'degrade', from: 'model', to: reply.to, reason: reply.reason })
       return {
         iterations,
-        finalContent: `已经尝试了 ${spec.maxIterations} 轮仍未完成，请把需求说得更具体一些，或告诉我下一步怎么做。`,
+        finalContent: reply.content,
         pendingCalls: [],
         needThink: false,
         gaveUp: true,
@@ -303,15 +313,21 @@ export class AgentSubgraphFactory {
       // 被抢占 / 客户端断开：交回上层静默收尾，绝不能当成「模型出错」重试
       if (err?.name === 'AbortError') throw err
       if (err instanceof CircuitBreakerOpenError || err?.name === 'CircuitBreakerOpenError') {
-        // 上游明确不可用，再试也是白试：如实收尾，让用户知道是模型侧的问题
-        const message = 'DeepSeek API 暂时不可用，请稍后重试。'
-        emit({ type: 'error', code: 'CIRCUIT_BREAKER', message })
+        // 上游明确不可用，再试也是白试：如实收尾，让用户知道是模型侧的问题。
+        // 分级降级（S7.4）：有草稿走规则层（保留草稿），无草稿走静态话术。
+        const reply = degradeReply({
+          hasDraft: this.hasDraft(state, spec),
+          reason: 'LLM 熔断（CircuitBreakerOpen）',
+          modelUnavailable: true,
+        })
+        emit({ type: 'error', code: 'CIRCUIT_BREAKER', message: reply.content })
+        emit({ type: 'degrade', from: 'model', to: reply.to, reason: reply.reason })
         return {
           iterations,
           pendingCalls: [],
           needThink: false,
           halted: true,
-          finalContent: message,
+          finalContent: reply.content,
         }
       }
       // 其余错误（超时、限流、网络抖动）：消耗一轮重试机会，跟 legacy 一样继续循环，
@@ -369,6 +385,16 @@ export class AgentSubgraphFactory {
       inputTokens: u?.input_tokens ?? 0,
       outputTokens: u?.output_tokens ?? 0,
     }
+  }
+
+  /**
+   * 本轮是否已有草稿（S7.4 分级降级的判据）。
+   * form-designer 以工作台是否有表为准，其余 Agent 看本轮是否有 drafts 产物。
+   */
+  private hasDraft(state: AgentStateType, spec: AgentSpec): boolean {
+    if (spec.key === 'form-designer') return (state.formWorksheet?.forms?.length ?? 0) > 0
+    const data = state.drafts?.[spec.key]?.data
+    return !!data && Object.keys(data).length > 0
   }
 
   // ==================== gate（唯一的 HITL 入口，无副作用） ====================
@@ -654,7 +680,7 @@ export class AgentSubgraphFactory {
 
     let content: string
     if (ok) {
-      content = this.bridge.toToolMessageContent({ ok, summary, result })
+      content = this.bridge.toToolMessageContent({ ok, summary, result }, call.name)
     } else if (degradedNow) {
       // 同一工具已经错了 maxRetries 次：不再原样回灌失败，改成让模型换条路
       if (errorCode === 'validation_error') {
@@ -707,6 +733,8 @@ export class AgentSubgraphFactory {
       messages: [...state.messages, toolMessage],
       pendingCalls: state.pendingCalls.slice(1),
       lastTool: { callId: call.id, name: call.name, ok, summary },
+      // 幻觉守卫判据：本轮成功执行过的工具（S7.2）
+      turnToolOk: ok ? [...(state.turnToolOk ?? []), call.name] : (state.turnToolOk ?? []),
       needThink: true,
       approved: false,
       toolConfirm: null,
@@ -751,22 +779,42 @@ export class AgentSubgraphFactory {
   // ==================== respond / halt ====================
 
   private respond(state: AgentStateType, spec: AgentSpec): Partial<AgentStateType> {
-    emit({ type: 'message', role: 'assistant', content: state.finalContent })
+    // 幻觉守卫（S7.2）：正常收尾（非中断/非放弃）时，校验「声称的产物必有工具结果」。
+    // 命中则给收尾文本追加纠正说明，并广播一条告警事件。
+    let content = state.finalContent
+    let corrected = false
+    if (!state.halted && !state.gaveUp) {
+      const check = guardHallucination(content, spec.produceTools ?? [], state.turnToolOk ?? [])
+      if (check.suspicious) {
+        corrected = true
+        content = content + hallucinationCorrection(check.note)
+        emit({
+          type: 'error',
+          code: 'HALLUCINATION_GUARD',
+          message: `检测到未经工具确认的完成声明（${check.claim}），已标注为未落库`,
+        })
+      }
+    }
+
+    emit({ type: 'message', role: 'assistant', content })
 
     // 只有计划**最后一步**（或单步）的收尾才写会话级状态：多步计划里 respond 每步都跑，
     // 共享 channel 是替换语义、后写覆盖先写，中间步若以问句结尾会污染 pendingClarification。
     const lastStep = (state.stepIndex ?? 0) >= ((state.plan?.steps?.length ?? 1) - 1)
-    if (!lastStep) return {}
+    if (!lastStep) return corrected ? { finalContent: content } : {}
 
     // gaveUp 也会走到 respond（gate 收尾），故必须把 halted || gaveUp 一起传进去，
     // 否则「认输话术」会被误判成「提问」（手册 D3 要点 2）。
     const clarification = detectClarification({
       agent: spec.key,
-      finalContent: state.finalContent,
+      finalContent: content,
       producedArtifact: (state.turnDraftAgents ?? []).includes(spec.key),
       haltedOrGaveUp: state.halted || state.gaveUp,
     })
-    return clarification ? { pendingClarification: clarification } : {}
+    return {
+      ...(corrected ? { finalContent: content } : {}),
+      ...(clarification ? { pendingClarification: clarification } : {}),
+    }
   }
 
   private halt(state: AgentStateType, spec: AgentSpec): Partial<AgentStateType> {

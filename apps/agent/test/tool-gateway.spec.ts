@@ -32,6 +32,8 @@ class StubRegistry {
     summary: 'ok',
     data: { v: 1 },
   }
+  /** 延迟钩子（毫秒）：验超时熔断 */
+  delayMs = 0
   get(name: string) {
     return { name, riskLevel: RISK[name] ?? 'low' }
   }
@@ -40,6 +42,7 @@ class StubRegistry {
   }
   async call(name: string) {
     this.calls.push(name)
+    if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs))
     return this.result
   }
 }
@@ -63,14 +66,18 @@ class FakeRedis {
   }
 }
 
-function makeGateway(redis = new FakeRedis()) {
+function makeGateway(redis = new FakeRedis(), toolTimeoutMs = 30000) {
   const registry = new StubRegistry()
   const config = {
     get: (key: string) =>
-      ({ 'cache.ttlSeconds': 60, 'cache.enabled': true } as Record<string, unknown>)[key],
+      ({
+        'cache.ttlSeconds': 60,
+        'cache.enabled': true,
+        'context.toolTimeoutMs': toolTimeoutMs,
+      } as Record<string, unknown>)[key],
   } as unknown as ConfigService
   const cache = new ToolResultCache(redis as any, config)
-  const gateway = new ToolGateway(registry as any, {} as any, cache)
+  const gateway = new ToolGateway(registry as any, {} as any, cache, config)
   return { gateway, registry, cache, redis }
 }
 
@@ -132,5 +139,15 @@ describe('ToolGateway × ToolResultCache', () => {
     await gateway.executeConfirmed('data_export', { token: 't' }, { workspaceId: 'ws1' })
 
     expect(await cache.get('data_query', 'ws1', { q: 'x' })).toBeNull()
+  })
+
+  it('工具超时（S7.1）：返回可恢复失败 error=timeout，不抛错', async () => {
+    const { gateway, registry } = makeGateway(undefined, 10)
+    registry.delayMs = 50
+
+    const res = await gateway.execute('data_analyze', {}, { workspaceId: 'ws1' })
+
+    expect(res.ok).toBe(false)
+    expect(res.error).toBe('timeout')
   })
 })

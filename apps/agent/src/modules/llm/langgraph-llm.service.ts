@@ -4,6 +4,7 @@ import { ChatDeepSeek } from '@langchain/deepseek'
 import type { AIMessage } from '@langchain/core/messages'
 import type { StructuredToolInterface } from '@langchain/core/tools'
 import { CircuitBreakerOpenError } from './llm.types'
+import { TimeoutError } from '../harness/timeout'
 
 /** 绑定工具后的模型；`invoke` 外面包了一层熔断 */
 export interface BoundGraphModel {
@@ -54,16 +55,52 @@ export class LangGraphLlmService {
     return {
       invoke: async (messages, options) => {
         this.checkBreaker()
+        const timeoutMs = this.llmTimeoutMs()
+        // 无超时预算：原路径（保持单测与未配置时的行为不变）
+        if (timeoutMs <= 0) {
+          try {
+            const res = await bound.invoke(messages as never, options as never)
+            this.failures = 0
+            return res as AIMessage
+          } catch (err) {
+            this.recordFailure()
+            throw err
+          }
+        }
+
+        // S7.1：超时后 abort 掉上游请求释放连接，并抛 TimeoutError（区别于 AbortError，
+        // 后者仍按「被抢占」原样冒泡）。底层随后的 AbortError 用 catch 吞掉，避免 unhandled。
+        const controller = new AbortController()
+        const call = bound.invoke(messages as never, {
+          ...(options as Record<string, unknown> | undefined),
+          signal: controller.signal,
+        } as never)
+        call.catch(() => {})
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            controller.abort()
+            reject(new TimeoutError('LLM 调用', timeoutMs))
+          }, timeoutMs)
+        })
         try {
-          const res = await bound.invoke(messages as never, options as never)
+          const res = (await Promise.race([call, timeout])) as AIMessage
           this.failures = 0
-          return res as AIMessage
+          return res
         } catch (err) {
           this.recordFailure()
           throw err
+        } finally {
+          if (timer) clearTimeout(timer)
         }
       },
     }
+  }
+
+  /** LLM 调用超时上限（≤0 表示不设） */
+  private llmTimeoutMs(): number {
+    const v = this.config.get<number>('context.llmTimeoutMs')
+    return typeof v === 'number' ? v : 60000
   }
 
   /** 熔断打开期间直接抛错，不再打上游；到点后半开放行一次 */

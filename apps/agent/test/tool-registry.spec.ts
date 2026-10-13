@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { z } from 'zod'
 import { ToolRegistry } from '../src/modules/harness/tool.registry'
 
 // fixupArgs 是 ToolRegistry 的私有方法，这里直接取来做单元测试（不依赖 Nest DI）。
@@ -24,5 +25,59 @@ describe('ToolRegistry.fixupArgs — form_assemble_schema 的 placeholder→text
   it('非字符串 placeholder 不动（避免把对象/数字当文案）', () => {
     const out = fix({ fields: [{ key: 'a', name: 'A', type: 'input', placeholder: { x: 1 } }] })
     expect(out.fields[0].text).toBeUndefined()
+  })
+})
+
+// S7.3 输出校验：声明了 outputSchema 的工具，结果不合法 → fail-closed 判失败，不喂给模型。
+describe('ToolRegistry.call — 工具输出 schema 校验（fail-closed）', () => {
+  const registry = new ToolRegistry({} as any)
+  const register = (tool: Record<string, unknown>) =>
+    (registry as any).tools.set((tool as any).name, tool)
+
+  it('输出不符合约定 → 返回 output_validation_error', async () => {
+    register({
+      name: 'demo_bad',
+      description: 'demo',
+      riskLevel: 'low',
+      parameters: {},
+      zodSchema: z.object({}).passthrough(),
+      outputSchema: z.object({ summary: z.string() }).passthrough(),
+      instance: { execute: async () => ({ wrong: 1 }) },
+    })
+
+    const res = await registry.call('demo_bad', {})
+    expect(res.ok).toBe(false)
+    expect(res.error).toBe('output_validation_error')
+    expect(res.summary).toContain('输出校验失败')
+  })
+
+  it('输出符合约定 → 正常返回', async () => {
+    register({
+      name: 'demo_ok',
+      description: 'demo',
+      riskLevel: 'low',
+      parameters: {},
+      zodSchema: z.object({}).passthrough(),
+      outputSchema: z.object({ summary: z.string() }).passthrough(),
+      instance: { execute: async () => ({ summary: 'ok', data: 1 }) },
+    })
+
+    const res = await registry.call('demo_ok', {})
+    expect(res.ok).toBe(true)
+    expect(res.summary).toBe('ok')
+  })
+
+  it('未声明 outputSchema 的工具不校验（保持现行为）', async () => {
+    register({
+      name: 'demo_plain',
+      description: 'demo',
+      riskLevel: 'low',
+      parameters: {},
+      zodSchema: z.object({}).passthrough(),
+      instance: { execute: async () => ({ anything: true }) },
+    })
+
+    const res = await registry.call('demo_plain', {})
+    expect(res.ok).toBe(true)
   })
 })

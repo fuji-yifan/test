@@ -236,6 +236,11 @@ export const AgentState = Annotation.Root({
     default: () => [],
   }),
   lastTool: Annotation<LastToolResult | null>({ reducer: (_p, n) => n, default: () => null }),
+  /**
+   * 本轮**成功执行**过的工具名（阶段 6 / S7.2 幻觉守卫的判据）。
+   * 替换语义：prepare 每轮重置为空，act 成功时追加；respond 据此校验「声称的产物必有工具结果」。
+   */
+  turnToolOk: Annotation<string[]>({ reducer: (_p, n) => n ?? [], default: () => [] }),
   /** 本轮 tool_call 已获得用户放行（业务检查点或风险确认） */
   approved: Annotation<boolean>({ reducer: (_p, n) => n, default: () => false }),
   /** 该 tool_call 的风险确认已被答复，resume 后由 act 取用 */

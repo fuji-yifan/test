@@ -83,6 +83,8 @@ export interface RegisteredTool {
   riskLevel: 'low' | 'medium' | 'high' | 'critical'
   parameters: Record<string, unknown>
   zodSchema: ZodType
+  /** 结果校验 schema（可选，阶段 6 / S7.3） */
+  outputSchema?: ZodType
   instance: any
 }
 
@@ -108,6 +110,7 @@ export class ToolRegistry implements OnModuleInit {
         riskLevel: meta.riskLevel,
         parameters: zodToSchema(meta.inputSchema),
         zodSchema: meta.inputSchema,
+        outputSchema: meta.outputSchema,
         instance,
       })
       this.logger.log(`Registered tool: ${meta.name} (risk: ${meta.riskLevel})`)
@@ -167,6 +170,17 @@ export class ToolRegistry implements OnModuleInit {
 
     try {
       const result = await tool.instance.execute(parsed)
+      // 结果校验（阶段 6 / S7.3，fail-closed）：声明了 outputSchema 的工具，结果不合法
+      // 就当作失败，绝不把非法结构喂给模型（可能触发幻觉或下游崩溃）。
+      if (tool.outputSchema) {
+        const check = (tool.outputSchema as any).safeParse(result)
+        if (!check.success) {
+          const issues = check.error?.issues
+            ? check.error.issues.map((i: any) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ')
+            : '结构不符合约定'
+          return { ok: false, summary: `工具 ${name} 输出校验失败：${issues}`, error: 'output_validation_error' }
+        }
+      }
       return { ok: true, summary: result.summary || 'OK', data: result }
     } catch (err: any) {
       return { ok: false, summary: `Tool ${name} failed: ${err.message}`, error: 'execution_error' }

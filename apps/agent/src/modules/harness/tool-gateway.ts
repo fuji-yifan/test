@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { ToolRegistry } from './tool.registry'
 import { SessionService } from '../session/session.service'
 import { ToolResultCache } from '../cache/tool-cache.service'
+import { withTimeout, isTimeoutError } from './timeout'
 
 export interface GatewayResult {
   ok: boolean
@@ -38,7 +40,14 @@ export class ToolGateway {
     private registry: ToolRegistry,
     private sessionService: SessionService,
     private cache: ToolResultCache,
+    private config: ConfigService,
   ) {}
+
+  /** 工具执行超时上限（≤0 表示不设） */
+  private toolTimeoutMs(): number {
+    const v = this.config?.get<number>('context.toolTimeoutMs')
+    return typeof v === 'number' ? v : 30000
+  }
 
   /**
    * 工具网关执行流水线：
@@ -113,7 +122,22 @@ export class ToolGateway {
       return { ok: true, summary: cached.summary, result: cached.result }
     }
 
-    const result = await this.registry.call(toolName, args)
+    let result: Awaited<ReturnType<ToolRegistry['call']>>
+    try {
+      result = await withTimeout(
+        this.registry.call(toolName, args),
+        this.toolTimeoutMs(),
+        `工具 ${toolName}`,
+      )
+    } catch (err) {
+      // 超时按可恢复失败收口（进重试 / 降级级联），不把整轮挂死
+      if (isTimeoutError(err)) {
+        this.logger.warn(`工具执行超时：${toolName}（${this.toolTimeoutMs()}ms）`)
+        result = { ok: false, summary: `工具 ${toolName} 执行超时`, error: 'timeout' }
+      } else {
+        throw err
+      }
+    }
 
     // 幂等标记：成功的写操作
     if (result.ok && opts?.requestId && risk !== 'low') {
@@ -160,7 +184,21 @@ export class ToolGateway {
   ): Promise<GatewayResult> {
     const risk = this.registry.getRisk(toolName)
 
-    const result = await this.registry.call(toolName, args)
+    let result: Awaited<ReturnType<ToolRegistry['call']>>
+    try {
+      result = await withTimeout(
+        this.registry.call(toolName, args),
+        this.toolTimeoutMs(),
+        `工具 ${toolName}`,
+      )
+    } catch (err) {
+      if (isTimeoutError(err)) {
+        this.logger.warn(`工具执行超时：${toolName}（${this.toolTimeoutMs()}ms）`)
+        result = { ok: false, summary: `工具 ${toolName} 执行超时`, error: 'timeout' }
+      } else {
+        throw err
+      }
+    }
 
     if (result.ok && opts?.requestId) {
       this.completedRequestIds.add(opts.requestId)

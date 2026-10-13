@@ -920,7 +920,8 @@ describe('路由与计划（纯函数）', () => {
     expect(result.gaveUp).toBe(true)
     // 与用户中断区分开：轮次用尽不是 halted
     expect(result.halted).toBe(false)
-    expect(result.finalContent).toContain('已经尝试了 2 轮')
+    // S7.4：放弃出口改走分级降级（无草稿 → 静态话术），不再是原先带轮次的文案
+    expect(result.finalContent).toContain('已经尝试了多轮仍未完成')
   })
 
   it('多步计划第一步就放弃：后续步骤不再执行，产物不登记', async () => {
@@ -953,5 +954,32 @@ describe('路由与计划（纯函数）', () => {
     expect(agg?.gaveUp).toBe(true)
     expect((agg?.steps as any[]).map((s) => s.done)).toEqual([false, false, false])
     expect(agg?.artifactKeys).toEqual([])
+  })
+})
+
+describe('阶段 6：幻觉守卫（S7.2）', () => {
+  it('模型声称「已保存」但本轮无 form_save 结果 → 追加纠正说明并广播 HALLUCINATION_GUARD', async () => {
+    // 桩模型一次工具都不调，直接收尾声称保存成功
+    const h = buildHarness([{ content: '表单已保存到当前空间了。' }])
+
+    const r = await runTurn(h, '创建客户登记表并保存')
+
+    expect(r.interrupted).toBeUndefined()
+    // 原始声明保留，但补上「尚未实际」的纠正
+    expect(r.finalContent).toContain('已保存')
+    expect(r.finalContent).toContain('尚未实际')
+    // 广播一条告警事件，前端据此提示
+    const err = h.events.find((e) => e.type === 'error' && (e as any).code === 'HALLUCINATION_GUARD')
+    expect(err).toBeTruthy()
+  })
+
+  it('无完成态声明的收尾（只是提问）→ 不误判，无告警', async () => {
+    const h = buildHarness([{ content: '表单结构已经好了，需要我保存到当前空间吗？' }])
+
+    const r = await runTurn(h, '创建客户登记表')
+
+    expect(r.finalContent).toContain('需要我保存')
+    expect(r.finalContent).not.toContain('尚未实际')
+    expect(h.events.some((e) => e.type === 'error' && (e as any).code === 'HALLUCINATION_GUARD')).toBe(false)
   })
 })
