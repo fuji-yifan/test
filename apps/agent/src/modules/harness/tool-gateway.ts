@@ -5,6 +5,18 @@ import { SessionService } from '../session/session.service'
 import { ToolResultCache } from '../cache/tool-cache.service'
 import { withTimeout, isTimeoutError } from './timeout'
 
+/**
+ * 写工具集合（阶段 6 / S3.3）：幂等门应作用于**所有有副作用的工具**，而不能只按
+ * `risk !== 'low'` —— 写工具一旦被评成 low（历史遗留）就完全不幂等。
+ */
+export const WRITE_TOOLS = new Set([
+  'form_save',
+  'form_rollback',
+  'flow_save',
+  'flow_bind_form',
+  'template_instantiate',
+])
+
 export interface GatewayResult {
   ok: boolean
   result?: unknown
@@ -43,6 +55,16 @@ export class ToolGateway {
     private config: ConfigService,
   ) {}
 
+  /** 工具风险等级（供上层——如直调端点的绕过防护——查询） */
+  getRisk(name: string): 'low' | 'medium' | 'high' | 'critical' {
+    return this.registry.getRisk(name)
+  }
+
+  /** 是否有副作用（写）工具：显式集合 ∪ 风险 ≥ medium */
+  private isWrite(name: string): boolean {
+    return WRITE_TOOLS.has(name) || this.registry.getRisk(name) !== 'low'
+  }
+
   /** 工具执行超时上限（≤0 表示不设） */
   private toolTimeoutMs(): number {
     const v = this.config?.get<number>('context.toolTimeoutMs')
@@ -65,8 +87,7 @@ export class ToolGateway {
 
     // 幂等性检查：相同 request_id 不重复执行写操作
     if (opts?.requestId) {
-      const risk = this.registry.getRisk(toolName)
-      if (risk !== 'low' && this.completedRequestIds.has(opts.requestId)) {
+      if (this.isWrite(toolName) && this.completedRequestIds.has(opts.requestId)) {
         this.logger.log(`Idempotency: skipping duplicate request ${opts.requestId} for ${toolName}`)
         return {
           ok: true,
@@ -140,7 +161,7 @@ export class ToolGateway {
     }
 
     // 幂等标记：成功的写操作
-    if (result.ok && opts?.requestId && risk !== 'low') {
+    if (result.ok && opts?.requestId && this.isWrite(toolName)) {
       this.completedRequestIds.add(opts.requestId)
     }
 

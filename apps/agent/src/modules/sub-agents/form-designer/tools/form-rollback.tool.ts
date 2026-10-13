@@ -24,7 +24,8 @@ import { ContextService } from '../../../context/context.service'
     formId: z.string().optional().describe('已保存表单的 id（编排层会按 target 自动注入，一般不用手填）'),
     version: z.number().optional().describe('要回滚到的版本号。不填 = 上一个版本'),
   }),
-  riskLevel: 'low',
+  // 写库操作（追加新版本）：风险 ≥ medium（阶段 6 / S3.3）；rollback-approval 检查点 coversRisk。
+  riskLevel: 'medium',
 })
 export class FormRollbackTool {
   constructor(private contextService: ContextService) {}

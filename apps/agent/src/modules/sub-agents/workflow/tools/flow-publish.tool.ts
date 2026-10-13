@@ -13,7 +13,8 @@ import { ContextService } from '../../../context/context.service'
     nodes: z.array(z.record(z.unknown())),
     edges: z.array(z.record(z.unknown())),
   }),
-  riskLevel: 'low',
+  // 写库操作：风险 ≥ medium（阶段 6 / S3.3）；save-approval 检查点 coversRisk。
+  riskLevel: 'medium',
 })
 export class FlowPublishTool {
   constructor(private contextService: ContextService) {}

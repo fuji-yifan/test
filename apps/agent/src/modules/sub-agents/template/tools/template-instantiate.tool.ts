@@ -11,7 +11,8 @@ import { z } from 'zod'
     templateSchema: z.record(z.unknown()).optional().describe('模板的 FormSchema（从 template_get_detail 获取）'),
     overrides: z.record(z.unknown()).optional().describe('要覆盖的字段值 {fieldName: newValue}'),
   }),
-  riskLevel: 'low',
+  // 生成新表单（写操作）：风险 ≥ medium（阶段 6 / S3.3）；instantiate-approval 检查点 coversRisk。
+  riskLevel: 'medium',
 })
 export class TemplateInstantiateTool {
   async execute(args: {

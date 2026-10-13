@@ -259,6 +259,18 @@ export class HubController {
     const authHeader = req.headers.authorization || ''
     const rawToken = authHeader.replace('Bearer ', '')
 
+    // 直调端点为「设计器」这类内部调用准备，**只能调只读工具**：写工具必须走对话流程，
+    // 才能经过 HITL 检查点与确认门。否则未确认的删除/保存可从这条路径绕过（阶段 6 / S3.3）。
+    const risk = this.toolGateway.getRisk(name)
+    if (risk !== 'low') {
+      return {
+        code: 40300,
+        data: null,
+        message: `工具 ${name} 风险等级为 ${risk}，需经对话流程执行（含确认门）`,
+        requestId: this.nanoid(),
+      }
+    }
+
     const args = {
       ...body.args,
       token: rawToken,

@@ -27,7 +27,9 @@ function nanoid(): string {
       .describe('要保存/更新的表单：填【会话中的表单】里那张表的 key 或标题；这是一张新表则填它的标题。'),
     formId: z.string().optional().describe('如果要更新已有表单，传入上次 form_save 返回的 formId'),
   }),
-  riskLevel: 'low',
+  // 写库操作：风险 ≥ medium（阶段 6 / S3.3）。form-designer 有 beforeTool:'form_save' 的
+  // space-approval 检查点（coversRisk）顶着风险门，不会二次询问，但幂等与直调拦截得以生效。
+  riskLevel: 'medium',
 })
 export class FormSaveTool {
   constructor(private contextService: ContextService) {}
