@@ -36,6 +36,14 @@ const activeAgentLabel = computed(() => {
   return AGENT_LABEL[status.value.agent] || status.value.agent
 })
 
+// 会话累计用量（阶段 4）：徽标数值 + tooltip 明细；无用量时不显示
+const usageTotal = computed(() => (usage.value?.inputTokens || 0) + (usage.value?.outputTokens || 0))
+const usageLabel = computed(() => {
+  const u = usage.value
+  if (!u || (!u.inputTokens && !u.outputTokens)) return null
+  return `会话用量 ≈ ${usageTotal.value.toLocaleString()} tokens（输入 ${u.inputTokens.toLocaleString()} / 输出 ${u.outputTokens.toLocaleString()}）`
+})
+
 const inputText = ref('')
 const messagesEl = ref<HTMLDivElement>()
 const showHistory = ref(false)
@@ -118,7 +126,7 @@ function restoreThread(t: ChatThread) {
 }
 loadThreads()
 
-const { messages, isLoading, status, error, sendMessage, cancel, clearMessages, activeMessageId } = useAgentChat({
+const { messages, isLoading, status, error, usage, sendMessage, cancel, clearMessages, activeMessageId } = useAgentChat({
   // 传取值函数而不是值：这两个 prop 随路由变化，而这个组合式只在 setup 时调一次，
   // 传值会把首次渲染（往往还没进工作空间路由）的空值定格住，之后一直发空 workspaceId。
   scenario: () => props.scenario,
@@ -219,6 +227,12 @@ watch(() => isLoading.value, (l, was) => {
                 <span class="agent-badge-idle">空闲中</span>
               </template>
             </div>
+            <el-tooltip v-if="usageLabel" :content="usageLabel" placement="bottom">
+              <div class="usage-badge" :class="{ 'usage-badge--alert': usage?.alert }">
+                <span class="usage-badge-dot" />
+                <span>{{ usageTotal.toLocaleString() }}</span>
+              </div>
+            </el-tooltip>
           </div>
           <div class="float-header-right">
             <el-button text circle size="small" title="新建对话" @click="newChat"><el-icon :size="16"><ChatSquare /></el-icon></el-button>
@@ -572,6 +586,16 @@ watch(() => isLoading.value, (l, was) => {
   width: 6px; height: 6px; border-radius: 50%; background: #c0c4cc; flex-shrink: 0;
 }
 .agent-badge-idle { opacity: 0.7; }
+/* 会话累计用量徽标（阶段 4）：默认灰；超软上限时转橙告警 */
+.usage-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 12px; min-height: 22px;
+  background: #f5f7fa; font-size: 11px; color: #909399; font-weight: 500;
+  cursor: default;
+}
+.usage-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: #c0c4cc; flex-shrink: 0; }
+.usage-badge--alert { background: #fdf6ec; color: #e6a23c; }
+.usage-badge--alert .usage-badge-dot { background: #e6a23c; }
 .float-header-right { display: flex; align-items: center; gap: 2px; }
 .float-header-right .el-button { color: #6b8299; }
 

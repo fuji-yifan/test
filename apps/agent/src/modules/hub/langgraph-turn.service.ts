@@ -237,7 +237,16 @@ export class LangGraphTurnService {
             ? 'giveup'
             : 'completed',
       usage: result.usage,
+      // 会话累计用量超软上限（阶段 4 / 4.4）：前端据此把用量徽标置为告警样式
+      ...(this.usageAlert(result.usage) ? { usageAlert: true } : {}),
     })
+  }
+
+  /** 会话累计用量是否超软上限（阶段 4 / 4.4）；阈值 ≤ 0 = 关闭告警 */
+  private usageAlert(usage: { inputTokens: number; outputTokens: number }): boolean {
+    const limit = this.config.get<number>('context.usageSoftLimitTokens') ?? 0
+    if (!Number.isFinite(limit) || limit <= 0) return false
+    return usage.inputTokens + usage.outputTokens >= limit
   }
 
   /** 中断：记下待答复项并下发检查点（含 options 与待审产物，前端据此渲染按钮和依据） */

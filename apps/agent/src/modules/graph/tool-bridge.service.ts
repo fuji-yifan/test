@@ -14,11 +14,19 @@
  * 进网关之前就被 LangChain 拒掉，丢失修复能力。
  */
 import { Injectable, Logger } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { ToolRegistry } from '../harness/tool.registry'
 import { ToolGateway, type GatewayResult } from '../harness/tool-gateway'
 import { ToolConfirmationRequiredError } from './tool-confirmation.error'
+import { charsForTokens } from './conversation-state'
 import { entryOf, targetKeyOf, type FormWorksheet, type TargetResolution } from './worksheet'
+
+/**
+ * 摘要化的单字段阈值（阶段 4 / 4.3）：某个值序列化后超过这个字符数，判为「大字段」，
+ * 无更小可丢子孙时整块替换成占位符（典型：template_search 每份模板的整份 schema）。
+ */
+const SUMMARY_FIELD_CHARS = 800
 
 /** 单次图执行的会话上下文：token / 工作空间 / 草稿等由 act 节点按本次调用填进来 */
 export interface ToolCallContext {
@@ -49,6 +57,7 @@ export class LangChainToolBridge {
   constructor(
     private readonly registry: ToolRegistry,
     private readonly gateway: ToolGateway,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -192,34 +201,82 @@ export class LangChainToolBridge {
     return out
   }
 
-  /** LLM 看到的工具结果是 ok/summary/data/error 的 JSON */
+  /** LLM 看到的工具结果是 ok/summary/data/error 的 JSON（超预算时摘要化/硬截） */
   private formatResult(res: GatewayResult): string {
-    return this.truncate(
-      JSON.stringify({
-        ok: res.ok,
-        summary: res.summary ?? (res.ok ? 'OK' : 'failed'),
-        ...(res.result !== undefined ? { data: res.result } : {}),
-        ...(res.error ? { error: res.error } : {}),
-      }),
-    )
+    const payload = {
+      ok: res.ok,
+      summary: res.summary ?? (res.ok ? 'OK' : 'failed'),
+      ...(res.result !== undefined ? { data: res.result } : {}),
+      ...(res.error ? { error: res.error } : {}),
+    }
+    const full = JSON.stringify(payload)
+    const budget = this.resultCharBudget()
+    // 1) 在预算内：原样返回（绝大多数工具结果走这条）
+    if (full.length <= budget) return full
+    // 2) 超预算：摘要化 —— 丢掉大字段（如整份 schema），保住 id/name/desc/summary 等小字段
+    const summarized = JSON.stringify(summarize(payload, SUMMARY_FIELD_CHARS))
+    if (summarized.length <= budget) return summarized
+    // 3) 仍超（大量小字段累加，摘要化无能为力）：头尾各留一半硬截兜底
+    return this.truncate(summarized, budget)
   }
 
   /**
-   * 截断工具结果，控制进上下文的体积。
+   * 工具结果进 LLM 视图的字符预算（阶段 4 / 4.3）。
+   * 以 `context.maxToolResultTokens` 的 token 预算为准（CJK≈2 字符/token 近似），
+   * 再用 `context.maxToolResultChars` 作绝对字符上限兜底 —— 取二者较小。
+   * token 预算 ≤ 0 表示不设 token 预算，只用字符上限。
+   */
+  private resultCharBudget(): number {
+    const tokens = this.config.get<number>('context.maxToolResultTokens') ?? 2000
+    const hardCap = this.config.get<number>('context.maxToolResultChars') ?? 8000
+    if (!Number.isFinite(tokens) || tokens <= 0) return hardCap
+    return Math.min(charsForTokens(tokens), hardCap)
+  }
+
+  /**
+   * 头尾各留一半硬截，控制进上下文的体积。
    *
-   * `template_search` / `data_query` 这类工具会返回大 JSON，全量塞进 messages 会让
-   * token 迅速膨胀。上限取 `MAX_TOOL_RESULT_CHARS`，**头尾各留一半**、中间标出
-   * 截掉多少 —— 头尾都要留是因为 ok / summary 在头、往往最有用的切片在尾。
-   *
+   * 头尾都要留是因为 ok / summary 在头、往往最有用的切片在尾。
    * 只影响 LLM 看到的 ToolMessage —— SSE 的 `tool_result` 用的是网关的 summary，
    * 前端预览卡片的数据源是产物（artifact），都不经过这里。
    */
-  private truncate(text: string): string {
-    const maxChars = parseInt(process.env.MAX_TOOL_RESULT_CHARS || '8000', 10)
+  private truncate(text: string, maxChars: number): string {
     if (text.length <= maxChars) return text
     const half = Math.floor(maxChars / 2)
     return text.slice(0, half) + `\n... [truncated ${text.length - maxChars} chars] ...\n` + text.slice(-half)
   }
+}
+
+/** 序列化后长度（undefined/不可序列化 → 0） */
+function jsonLen(value: unknown): number {
+  return JSON.stringify(value)?.length ?? 0
+}
+
+/**
+ * 摘要化（阶段 4 / 4.3，只作用于 LLM 视图）：
+ * - 节点序列化 ≤ limitChars → 原样保留；
+ * - 节点超限但有「更小的、可丢的子孙」（即子孙中也有超限者）→ 下钻递归，只丢里层大块；
+ * - 节点超限且其子孙都不超限（terminal blob，如整份 schema）→ 整块替换成 `[omitted N chars]`。
+ *
+ * 这样 template_search 的 data → templates → 每条模板 会被逐层下钻，
+ * 只把每条模板里的 `schema` 整块丢掉，而保住 id/name/description 等标量。
+ */
+function summarize(value: unknown, limitChars: number): unknown {
+  if (jsonLen(value) <= limitChars) return value
+
+  if (Array.isArray(value)) {
+    return value.map((v) => summarize(v, limitChars))
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+    const hasSmallerDroppable = entries.some(([, v]) => jsonLen(v) > limitChars)
+    if (hasSmallerDroppable) {
+      const out: Record<string, unknown> = {}
+      for (const [k, v] of entries) out[k] = summarize(v, limitChars)
+      return out
+    }
+  }
+  return `[omitted ${jsonLen(value)} chars]`
 }
 
 /**

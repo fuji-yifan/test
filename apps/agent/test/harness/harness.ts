@@ -28,21 +28,24 @@ export function createBuildHarness(getSaver: () => unknown) {
   ): Harness {
     const registry = new FakeRegistry() as any
     const gateway = new FakeGateway()
-    const bridge = new LangChainToolBridge(registry, gateway as any)
+    // 假配置：错误恢复阈值与 .env.example 默认一致；可用 overrides.config 覆盖/补充
+    const config = {
+      get: (key: string) =>
+        ({
+          'context.maxRetries': 2,
+          'context.maxDegrades': 1,
+          'context.maxToolResultTokens': 2000,
+          'context.maxToolResultChars': 8000,
+          ...(overrides?.config ?? {}),
+        } as Record<string, unknown>)[key],
+    } as any
+    const bridge = new LangChainToolBridge(registry, gateway as any, config)
     const skills = { getAllMeta: () => [], loadFull: () => null } as any
     const catalog = new AgentCatalogService(skills, registry)
     if (overrides?.catalogSpec) {
       catalog.list = () => [overrides.catalogSpec]
     }
     const llm = new ScriptedLlm(script)
-    // 假配置：错误恢复的阈值与 .env.example 的默认值一致；可用 overrides.config 覆盖/补充
-    const config = {
-      get: (key: string) =>
-        ({ 'context.maxRetries': 2, 'context.maxDegrades': 1, ...(overrides?.config ?? {}) } as Record<
-          string,
-          unknown
-        >)[key],
-    } as any
     const subgraphs = new AgentSubgraphFactory(bridge, llm as any, registry, skills, config)
     const router = new RouterService(catalog, llm as any)
     const plan = new PlanService()

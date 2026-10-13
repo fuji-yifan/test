@@ -39,6 +39,9 @@ export const sessionConfig = registerAs('session', () => ({
 
 export const contextConfig = registerAs('context', () => ({
   maxToolResultChars: parseInt(process.env.MAX_TOOL_RESULT_CHARS || '8000', 10),
+  // 工具结果进 LLM 视图的 token 预算（阶段 4 / 4.3）：超预算先「摘要化」丢大字段，
+  // 仍超再按 maxToolResultChars 头尾硬截。CJK 近似 2 字符/token（见 conversation-state）。
+  maxToolResultTokens: parseInt(process.env.MAX_TOOL_RESULT_TOKENS || '2000', 10),
   maxOutputTokens: parseInt(process.env.MAX_OUTPUT_TOKENS || '2048', 10),
   maxRetries: parseInt(process.env.MAX_RETRIES || '2', 10),
   maxDegrades: parseInt(process.env.MAX_DEGRADE || '1', 10),
@@ -48,6 +51,17 @@ export const contextConfig = registerAs('context', () => ({
   memoryBudgetTokens: parseInt(process.env.MEMORY_BUDGET_TOKENS || '1600', 10),
   // 重复提问提示（可选增强，手册 §2.12-D4）；默认关
   memoryRepeatNotice: (process.env.MEMORY_REPEAT_NOTICE || 'false') === 'true',
+  // 会话累计用量软上限（阶段 4 / 4.4）：done.usage 超阈值时给 DONE 打 usageAlert。
+  // 默认 0 = 关闭（不告警）。
+  usageSoftLimitTokens: parseInt(process.env.USAGE_SOFT_LIMIT_TOKENS || '0', 10),
+}))
+
+/** 只读工具结果缓存（阶段 4 / 4.5，Redis）。REDIS_HOST 未设 → 缓存整体 no-op。 */
+export const cacheConfig = registerAs('cache', () => ({
+  redisHost: process.env.REDIS_HOST || '',
+  redisPort: parseInt(process.env.REDIS_PORT || '6379', 10),
+  ttlSeconds: parseInt(process.env.TOOL_CACHE_TTL_SECONDS || '60', 10),
+  enabled: (process.env.TOOL_CACHE_ENABLED || 'true') === 'true',
 }))
 
 /** LangGraph checkpoint 持久化（与 server 共库，表结构由 Prisma migration 管理） */

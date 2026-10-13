@@ -30,6 +30,7 @@
     "sql.js": "^1.10.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
+    "ioredis": "^5.11.1",
     "mysql2": "^3.24.4",
     "openai": "^4.50.0",
     "passport": "^0.7.0",

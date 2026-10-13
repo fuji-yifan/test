@@ -181,6 +181,18 @@ export class GraphRunnerService {
     const plan = values?.plan
     const artifacts = values?.artifacts ?? {}
     const completed = values?.completedSteps ?? []
+
+    // 成本台账（阶段 4 / 4.1）：usage channel 是**累加器**（agent-state.ts 的 reducer），
+    // 跨轮不清零 —— 所以 values.usage 本身就是「会话累计用量」，与 done.usage 口径一致。
+    // 必须在 plan 判空**之前**单独落一次：纯闲聊轮没有 plan，但同样消耗 token，成本不能丢。
+    // updateMetadata 是浅合并，第二次写入（下面带 plan 的那次）不会覆盖本字段。
+    const usage = values?.usage ?? { inputTokens: 0, outputTokens: 0 }
+    await this.sessions
+      .updateMetadata(sessionId, { usageTotals: usage })
+      .catch((err) => {
+        this.logger.warn(`回写 usageTotals 失败：${(err as Error).message}`)
+      })
+
     if (!plan) return
 
     const total = plan.steps?.length ?? 0

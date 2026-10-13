@@ -69,6 +69,11 @@ export function useAgentChat(options: UseAgentChatOptions) {
   const status = ref<AgentStatus | null>(null)
   const sessionId = ref<string | null>(null)
   const error = ref<string | null>(null)
+  /**
+   * 会话累计用量（阶段 4）：done.usage 就是**会话累计**（后端 usage channel 是累加器，跨轮不清零），
+   * 所以这里是覆盖而非累加。alert 由 done.usageAlert 置位（软上限告警）。
+   */
+  const usage = ref<{ inputTokens: number; outputTokens: number; alert: boolean } | null>(null)
   let abortController: AbortController | null = null
   let currentAssistantMsg: AgentMessage | null = null
   /** 正在被写入的那条消息——打字动画要锚在它身上，而不是数组最后一条 */
@@ -320,6 +325,13 @@ export function useAgentChat(options: UseAgentChatOptions) {
         break
 
       case 'done':
+        if (data.usage) {
+          usage.value = {
+            inputTokens: data.usage.inputTokens || 0,
+            outputTokens: data.usage.outputTokens || 0,
+            alert: !!data.usageAlert,
+          }
+        }
         status.value = null
         persistToLocal()
         break
@@ -419,6 +431,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
     messages.value = []
     sessionId.value = null
     error.value = null
+    usage.value = null
     try { localStorage.removeItem(LS_KEY()); localStorage.removeItem(`${LS_KEY()}_sid`) } catch { /* */ }
   }
 
@@ -434,6 +447,11 @@ export function useAgentChat(options: UseAgentChatOptions) {
     const body = await res.json()
     const data = body.data || body
     sessionId.value = data.id
+    // 历史会话成本（阶段 4）：从落库的 metadata.usageTotals 恢复累计用量初值
+    const totals = data.metadata?.usageTotals
+    usage.value = totals
+      ? { inputTokens: totals.inputTokens || 0, outputTokens: totals.outputTokens || 0, alert: false }
+      : null
     messages.value = (data.messages || []).map((m: any) => ({
       id: nanoid(),
       role: m.role,
@@ -484,6 +502,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
     status: readonly(status),
     sessionId: readonly(sessionId),
     error: readonly(error),
+    usage: readonly(usage),
     sendMessage,
     cancel,
     clearMessages,

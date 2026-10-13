@@ -117,7 +117,7 @@ export const DEFAULT_MEMORY_BUDGET_TOKENS = 1600
  * 超长再靠各段自身字符硬上限兜底（手册 §2.12-D3）。
  */
 const CHARS_PER_TOKEN = 2
-function charsForTokens(tokens: number | undefined): number {
+export function charsForTokens(tokens: number | undefined): number {
   const t = Number.isFinite(tokens) ? (tokens as number) : DEFAULT_MEMORY_BUDGET_TOKENS
   return Math.max(0, Math.floor(t * CHARS_PER_TOKEN))
 }

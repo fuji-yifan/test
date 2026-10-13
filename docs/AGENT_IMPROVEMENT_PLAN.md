@@ -14,7 +14,7 @@
 | 1b | **会话上下文统一治理（§2.12）** | ✅ 完成（§2.12；Ledger 台账 + 领域 Facts + 预算投影，commit `c0e7ce4`）；`vitest` 全绿 + `tsc` 干净；D6 工具结果预算并入阶段 4 |
 | 2 | 失败迭代（eval 接 CI） | ✅ 完成（§3.1；harness 抽取 + eval 11 例 + CI，commit `d95097d`；`tsc` 干净） |
 | 3 | 持久化（会话/执行权/幂等） | ✅ 切片 A/B/C 全部完成（分支 `feat/agent-session-mysql`，未合 master、未灰度）：**A** 会话落 MySQL（`7b8255f`）；**B** 执行权租约（行锁+TTL+心跳）；**C** 幂等下沉（server 唯一键）· 详案 §3.2 |
-| 4 | 成本（token 预算 + usage + **缓存**） | ⬜ 未开始 · 详案已备 §3.3（含 **D5 缓存机制**） |
+| 4 | 成本（token 预算 + usage + **缓存**） | ✅ 完成（§3.3；分支 `feat/agent-stage4-cost`，叠于阶段 3）；`vitest` 908 全绿 + `tsc` 干净；未合/未灰度 |
 | 5 | 业务落地（寻址/diff/撤销） | ⬜ 未开始 · 详案已备 §3.4 |
 | 6 | 安全（提示注入/审计/配额）+ **兜底与降级** | ⬜ 未开始 · 详案已备 §3.5（含 **S7 兜底与降级**） |
 | 7 | 技能管理 | ⬜ 未开始 · 详案已备 §3.6 |
@@ -530,7 +530,7 @@ buildStateBar(meta)  ← 纯函数，代码维护，不调 LLM
 - [x] 2.12.4 **批 3**：记忆块新增 `<session_progress>` 渲染 Ledger；可选 `<repeat_notice>`（`normalizeAsk` 精确匹配，`config.context.memoryRepeatNotice` 默认关，**不做硬缓存短路**）；覆盖重复/预算/Ledger 用例。
 - [x] 2.12.5 **批 4**：`sessionFacts` channel + 各领域 `extractArtifact` 回填标量事实（workflow 流程名/节点数/已存 ID；template 模板数/ID/名；submission 分析条数/要点数）；`act` 内层合并、`projectMemory` 渲染 `<session_facts>`。
 - [x] 2.12.6 D5：goal 取**首个实质消息**（`deriveGoal` 跳过寒暄，如「你好/在吗」）、**存全文**（checkpoint/metadata 存原文）、渲染时 `buildStateBar` 截断 **120**。**§2.4-D4 已同步**
-- [ ] 2.12.7 D6：工具结果 token 预算（`tool-bridge.service.ts:212`，**并入 §3.3 4.3**，阶段 4 做）
+- [x] 2.12.7 D6：工具结果 token 预算（`tool-bridge.service.ts:212`，**并入 §3.3 4.3**，阶段 4 已做 —— 见「阶段 4 落地」）
 - [x] 2.12.8 单测：`conversation-state.spec.ts` 覆盖 Ledger 投影 / 预算截断 / 重复提示 / 归一化 / Facts 渲染 / goal 跳过寒暄。
   **全量 `vitest` 871 全绿 + `tsc` 干净**（2026-10-13）。D3 修复：原用例把预算压到 60 token，投影里状态栏 + 事实 + 台账
   先耗尽预算、摘要段 `avail≤0` 被丢（§2.12-D3 优先级本就如此），改用例为「中等预算 + 较长回复」使长会话溢出且留得下摘要。
@@ -717,11 +717,11 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 6. 缓存：只读工具结果接 Redis（短 TTL，键含 `workspaceId`）；保持 system 前缀稳定以吃 DeepSeek 上下文缓存。
 
 **任务清单**
-- [ ] 4.1 usage 累计 + 落库（`graph-runner` persist）
-- [ ] 4.2 前端消费/展示（`useAgentChat`）
-- [ ] 4.3 token 预算截断（`tool-bridge`，含字符兜底）
-- [ ] 4.4 软上限告警 + 大结果工具默认摘要
-- [ ] 4.5 只读工具结果缓存（server Redis，短 TTL + `workspaceId` 键）+ 保持 system 前缀稳定
+- [x] 4.1 usage 累计 + 落库（`graph-runner` persist）
+- [x] 4.2 前端消费/展示（`useAgentChat`）
+- [x] 4.3 token 预算截断（`tool-bridge`，含字符兜底）
+- [x] 4.4 软上限告警 + 大结果工具默认摘要
+- [x] 4.5 只读工具结果缓存（agent Redis，短 TTL + `workspaceId` 键）+ 保持 system 前缀稳定
 
 **验收**：会话成本可查、前端可见；中文大结果按 token 截断且不切在关键处；超软上限有告警；
 **重复只读查询命中缓存**（`data_query` 二次相同查询不重复打库/打模型）。
@@ -729,6 +729,29 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 **风险与取舍**：tokenizer 估算是近似（精确需模型 tokenizer，成本高）⇒ 用近似 + 余量；
 预算过紧会误伤 ⇒ 保留字符上限兜底、预算可配；
 **缓存一致性** ⇒ 只缓存**只读**工具、TTL 设短、写操作**主动失效**相关键，避免读到旧数据。
+
+**阶段 4 落地（2026-10-13，分支 `feat/agent-stage4-cost`，叠于阶段 3）**
+- **口径澄清**：`usage` channel 是**累加器**（`agent-state.ts` reducer）且**跨轮不清零** ⇒ `done.usage` 本就是
+  **会话累计**（非本轮）。故 4.1 是**覆盖写**而非 `+=`：`persist()` 在 `if (!plan) return` **之前**单独
+  `updateMetadata({ usageTotals })`，保证「无 plan 的纯闲聊轮」成本也落库；`updateMetadata` 是浅合并，后续
+  带 plan 的写不会覆盖它。
+- **4.3 摘要优先截断**：`truncate()` 由直读 `process.env` 改为经 `ConfigService` 读 `context.maxToolResultTokens`
+  （默认 2000，CJK≈2 字符/token，复用 `charsForTokens`）与 `context.maxToolResultChars`（默认 8000）**取小**。
+  `formatResult()` 三步：预算内原样 → 超预算**摘要化**（递归：某值有更小可丢子孙就下钻，否则整块换
+  `[omitted N chars]`，从而丢掉 template_search 的整份 schema、保住 id/name/desc）→ 仍超才头尾硬截。
+  **只作用于 LLM 视图**；产物（前端预览卡片）走原始 `GatewayResult.result`（`hub.artifact.ts`），不经这里。
+- **4.4 软上限**：`context.usageSoftLimitTokens`（默认 0=关）；`langgraph-turn.finish()` 超阈值给 DONE 加
+  `usageAlert:true`（`DonePayload` 新增可选字段）。
+- **4.5 缓存**：agent 新建 `modules/cache`（`AgentRedisModule` 提供 `REDIS_CLIENT`，`REDIS_HOST` 未设 → `null`；
+  `cache.module.ts` @Global 提供 `ToolResultCache`）。键 `tool:<name>:<wsId>:<sha1(stableStringify(args 去 token))>`，
+  TTL `TOOL_CACHE_TTL_SECONDS`（60）。**只读白名单**（`data_query`/`data_list_forms`/`template_search`/
+  `template_get_detail`，均 low 风险但**必须显式列举**——风险等级无法区分读写）。插桩在 `tool-gateway.execute()`
+  低风险分支：命中即短路；写工具（`form_save`/`template_instantiate`/`flow_save`）成功后 `invalidateWorkspace`；
+  `executeConfirmed()` 只失效不写。无 Redis/`TOOL_CACHE_ENABLED=false` → 全 no-op（等于未引入）。
+- **依赖**：`apps/agent` 加 `ioredis ^5.11.1`（与 server 同版本）。
+- **验证**：`tsc --noEmit`（agent+web）干净；agent `vitest` **908 全绿**（新增 tool-cache 7 / tool-gateway 6 /
+  graph-runner-usage 3 / langgraph-turn +3 / tool-bridge 改 3）。真机项（SSE done 带 usage+usageAlert、前端 header
+  徽标、二次 `data_query` 命中缓存不打后端）留用户手测。
 
 ### 3.4 阶段 5：业务落地（寻址 / diff / 撤销）
 

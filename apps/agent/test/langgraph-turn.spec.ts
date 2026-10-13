@@ -476,6 +476,38 @@ describe('LangGraphTurnService — 悬挂中断', () => {
   })
 })
 
+describe('LangGraphTurnService — 用量软上限告警（阶段 4 / 4.4）', () => {
+  function makeWithLimit(limit: number, usage: { inputTokens: number; outputTokens: number }) {
+    const { runner } = makeRunner({ result: { finalContent: '', usage, halted: false, gaveUp: false } })
+    const session = newSession()
+    const { sessions } = makeSessions(session)
+    const { sse, events } = makeSse()
+    const config = {
+      get: (key: string) => (key === 'context.usageSoftLimitTokens' ? limit : undefined),
+    }
+    const service = new LangGraphTurnService(runner, sessions, config as any)
+    return { service, events, sse, session }
+  }
+
+  it('累计用量达到阈值时 done 带 usageAlert=true', async () => {
+    const { service, events, sse, session } = makeWithLimit(100, { inputTokens: 80, outputTokens: 40 })
+    await service.runTurn({ ...turnParams(session), sse })
+    expect(lastOf(events, 'done')?.payload).toMatchObject({ usageAlert: true })
+  })
+
+  it('未达阈值时不带 usageAlert', async () => {
+    const { service, events, sse, session } = makeWithLimit(100, { inputTokens: 10, outputTokens: 20 })
+    await service.runTurn({ ...turnParams(session), sse })
+    expect(lastOf(events, 'done')?.payload).not.toHaveProperty('usageAlert')
+  })
+
+  it('阈值为 0（默认关）时不告警', async () => {
+    const { service, events, sse, session } = makeWithLimit(0, { inputTokens: 99999, outputTokens: 99999 })
+    await service.runTurn({ ...turnParams(session), sse })
+    expect(lastOf(events, 'done')?.payload).not.toHaveProperty('usageAlert')
+  })
+})
+
 describe('LangGraphTurnService — 异常', () => {
   it('runner 抛错时下发 FATAL + done(error)，且不把异常抛给 controller', async () => {
     const session = newSession()

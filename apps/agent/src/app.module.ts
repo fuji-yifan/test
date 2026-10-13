@@ -5,6 +5,7 @@ import { APP_GUARD } from '@nestjs/core'
 import { PassportModule } from '@nestjs/passport'
 import { JwtModule } from '@nestjs/jwt'
 import configuration, {
+  cacheConfig,
   checkpointConfig,
   contextConfig,
   deepseekConfig,
@@ -24,6 +25,7 @@ import { SubmissionModule } from './modules/sub-agents/submission/submission.mod
 import { ContextModule } from './modules/context/context.module'
 import { CheckpointModule } from './modules/graph/checkpoint.module'
 import { AgentGraphModule } from './modules/graph/graph.module'
+import { AgentCacheModule } from './modules/cache/cache.module'
 
 import { HubController } from './modules/hub/hub.controller'
 import { HealthController } from './modules/health/health.controller'
@@ -32,7 +34,7 @@ import { HealthController } from './modules/health/health.controller'
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [configuration, deepseekConfig, contextConfig, checkpointConfig],
+      load: [configuration, deepseekConfig, contextConfig, checkpointConfig, cacheConfig],
       envFilePath: ['.env'],
     }),
     ThrottlerModule.forRoot([
@@ -57,6 +59,7 @@ import { HealthController } from './modules/health/health.controller'
     ContextModule,
     CheckpointModule,
     AgentGraphModule,
+    AgentCacheModule,
   ],
   controllers: [HubController, HealthController],
   providers: [

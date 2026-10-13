@@ -9,6 +9,7 @@
  * - 结果序列化成 { ok, summary, data?, error? } JSON。
  */
 import { describe, expect, it } from 'vitest'
+import type { ConfigService } from '@nestjs/config'
 import { LangChainToolBridge } from '../src/modules/graph/tool-bridge.service'
 import { ToolConfirmationRequiredError } from '../src/modules/graph/tool-confirmation.error'
 import type { ToolRegistry } from '../src/modules/harness/tool.registry'
@@ -59,8 +60,15 @@ function makeBridge(tools: Record<string, unknown>, gateway = new FakeGateway())
     get: (name: string) => tools[name],
     getRisk: (name: string) => (tools[name] as any)?.riskLevel ?? 'low',
   } as unknown as ToolRegistry
+  // 假 ConfigService：token 预算 2000（≈4000 字符）与 .env.example 默认一致
+  const config = {
+    get: (key: string) =>
+      ({ 'context.maxToolResultTokens': 2000, 'context.maxToolResultChars': 8000 } as Record<string, unknown>)[
+        key
+      ],
+  } as unknown as ConfigService
   return {
-    bridge: new LangChainToolBridge(registry, gateway as unknown as ToolGateway),
+    bridge: new LangChainToolBridge(registry, gateway as unknown as ToolGateway, config),
     gateway,
   }
 }
@@ -194,18 +202,53 @@ describe('LangChainToolBridge', () => {
     expect(parsed.summary).toContain('参数错误')
   })
 
-  it('工具结果超过 MAX_TOOL_RESULT_CHARS 时截断，避免大 JSON 撑爆上下文', async () => {
-    const { bridge } = makeBridge({ data_export: DATA_EXPORT })
-    // 默认上限 8000 字符
+  it('在 token 预算内的工具结果原样返回，不动', async () => {
+    const { bridge } = makeBridge({ form_save: FORM_SAVE })
     const out = await bridge.toToolMessageContent({
       ok: true,
-      summary: '导出完成',
-      result: { rows: 'x'.repeat(50000) },
+      summary: '已保存',
+      result: { id: 'f1' },
     })
 
+    expect(JSON.parse(out)).toEqual({ ok: true, summary: '已保存', data: { id: 'f1' } })
+  })
+
+  it('超 token 预算时摘要化：丢掉大字段（整份 schema），保住 id/name 等小字段', async () => {
+    const { bridge } = makeBridge({ template_search: FORM_SAVE })
+    // 每份 schema 是一个「平铺的大对象」（各字段都小、整体超阈值 → 判为可丢的整块 blob）
+    const templates = Array.from({ length: 10 }, (_, i) => ({
+      id: `t${i}`,
+      name: `模板${i}`,
+      description: '描述',
+      schema: Object.fromEntries(Array.from({ length: 50 }, (_, j) => [`f${j}`, 'x'.repeat(30)])),
+    }))
+
+    const out = await bridge.toToolMessageContent({
+      ok: true,
+      summary: '找到 10 个模板',
+      result: { templates },
+    })
+
+    const parsed = JSON.parse(out)
+    expect(parsed.ok).toBe(true)
+    // 小字段保住
+    expect(parsed.data.templates[0].id).toBe('t0')
+    expect(parsed.data.templates[0].name).toBe('模板0')
+    // 大字段（每份 schema）整块丢，换成占位符
+    expect(parsed.data.templates[0].schema).toMatch(/^\[omitted \d+ chars\]$/)
+    // 摘要化已足够压到预算内 → 不再硬截
+    expect(out).not.toContain('[truncated')
+  })
+
+  it('摘要化仍超预算（大量小字段累加）时头尾硬截，保留 ok/summary', async () => {
+    const { bridge } = makeBridge({ data_export: DATA_EXPORT })
+    // 100 条小记录：每条都小于单字段阈值（不会被摘要化），但总量远超预算
+    const rows = Array.from({ length: 100 }, (_, i) => ({ id: `row-${i}`, v: 'x'.repeat(50) }))
+    const out = await bridge.toToolMessageContent({ ok: true, summary: '导出完成', result: { rows } })
+
     expect(out).toContain('[truncated')
-    expect(out.length).toBeLessThan(9000)
-    // 头尾都要留：截断不能把 summary / ok 这些关键字段弄丢
+    expect(out.length).toBeLessThan(4200)
+    // 头尾都要留：截断不能把 ok / summary 这些关键字段弄丢
     expect(out.startsWith('{"ok":true')).toBe(true)
   })
 

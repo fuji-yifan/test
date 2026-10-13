@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ToolRegistry } from './tool.registry'
 import { SessionService } from '../session/session.service'
+import { ToolResultCache } from '../cache/tool-cache.service'
 
 export interface GatewayResult {
   ok: boolean
@@ -36,6 +37,7 @@ export class ToolGateway {
   constructor(
     private registry: ToolRegistry,
     private sessionService: SessionService,
+    private cache: ToolResultCache,
   ) {}
 
   /**
@@ -93,12 +95,41 @@ export class ToolGateway {
       }
     }
 
-    // 低风险直接执行
+    // 低风险直接执行。只读白名单工具先查缓存：命中即短路，跳过 registry.call（阶段 4 / 4.5）
+    const workspaceId = opts?.workspaceId ?? ''
+    const cached = await this.cache.get(toolName, workspaceId, args)
+    if (cached) {
+      this.logger.log(`Cache hit: ${toolName}`)
+      await this.writeAudit({
+        tool: toolName,
+        args,
+        ok: true,
+        summary: cached.summary || 'CACHE_HIT',
+        risk,
+        userId: opts?.userId,
+        workspaceId: opts?.workspaceId,
+        requestId: opts?.requestId,
+      })
+      return { ok: true, summary: cached.summary, result: cached.result }
+    }
+
     const result = await this.registry.call(toolName, args)
 
     // 幂等标记：成功的写操作
     if (result.ok && opts?.requestId && risk !== 'low') {
       this.completedRequestIds.add(opts.requestId)
+    }
+
+    // 缓存维护：只读命中结果写缓存；写工具成功后失效本工作空间缓存
+    if (result.ok) {
+      if (this.cache.isWrite(toolName)) {
+        await this.cache.invalidateWorkspace(workspaceId)
+      } else {
+        await this.cache.set(toolName, workspaceId, args, {
+          summary: result.summary || 'OK',
+          result: result.data,
+        })
+      }
     }
 
     // 审计
@@ -133,6 +164,11 @@ export class ToolGateway {
 
     if (result.ok && opts?.requestId) {
       this.completedRequestIds.add(opts.requestId)
+    }
+
+    // 确认后执行的都是写路径：成功后失效本工作空间缓存（只失效、不写缓存）
+    if (result.ok) {
+      await this.cache.invalidateWorkspace(opts?.workspaceId ?? '')
     }
 
     await this.writeAudit({

@@ -88,6 +88,8 @@ export interface DonePayload {
   sessionId: string
   stopReason: string
   usage: { inputTokens: number; outputTokens: number }
+  /** 会话累计用量超过软上限（阶段 4）：前端据此把用量徽标置为告警样式 */
+  usageAlert?: boolean
 }
 
 // SSE 写入工具

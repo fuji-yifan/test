@@ -47,7 +47,7 @@
 
 ## 二、自动化测试（单测）
 
-`vitest`，2026-10-13 实测 **13 个文件 / 887 条全绿**，`tsc --noEmit` 干净（注意 `tsconfig.json` 只 include `src/**/*`，spec 不在类型检查范围内）。
+`vitest`，2026-10-13 实测 **16 个文件 / 908 条全绿**，`tsc --noEmit` 干净（注意 `tsconfig.json` 只 include `src/**/*`，spec 不在类型检查范围内）。
 
 跑法（WSL1 起不了 node，借 Windows node）：`cmd.exe /c "cd /d D:\frontend\低代码平台\apps\agent && npx vitest run"`。
 
@@ -59,9 +59,12 @@ CI（阶段 2 起）：`.github/workflows/agent.yml` 起 MySQL service 后 `pnpm
 | `test/graph-flow.spec.ts` | 39 | 编排主链路：路由 / 多步计划 / 检查点 / 错误恢复级联 / 上游产物缺失跳步 / 跨轮草稿隔离 / 会话记忆（3.6、3.13、3.14、3.15 的单测侧证据） |
 | `test/conversation-state.spec.ts` | 36 | 状态栏 `buildStateBar` / `detectClarification` / `projectMemory` 预算投影 / 台账与事实（阶段 1、1b/§2.12） |
 | `test/worksheet.spec.ts` | 21 | 会话级工作台：多表寻址与增量契约（3.9、3.10） |
-| `test/langgraph-turn.spec.ts` | 15 | SSE 方言、`stopReason`、error code 过滤（3.5、3.13） |
+| `test/langgraph-turn.spec.ts` | 18 | SSE 方言、`stopReason`、error code 过滤（3.5、3.13）；用量软上限 `usageAlert`（阶段 4 / 4.4） |
 | `test/form-assemble-schema.spec.ts` | 14 | 按 key 合并字段（3.1） |
-| `test/tool-bridge.spec.ts` | 9 | 工具桥接与大结果截断（3.11）；`form_save` 注入 `clientRequestId` 幂等键（阶段 3 切片 C） |
+| `test/tool-bridge.spec.ts` | 11 | 工具桥接（3.11）；`form_save` 注入 `clientRequestId` 幂等键（阶段 3 切片 C）；token 预算摘要化 / 头尾硬截（阶段 4 / 4.3） |
+| `test/tool-cache.spec.ts` | 7 | 只读工具 Redis 缓存：键含 workspaceId / 去 token / TTL / invalidateWorkspace / no-op（阶段 4 / 4.5） |
+| `test/tool-gateway.spec.ts` | 6 | 网关缓存插桩：只读命中短路 / 未命中写缓存 / 写工具失效 / 高风险走确认门（阶段 4 / 4.5） |
+| `test/graph-runner-usage.spec.ts` | 3 | `persist` 落 `metadata.usageTotals`（无 plan 轮也落 / 与 plan 互不覆盖 / 缺省兜底）（阶段 4 / 4.1） |
 | `test/session-lease.spec.ts` | 7 | 执行权租约接入：抢到放行 / 抢不到回绝 / 心跳续期 / renew 失败自退 / 只持有者释放 / 降级 / 同实例抢占后继任轮仍持锁（阶段 3 切片 B） |
 | `test/session-preempt.spec.ts` | 5 | 执行权抢占（3.7） |
 | `test/tool-registry.spec.ts` | 4 | 工具注册与风险等级 |
