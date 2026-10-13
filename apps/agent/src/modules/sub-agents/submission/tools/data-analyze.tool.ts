@@ -11,6 +11,8 @@ import { z } from 'zod'
     labels: z.array(z.string()).optional().describe('对应标签（日期/分类）'),
   }),
   riskLevel: 'low',
+  // 结果校验（阶段 6 / S7.3）：分析结果必须带 summary 文本（fail-closed）。
+  outputSchema: z.object({ summary: z.string() }).passthrough(),
 })
 export class DataAnalyzeTool {
   async execute(args: { values: number[]; labels?: string[] }): Promise<any> {

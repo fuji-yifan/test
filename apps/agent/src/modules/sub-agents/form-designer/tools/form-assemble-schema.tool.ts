@@ -50,6 +50,8 @@ const OPTION_TYPES = new Set(['select', 'radio', 'checkbox'])
     existingSchema: z.any().optional().describe('编排层注入：当前已有表单，用于合并'),
   }),
   riskLevel: 'low',
+  // 结果校验（阶段 6 / S7.3）：组装的产物必须带 schema，否则不喂给模型（fail-closed）。
+  outputSchema: z.object({ schema: z.record(z.unknown()) }).passthrough(),
 })
 export class FormAssembleSchemaTool {
   async execute(args: {
