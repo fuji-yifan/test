@@ -16,7 +16,7 @@
 | 3 | 持久化（会话/执行权/幂等） | ✅ 切片 A/B/C 全部完成（分支 `feat/agent-session-mysql`，未合 master、未灰度）：**A** 会话落 MySQL（`7b8255f`）；**B** 执行权租约（行锁+TTL+心跳）；**C** 幂等下沉（server 唯一键）· 详案 §3.2 |
 | 4 | 成本（token 预算 + usage + **缓存**） | ✅ 完成（§3.3；分支 `feat/agent-stage4-cost`，叠于阶段 3）；`vitest` 908 全绿 + `tsc` 干净；未合/未灰度 |
 | 5 | 业务落地（寻址/diff/撤销） | ✅ 完成（§3.4；分支 `feat/agent-stage5-business`，叠于阶段 4）；`vitest` 931 全绿 + `tsc` 干净；未合/未灰度 |
-| 6 | 安全（提示注入/审计/配额）+ **兜底与降级** | ⬜ 未开始 · 详案已备 §3.5（含 **S7 兜底与降级**） |
+| 6 | 安全（提示注入/审计/配额）+ **兜底与降级** | ◐ 部分完成（§3.5；分支 `feat/agent-stage6-security`，叠于阶段 5）：已落 **S1（RLS 除外）+ S3.3 + S5.1 + S7**＝「整套无外部依赖项」；`vitest` 955 全绿 + `tsc` 干净；未合/未灰度。RLS/S2/S3.1/S5.2/S6 需外部基建，推迟 |
 | 7 | 技能管理 | ⬜ 未开始 · 详案已备 §3.6 |
 | 8 | **长期记忆（用户级）+ 知识沉淀 + MCP** | ⬜ 未开始 · **升级为正式设计**（§3.7；长期记忆提为正式，MCP 仍留后） |
 
@@ -935,26 +935,67 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 
 #### 任务清单（S1–S7）
 
-- [ ] S1.1 JWT 带 workspaceId / 服务端成员校验
-- [ ] S1.2 RLS policy 迁移 + Prisma 会话变量注入
-- [ ] S1.3 submission 行级权限生效 + 全链路 fail-closed
-- [ ] S2.1 Agent 审计落库 `audit_logs`（扩展字段 + append-only）
-- [ ] S2.2 工具路径身份贯通 + `sanitizeArgs` 落地
-- [ ] S2.3 OTel + Langfuse 接入（traceId 贯穿）
-- [ ] S2.4 登录/登出/权限拒绝入账
-- [ ] S3.1 接入 Cerbos/OPA + ToolGateway 前置 policy hook
-- [ ] S3.2 业务策略文件（删除确认/批量阈值/跨租户/PII）
-- [ ] S3.3 风险分级重定 + 写工具幂等修复 + 堵直调绕过
-- [ ] S4.1 软删除统一 + 回收站 + 恢复端点
-- [ ] S4.2 删除类 HITL 确认 + 防覆盖模式推广
-- [ ] S5.1 `wrapUntrusted()` 纯函数 + tool-bridge 接入 + 单测
-- [ ] S5.2 NeMo Guardrails sidecar 接入
-- [ ] S6.1 server 限流 + workspace/用户配额 + maxConcurrent
-- [ ] S6.2 SOPS/OpenBao 密钥 + 生产禁 dev-secret 守卫
-- [ ] S7.1 工具 / LLM 调用超时熔断（可配）
-- [ ] S7.2 幻觉守卫（产物须源自工具结果）
-- [ ] S7.3 工具入参 / 结果 schema 校验（fail-closed）
-- [ ] S7.4 分级降级链 + 与成本软上限 / 审计联动
+- [x] S1.1 JWT 带 workspaceId / 服务端成员校验
+- [ ] S1.2 RLS policy 迁移 + Prisma 会话变量注入 — **推迟**（本仓是 MySQL，无 RLS；改走应用层 fail-closed）
+- [x] S1.3 submission 行级权限生效 + 全链路 fail-closed（应用层显式成员断言，见「阶段 6 落地」）
+- [ ] S2.1 Agent 审计落库 `audit_logs`（扩展字段 + append-only）— 推迟（需外部基建）
+- [ ] S2.2 工具路径身份贯通 + `sanitizeArgs` 落地 — 推迟（随 S2）
+- [ ] S2.3 OTel + Langfuse 接入（traceId 贯穿）— 推迟（需 Langfuse）
+- [ ] S2.4 登录/登出/权限拒绝入账 — 推迟（随 S2）
+- [ ] S3.1 接入 Cerbos/OPA + ToolGateway 前置 policy hook — 推迟（需策略引擎）
+- [ ] S3.2 业务策略文件（删除确认/批量阈值/跨租户/PII）— 推迟（随 S3.1）
+- [x] S3.3 风险分级重定 + 写工具幂等修复 + 堵直调绕过
+- [ ] S4.1 软删除统一 + 回收站 + 恢复端点 — 推迟（本轮范围外）
+- [ ] S4.2 删除类 HITL 确认 + 防覆盖模式推广 — 推迟（随 S4.1）
+- [x] S5.1 `wrapUntrusted()` 纯函数 + tool-bridge 接入 + 单测
+- [ ] S5.2 NeMo Guardrails sidecar 接入 — 推迟（需 Python sidecar）
+- [ ] S6.1 server 限流 + workspace/用户配额 + maxConcurrent — 推迟（需 Redis throttler）
+- [ ] S6.2 SOPS/OpenBao 密钥 + 生产禁 dev-secret 守卫 — 推迟（需密钥基建）
+- [x] S7.1 工具 / LLM 调用超时熔断（可配）
+- [x] S7.2 幻觉守卫（产物须源自工具结果）
+- [x] S7.3 工具入参 / 结果 schema 校验（fail-closed）
+- [x] S7.4 分级降级链 + 与成本软上限 / 审计联动（审计落库部分随 S2 推迟）
+
+#### 阶段 6 落地（2026-10-13）
+
+范围＝用户选定的「整套『无外部依赖』项」= **S1（RLS 除外）+ S3.3 + S5.1 + S7**。分支
+`feat/agent-stage6-security`（基于 `feat/agent-stage5-business`），未合 master / 未灰度。
+**凡需外部基建/中间件的 S 项一律推迟**（RLS 需 PG、S2 需 Langfuse、S3.1 需 Cerbos/OPA、
+S5.2 需 NeMo、S6 需 Redis/SOPS）——dev 环境都不起，故整段不做。
+
+- **S7 兜底与降级（先做，作地基）**
+  - S7.1：`harness/timeout.ts` 的 `withTimeout`（超时抛 `TimeoutError`，与 `AbortError` 区分）。
+    网关对 `registry.call` 两处（`execute` / `executeConfirmed`）包超时 → 返回可恢复失败
+    `{ error:'timeout' }`；`langgraph-llm.service` 的 `withTools().invoke` 用 `AbortController` +
+    `Promise.race` 加 LLM 超时（超时 abort 上游并抛 `TimeoutError`，落进 think 的重试）。超时值走
+    `TOOL_TIMEOUT_MS`（默认 30000）/ `LLM_TIMEOUT_MS`（默认 60000）。
+  - S7.2：`graph/hallucination-guard.ts` 纯函数，按「完成态声明」关键词 × 写工具映射判定；新增
+    `turnToolOk` channel（`act` 成功时累加），`AgentSpec.produceTools` 声明写工具白名单；`respond`
+    收尾过守卫，命中 → 追加「尚未实际…」纠正 + 广播 `{type:'error', code:'HALLUCINATION_GUARD'}`。
+  - S7.3：`ToolMeta.outputSchema?` + `RegisteredTool` 存储；`registry.call` 在 `execute` 后 `safeParse`，
+    失败 → `{ error:'output_validation_error' }`，非法结果不喂模型。示范接 `form_assemble_schema` /
+    `data_analyze`，其余按需补。
+  - S7.4：`graph/degrade.ts` 的 `degradeReply` 按「有无草稿」分「规则层 / 静态话术」；`think` 的
+    熔断与迭代用尽两条放弃出口改用它，并广播 `{type:'degrade', from:'model', to, reason}`。
+- **S5.1 防提示注入**：`graph/untrusted.ts` 的 `wrapUntrusted` + 白名单
+  `UNTRUSTED_TOOLS`（含用户/外部数据的工具）；`tool-bridge` 的三处序列化点透传 `toolName`，
+  非白名单工具行为不变。
+- **S3.3 风险与幂等**：写工具 `form_save` / `form_rollback` / `flow_save` / `template_instantiate`
+  风险 `low → medium`（各自已有 `coversRisk` 检查点顶着风险门，不会二次询问）；网关幂等改用显式
+  `WRITE_TOOLS` 集合（修「写工具实际不幂等」）；`hub.controller` 的 `/agent/tools/:name` 直调拒非 low
+  风险工具（设计器直调的都是 low，不受影响）。
+- **S1 身份与隔离（MySQL：应用层 fail-closed，不用 RLS）**：
+  - server `auth.service.generateToken` 改 async，登录/注册查 `workspaceMember` 取首个 workspaceId
+    写进 JWT；`jwt.strategy.validate` 回填 `workspaceId`（`request-context` 从此拿到可信值）。
+  - `permission.guard`：资源作用域路由（`params.formId|id|instanceId`）**忽略客户端 wsId**，一律从资源
+    反查真实 workspace 再校验成员（堵「伪造 wsId」）。
+  - `submission.service` 的 `list/getById/updateStatus/deleteSubmission/exportSubmissions` 补显式
+    成员断言（fail-closed），与 guard 互为 defense-in-depth；controller 透传 `@CurrentUser('userId')`。
+- **验证**：agent vitest **955 全绿**（新增 `timeout` / `hallucination-guard` / `untrusted` / `degrade`
+  四个纯函数 spec + 网关超时 / tool-bridge 封装 / tool-registry 输出校验 / graph-flow 幻觉守卫用例）；
+  agent `tsc --noEmit` 干净；server `tsc --noEmit` 干净；web `vue-tsc --noEmit` 干净（本阶段未动 web，作回归）。
+  真机探测（慢工具超时收口 / 模型不可用回落 / 注入样本不改行为 / 写工具风险≥medium 且直调被拒 /
+  跨 workspace 读 submission 被拒）留待用户手测。
 
 #### 验收标准（阶段 6）
 
