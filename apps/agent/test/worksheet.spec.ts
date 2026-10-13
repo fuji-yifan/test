@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyAssemble,
   emptyWorksheet,
+  markRestored,
   markSaved,
   resolveFormTarget,
   seedFromDraft,
@@ -79,6 +80,23 @@ describe('resolveFormTarget 目标寻址', () => {
     )
     expect(resolveFormTarget('C表', ws)).toMatchObject({ key: 'f4' })
   })
+
+  it('target 填 formId 精确命中（阶段 5 / 5.1）', () => {
+    const ws = wsWith(
+      { key: 'f1', title: 'A表', keys: ['a'], formId: 'uuid-1' },
+      { key: 'f2', title: 'B表', keys: ['b'], formId: 'uuid-2' },
+    )
+    expect(resolveFormTarget('uuid-2', ws)).toEqual({ kind: 'update', key: 'f2' })
+  })
+
+  it('重名时 formId 仍能唯一定位，不必 ambiguous', () => {
+    const ws = wsWith(
+      { key: 'f1', title: '客户登记表', keys: ['a'], formId: 'u1' },
+      { key: 'f2', title: '客户登记表', keys: ['b'], formId: 'u2' },
+    )
+    expect(resolveFormTarget('客户登记表', ws)).toEqual({ kind: 'ambiguous', keys: ['f1', 'f2'] })
+    expect(resolveFormTarget('u2', ws)).toEqual({ kind: 'update', key: 'f2' })
+  })
 })
 
 describe('applyAssemble 登记产物', () => {
@@ -135,6 +153,24 @@ describe('markSaved 记录 formId', () => {
     expect(next.forms[1].formId).toBeUndefined()
     expect(next.focusKey).toBe('f1')
   })
+
+  it('同时把当前 schema 存成 diff 基线（savedSchema）', () => {
+    const ws = wsWith({ key: 'f1', title: '客户登记表', keys: ['name'] })
+    const next = markSaved(ws, resolveFormTarget('客户登记表', ws), 'form-123')
+    expect(next.forms[0].savedSchema).toEqual(ws.forms[0].schema)
+  })
+})
+
+describe('markRestored 回滚登记（阶段 5 / 5.5）', () => {
+  it('把 schema 换成回滚后的快照，savedSchema 同步换', () => {
+    const ws = wsWith({ key: 'f1', title: '客户登记表', keys: ['name'], formId: 'u1' })
+    const restored = schema('客户登记表', ['name', 'phone'])
+    const next = markRestored(ws, resolveFormTarget('u1', ws), restored)
+    expect(next.forms[0].schema).toEqual(restored)
+    expect(next.forms[0].savedSchema).toEqual(restored)
+    expect(next.forms[0].formId).toBe('u1')
+    expect(next.focusKey).toBe('f1')
+  })
 })
 
 describe('toWorksheetBlock 表清单注入', () => {
@@ -155,7 +191,7 @@ describe('toWorksheetBlock 表清单注入', () => {
     expect(block).toContain('共 2 张')
     expect(block).toContain('当前聚焦 f2')
     expect(block).toContain('f2（聚焦） 标题：员工登记表')
-    expect(block).toContain('f1 标题：报名统计表（已保存）')
+    expect(block).toContain('f1 标题：报名统计表（已保存 id=fid-1）')
     expect(block).toContain('key=name name=name type=input')
     // 硬规则要带上，否则模型可能不传 target
     expect(block).toContain('target')
@@ -229,6 +265,25 @@ describe('toWorksheetBlock 表清单注入', () => {
     const block = toWorksheetBlock(ws)!
     expect(block).toContain('…共 20 项')
     expect(block.match(/v\d+/g)?.length).toBe(12)
+  })
+
+  it('字段行带 id（改 key 靠它认领旧字段，阶段 5 / 5.3）', () => {
+    const ws: FormWorksheet = {
+      forms: [
+        {
+          key: 'f1',
+          title: '客户登记表',
+          schema: {
+            version: 1,
+            settings: { formTitle: '客户登记表' },
+            fields: [{ id: 'field_ab12', key: 'name', name: '姓名', type: 'input' }],
+          },
+        },
+      ],
+      focusKey: 'f1',
+    }
+    const block = toWorksheetBlock(ws)!
+    expect(block).toContain('key=name id=field_ab12 name=姓名 type=input')
   })
 })
 

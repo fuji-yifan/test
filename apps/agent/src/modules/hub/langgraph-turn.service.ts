@@ -26,7 +26,7 @@ import { extractArtifactData, extractLatestArtifact } from './hub.artifact'
 /** 待答复的图中断。存在 session.metadata 里，供下一轮请求认领。 */
 export interface PendingGraphInterrupt {
   callId: string
-  kind: 'checkpoint' | 'tool_confirm'
+  kind: 'checkpoint' | 'tool_confirm' | 'disambiguate'
   checkpointId: string | null
   toolCallId: string
   tool: string | null
@@ -287,6 +287,8 @@ export class LangGraphTurnService {
       kind: payload.kind,
       options,
       ...(artifact ? { artifact } : {}),
+      // 保存前的字段级 diff（阶段 5 / 5.4）：必须显式转发，否则载荷在网关这一层被丢掉
+      ...(payload.diff ? { diff: payload.diff } : {}),
     })
   }
 

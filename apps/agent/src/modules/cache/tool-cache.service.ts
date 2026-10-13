@@ -13,7 +13,7 @@ import { REDIS_CLIENT } from './redis.module'
 const READ_ONLY_TOOLS = new Set(['data_query', 'data_list_forms', 'template_search', 'template_get_detail'])
 
 /** 写工具白名单：执行成功后失效本工作空间缓存（只失效、不写缓存）。 */
-const WRITE_TOOLS = new Set(['form_save', 'template_instantiate', 'flow_save'])
+const WRITE_TOOLS = new Set(['form_save', 'form_rollback', 'template_instantiate', 'flow_save'])
 
 /** 缓存值：只存回放只读工具所需的字段（GatewayResult 子集） */
 export interface CachedToolResult {

@@ -21,6 +21,13 @@ export interface WorksheetEntry {
   schema: Record<string, unknown>
   /** 已落库的表单 id */
   formId?: string
+  /**
+   * 上一次落库时的 schema 快照（阶段 5 / 5.4）。
+   *
+   * `form_save` 前算字段 diff 的**基线**：当前 schema 与它比，得出新增/修改/删除。
+   * 老会话 / 从未保存过的表没有这个字段 → 基线视为空（全部计「新增」）。
+   */
+  savedSchema?: Record<string, unknown>
 }
 
 /** 一份会话工作台 */
@@ -112,6 +119,11 @@ export function resolveFormTarget(
     return { kind: 'create', key: nextKey(sheet), title: '' }
   }
 
+  // 0) formId 精确（阶段 5 / 5.1）：DB 稳定 id，跨会话/换 key 都能唯一定位。
+  // formId 是 uuid，不会与 key（f1）或标题误撞，所以放在最前面最安全。
+  const byFormId = sheet.forms.find((f) => !!f.formId && f.formId === raw)
+  if (byFormId) return { kind: 'update', key: byFormId.key }
+
   // 1) key 精确（模型照表清单里的 key 寻址）
   const byKey = entryOf(sheet, raw)
   if (byKey) return { kind: 'update', key: byKey.key }
@@ -163,7 +175,11 @@ export function applyAssemble(
   }
 }
 
-/** 登记一次保存：把 formId 记到对应表上 */
+/**
+ * 登记一次保存：把 formId 记到对应表上，并把当前 schema 存成 diff 基线（阶段 5 / 5.4）。
+ *
+ * savedSchema 就是「上次落库长什么样」，`form_save` 的确认卡片据此算字段级 diff。
+ */
 export function markSaved(
   ws: FormWorksheet,
   resolved: TargetResolution,
@@ -171,7 +187,31 @@ export function markSaved(
 ): FormWorksheet {
   const key = targetKeyOf(resolved)
   return {
-    forms: ws.forms.map((f) => (f.key === key ? { ...f, formId } : f)),
+    forms: ws.forms.map((f) =>
+      f.key === key ? { ...f, formId, savedSchema: f.schema } : f,
+    ),
+    focusKey: key,
+  }
+}
+
+/**
+ * 登记一次回滚（阶段 5 / 5.5）：把 entry 的 schema 换成回滚后的快照。
+ *
+ * 回滚后该表在服务端等于「刚保存过这个 schema」，所以 savedSchema 同步设为它 ——
+ * 否则下一次 form_save 的 diff 会把回滚当成一场大改动。
+ */
+export function markRestored(
+  ws: FormWorksheet,
+  resolved: TargetResolution,
+  schema: Record<string, unknown>,
+): FormWorksheet {
+  const key = targetKeyOf(resolved)
+  return {
+    forms: ws.forms.map((f) =>
+      f.key === key
+        ? { ...f, schema, savedSchema: schema, title: schemaTitle(schema) || f.title }
+        : f,
+    ),
     focusKey: key,
   }
 }
@@ -234,7 +274,11 @@ export function seedFromDraft(schema: unknown, key = 'f1'): FormWorksheet | null
  * 不靠模型复述。
  */
 function fieldLine(f: any): string {
-  let line = `    key=${f?.key} name=${f?.name} type=${f?.type}`
+  // id 是字段的稳定标识（阶段 5 / 5.3）：改 key 时必须靠它认领旧字段，
+  // 所以清单里要印出来，模型才有得填。老 schema 的字段可能没有 id，则不印。
+  let line = `    key=${f?.key}`
+  if (f?.id) line += ` id=${f.id}`
+  line += ` name=${f?.name} type=${f?.type}`
   if (Array.isArray(f?.rules) && f.rules.length > 0) line += ' required'
   const opts = f?.props?.options
   if (Array.isArray(opts) && opts.length > 0) {
@@ -267,7 +311,8 @@ export function toWorksheetBlock(ws: FormWorksheet | undefined | null): string |
   for (const e of shown) {
     const fields = ((e.schema as any)?.fields ?? []) as any[]
     const focusTag = e.key === focus ? '（聚焦）' : ''
-    const savedTag = e.formId ? '（已保存）' : ''
+    // 已保存的表印出 formId：模型可据此跨会话稳定寻址（换个会话 key 会重排，formId 不会）。
+    const savedTag = e.formId ? `（已保存 id=${e.formId}）` : ''
     lines.push(`- ${e.key}${focusTag} 标题：${e.title}${savedTag}  ${fields.length} 个字段`)
     for (const f of fields.slice(0, MAX_FIELDS_PER_FORM)) {
       lines.push(fieldLine(f))
@@ -285,6 +330,7 @@ export function toWorksheetBlock(ws: FormWorksheet | undefined | null): string |
     '要新建一张表时，target 填新表的标题。',
     '改表时 fields 只给「要新增的字段」和「要改的字段」——不要整表回抄。清单里没提到的字段、以及没提到的属性（选项、必填等）一律原样保留。',
     '要精简或删除字段时用 removeFields 填这些字段的 key，千万不要把「要保留的字段」列出来。',
+    '要改某个字段的 key（英文标识）时，必须带上该字段的 id（清单里的 id= 就是它），否则会被当成新字段而留下重复。',
   )
   return lines.join('\n')
 }

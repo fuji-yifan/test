@@ -47,7 +47,7 @@
 
 ## 二、自动化测试（单测）
 
-`vitest`，2026-10-13 实测 **16 个文件 / 908 条全绿**，`tsc --noEmit` 干净（注意 `tsconfig.json` 只 include `src/**/*`，spec 不在类型检查范围内）。
+`vitest`，2026-10-13 实测 **18 个文件 / 931 条全绿**，`tsc --noEmit` 干净（注意 `tsconfig.json` 只 include `src/**/*`，spec 不在类型检查范围内）。
 
 跑法（WSL1 起不了 node，借 Windows node）：`cmd.exe /c "cd /d D:\frontend\低代码平台\apps\agent && npx vitest run"`。
 
@@ -56,12 +56,14 @@ CI（阶段 2 起）：`.github/workflows/agent.yml` 起 MySQL service 后 `pnpm
 | 文件 | 条数 | 主要锁什么 |
 |---|---|---|
 | `test/checkpoint-saver.spec.ts` | 718 | 自研 MySQL checkpointer 的序列化与回填 |
-| `test/graph-flow.spec.ts` | 39 | 编排主链路：路由 / 多步计划 / 检查点 / 错误恢复级联 / 上游产物缺失跳步 / 跨轮草稿隔离 / 会话记忆（3.6、3.13、3.14、3.15 的单测侧证据） |
+| `test/graph-flow.spec.ts` | 40 | 编排主链路：路由 / 多步计划 / 检查点 / 错误恢复级联 / 上游产物缺失跳步 / 跨轮草稿隔离 / 会话记忆（3.6、3.13、3.14、3.15 的单测侧证据）；重名消歧端到端（阶段 5 / 5.2） |
 | `test/conversation-state.spec.ts` | 36 | 状态栏 `buildStateBar` / `detectClarification` / `projectMemory` 预算投影 / 台账与事实（阶段 1、1b/§2.12） |
-| `test/worksheet.spec.ts` | 21 | 会话级工作台：多表寻址与增量契约（3.9、3.10） |
+| `test/worksheet.spec.ts` | 26 | 会话级工作台：多表寻址与增量契约（3.9、3.10）；formId 稳定寻址 + `savedSchema` + `markRestored`（阶段 5 / 5.1、5.4、5.5） |
 | `test/langgraph-turn.spec.ts` | 18 | SSE 方言、`stopReason`、error code 过滤（3.5、3.13）；用量软上限 `usageAlert`（阶段 4 / 4.4） |
-| `test/form-assemble-schema.spec.ts` | 14 | 按 key 合并字段（3.1） |
-| `test/tool-bridge.spec.ts` | 11 | 工具桥接（3.11）；`form_save` 注入 `clientRequestId` 幂等键（阶段 3 切片 C）；token 预算摘要化 / 头尾硬截（阶段 4 / 4.3） |
+| `test/form-assemble-schema.spec.ts` | 17 | 按 key 合并字段（3.1）；按字段 id 合并 / 改 key / 按 id 删（阶段 5 / 5.3） |
+| `test/tool-bridge.spec.ts` | 12 | 工具桥接（3.11）；`form_save` 注入 `clientRequestId` 幂等键（阶段 3 切片 C）；token 预算摘要化 / 头尾硬截（阶段 4 / 4.3）；`form_rollback` 注入 formId（阶段 5 / 5.5） |
+| `test/form-diff.spec.ts` | 7 | 字段级 diff：新增 / 修改（属性标签）/ 删除 / 无基线全新增 / 空 key 按 id 比对（阶段 5 / 5.4） |
+| `test/form-rollback.spec.ts` | 6 | `form_rollback`：默认上一版（`versions[1]`）/ 单版本无可回滚 / 显式 version / 版本不存在 / 未保存 / 未登录（阶段 5 / 5.5） |
 | `test/tool-cache.spec.ts` | 7 | 只读工具 Redis 缓存：键含 workspaceId / 去 token / TTL / invalidateWorkspace / no-op（阶段 4 / 4.5） |
 | `test/tool-gateway.spec.ts` | 6 | 网关缓存插桩：只读命中短路 / 未命中写缓存 / 写工具失效 / 高风险走确认门（阶段 4 / 4.5） |
 | `test/graph-runner-usage.spec.ts` | 3 | `persist` 落 `metadata.usageTotals`（无 plan 轮也落 / 与 plan 互不覆盖 / 缺省兜底）（阶段 4 / 4.1） |

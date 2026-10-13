@@ -1,4 +1,5 @@
 import { Response } from 'express'
+import type { FormFieldDiff } from '../../modules/graph/form-diff'
 
 // SSE 事件类型枚举
 export enum SseEventType {
@@ -67,10 +68,12 @@ export interface ConfirmRequiredPayload {
   summary: string
   /** 检查点的提问文案（按钮文案在 options 里，不由前端硬编码） */
   prompt?: string
-  kind?: 'checkpoint' | 'tool_confirm'
+  kind?: 'checkpoint' | 'tool_confirm' | 'disambiguate'
   options?: ConfirmOption[]
   /** 本次检查点要审的产物（与 message.result 同构，前端复用预览卡片渲染） */
   artifact?: Record<string, unknown>
+  /** 保存前的字段级变更（阶段 5 / 5.4，仅 form_save 检查点带） */
+  diff?: FormFieldDiff
 }
 
 export interface MessagePayload {

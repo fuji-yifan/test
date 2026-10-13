@@ -9,6 +9,7 @@ export const TOOL_RISK: Record<string, 'low' | 'medium' | 'high'> = {
   form_validate_schema: 'low',
   form_preview: 'low',
   form_save: 'low',
+  form_rollback: 'low',
   flow_create: 'low',
   flow_validate: 'low',
   flow_preview: 'low',

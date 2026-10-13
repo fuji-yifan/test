@@ -29,7 +29,16 @@ import { ToolRegistry } from '../harness/tool.registry'
 import type { AgentStateType, PendingCall } from './agent-state'
 import { AgentState } from './agent-state'
 import { projectMemory, detectClarification } from './conversation-state'
-import { resolveFormTarget, seedFromDraft, toFormArtifact, type TargetResolution } from './worksheet'
+import {
+  entryOf,
+  resolveFormTarget,
+  seedFromDraft,
+  targetKeyOf,
+  toFormArtifact,
+  type TargetResolution,
+  type WorksheetEntry,
+} from './worksheet'
+import { diffFields, isDiffEmpty, type FormFieldDiff } from './form-diff'
 
 /** 图里用到的 LLM 能力（结构类型，便于测试注入假模型） */
 export interface GraphLlm {
@@ -40,7 +49,7 @@ export interface GraphLlm {
 
 /** 发给前端的 HITL 中断载荷 */
 export interface InterruptPayload {
-  kind: 'checkpoint' | 'tool_confirm'
+  kind: 'checkpoint' | 'tool_confirm' | 'disambiguate'
   toolCallId: string
   prompt: string
   options: { value: string; label: string; style?: string }[]
@@ -49,6 +58,11 @@ export interface InterruptPayload {
   args?: Record<string, unknown>
   risk?: string
   summary?: string
+  /**
+   * 待审的字段级变更（阶段 5 / 5.4，仅 form_save 前的 space-approval 检查点带）。
+   * 用户据此看清这次保存改了什么，再决定是否写入。
+   */
+  diff?: FormFieldDiff
   /**
    * 本次检查点要审的产物（与前端 message.result 同构）。
    * 检查点不能只给按钮，用户得看到自己在批准什么。
@@ -68,7 +82,7 @@ export interface InterruptPayload {
 
 /** gate 算出的"要不要问、问什么" */
 interface PendingAsk {
-  kind: 'checkpoint' | 'tool_confirm'
+  kind: 'checkpoint' | 'tool_confirm' | 'disambiguate'
   checkpoint?: CheckpointDef
   checkpointId?: string
   call?: PendingCall
@@ -94,7 +108,7 @@ function toPendingCall(tc: any): PendingCall {
 }
 
 /** 需要按 `target` 寻址的表单类工具 */
-const FORM_TOOLS = new Set(['form_assemble_schema', 'form_save'])
+const FORM_TOOLS = new Set(['form_assemble_schema', 'form_save', 'form_rollback'])
 
 /**
  * 该 Agent 当前草稿的产物形态。
@@ -113,6 +127,22 @@ function draftArtifact(state: AgentStateType, spec: AgentSpec): Record<string, u
   }
   const data = state.drafts?.[spec.key]?.data
   return data && Object.keys(data).length > 0 ? data : null
+}
+
+/**
+ * form_save 前的字段级 diff（阶段 5 / 5.4）。
+ *
+ * 基线取工作台里该表的 `savedSchema`（上次落库快照）；新建 / 老会话没有基线 → 全部计「新增」。
+ * target 解析不到唯一已有表（create/ambiguous）→ 没有可比对象，返回 null（不显示 diff）。
+ */
+function formSaveDiff(state: AgentStateType, spec: AgentSpec, next: PendingCall): FormFieldDiff | null {
+  if (spec.key !== 'form-designer' || next.name !== 'form_save') return null
+  const resolved = resolveFormTarget(next.args?.target as string | undefined, state.formWorksheet)
+  if (resolved.kind !== 'update' && resolved.kind !== 'focus') return null
+  const entry = entryOf(state.formWorksheet, targetKeyOf(resolved))
+  if (!entry) return null
+  const diff = diffFields(entry.savedSchema, entry.schema)
+  return isDiffEmpty(diff) ? null : diff
 }
 
 /** 允许随回执带进来的身份字段 */
@@ -372,6 +402,40 @@ export class AgentSubgraphFactory {
       return { ...identity, gateOutcome: 'halt', halted: true }
     }
 
+    // 重名消歧（阶段 5 / 5.2）：用户选中的 key 直接改写本次调用的 target，
+    // 让 act 的 resolveFormTarget 按 key 精确命中 → 不再 ambiguous。
+    if (ask.kind === 'disambiguate') {
+      const next = state.pendingCalls[0]
+      const chosen = typeof action === 'string' ? action : ''
+      if (!next || !chosen || !entryOf(state.formWorksheet, chosen)) {
+        // 非法回答（abort / 非候选）→ 按用户取消处理，绝不把脏值写进 target
+        return { ...identity, gateOutcome: 'halt', halted: true }
+      }
+      const rewritten: PendingCall = { ...next, args: { ...next.args, target: chosen } }
+      // 选中目标这一步同时充当该工具 beforeTool 检查点的放行（消歧与保存确认合并成一次询问）：
+      // 记 checkpointDone + 按 coversRisk 置 approved，否则 act 会因缺放行被网关拦下，
+      // 或（更糟）绕过确认直接写库。没有该检查点时就是一次纯寻址。
+      const cp = spec.checkpoints.find(
+        (c) =>
+          c.beforeTool === next.name &&
+          !state.checkpointDone.some((d) => d.checkpointId === c.id && d.toolCallId === next.id) &&
+          (!c.when || c.when(state)),
+      )
+      return {
+        ...identity,
+        gateOutcome: 'act',
+        pendingCalls: [rewritten, ...state.pendingCalls.slice(1)],
+        ...(cp
+          ? {
+              checkpointDone: [
+                { checkpointId: cp.id, toolCallId: next.id, action: 'continue' as const },
+              ],
+              approved: cp.coversRisk ? true : state.approved,
+            }
+          : {}),
+      }
+    }
+
     const checkpoint = ask.checkpoint!
     const record = {
       checkpointId: checkpoint.id,
@@ -424,36 +488,75 @@ export class AgentSubgraphFactory {
       }
     }
 
-    // 2) 下一个待执行调用触发的 beforeTool 检查点
     const next = state.pendingCalls[0]
     if (!next) return null
 
+    // 2) 重名消歧（阶段 5 / 5.2）：head 是表单工具、target 命中多张同名表。
+    //    放在 beforeTool 检查点**之前**：目标没定下来，后面的保存确认（带 diff）其实无从谈起；
+    //    选中目标那一步**同时**充当该工具的 beforeTool 放行（在 gate 里合并记 checkpointDone +
+    //    approved），所以不存在「没批准就写库」。form_assemble_schema 无 beforeTool 检查点，
+    //    消歧即唯一提问。
+    //    注：不能放在检查点循环**之后**——检查点答复后 gate 直接返回 act，消歧将永远不被问到，
+    //    form_save 会静默写到 keys[0]（错的表）。
+    if (FORM_TOOLS.has(next.name)) {
+      const resolved = resolveFormTarget(next.args?.target as string | undefined, state.formWorksheet)
+      if (resolved.kind === 'ambiguous') {
+        const candidates = resolved.keys
+          .map((k) => entryOf(state.formWorksheet, k))
+          .filter((e): e is WorksheetEntry => !!e)
+        const targetText = typeof next.args?.target === 'string' ? next.args.target : '同名'
+        const verb = next.name === 'form_save' ? '把改动保存到' : next.name === 'form_rollback' ? '回滚' : '操作'
+        return {
+          kind: 'disambiguate',
+          payload: {
+            kind: 'disambiguate',
+            toolCallId: next.id,
+            tool: next.name,
+            args: next.args,
+            // label 必须带 key：重名即归一标题相同，只靠标题用户分不清。
+            prompt: `会话中有 ${candidates.length} 张「${targetText}」，请选择要${verb}哪一张`,
+            options: candidates.map((e) => ({
+              value: e.key,
+              label: `${e.title}（${e.key}${e.formId ? '，已保存' : ''}）`,
+              style: 'default',
+            })),
+            ...(artifact ? { artifact } : {}),
+          },
+        }
+      }
+    }
+
+    // 3) 下一个待执行调用触发的 beforeTool 检查点
     for (const cp of spec.checkpoints) {
       if (cp.beforeTool !== next.name) continue
       if (answered(cp.id, next.id)) continue
       if (cp.when && !cp.when(state)) continue
+      const payload: InterruptPayload = {
+        kind: 'checkpoint',
+        checkpointId: cp.id,
+        toolCallId: next.id,
+        tool: next.name,
+        args: next.args,
+        // 这个检查点站在「即将执行的工具」前面，所以要说清放行的是什么工具、
+        // 它有多大风险。coversRisk 的检查点更是顶替了风险门，不报风险就是漏披露。
+        risk: this.registry.getRisk(next.name),
+        prompt: cp.prompt,
+        options: cp.options,
+        ...(artifact ? { artifact } : {}),
+      }
+      // 表单保存前的字段级 diff（阶段 5 / 5.4）：用户得看清这次要改什么再放行。
+      const diff = formSaveDiff(state, spec, next)
+      if (diff) payload.diff = diff
       return {
         kind: 'checkpoint',
         checkpoint: cp,
         checkpointId: cp.id,
         coversRisk: cp.coversRisk,
-        payload: {
-          kind: 'checkpoint',
-          checkpointId: cp.id,
-          toolCallId: next.id,
-          tool: next.name,
-          args: next.args,
-          // 这个检查点站在「即将执行的工具」前面，所以要说清放行的是什么工具、
-          // 它有多大风险。coversRisk 的检查点更是顶替了风险门，不报风险就是漏披露。
-          risk: this.registry.getRisk(next.name),
-          prompt: cp.prompt,
-          options: cp.options,
-          ...(artifact ? { artifact } : {}),
-        },
+        payload,
       }
     }
 
-    // 3) 兜底：工具网关的风险确认（与 ToolGateway 的判定规则一致）
+    // 4) 兜底：工具网关的风险确认（与 ToolGateway 的判定规则一致）
     if (this.bridge.needsConfirmation(next.name)) {
       const risk = this.registry.getRisk(next.name)
       const summary = `即将执行 ${next.name}（风险：${risk}）`

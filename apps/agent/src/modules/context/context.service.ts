@@ -64,6 +64,12 @@ export class ContextService {
     return form.schema || form
   }
 
+  /** 表单版本快照列表（按 version 倒序，[0] 为当前版本）——阶段 5 / 5.5 回滚用 */
+  async getFormVersions(token: string, formId: string): Promise<any[]> {
+    const list = await this.fetch<any[]>(`/api/v1/forms/${formId}/versions`, token)
+    return Array.isArray(list) ? list : []
+  }
+
   async getSubmissions(token: string, formId: string, params?: {
     page?: number; pageSize?: number; startDate?: string; endDate?: string
   }): Promise<any> {

@@ -15,6 +15,7 @@ import type { AgentKey, AgentStateType, StepArtifact } from './agent-state'
 import {
   applyAssemble,
   compactEntry,
+  markRestored,
   markSaved,
   toWorksheetBlock,
   type FormWorksheet,
@@ -216,8 +217,9 @@ export class AgentCatalogService implements OnApplicationBootstrap {
           'form_validate_schema',
           'form_preview',
           'form_save',
+          'form_rollback',
         ],
-        serverTools: ['form_preview', 'form_save'],
+        serverTools: ['form_preview', 'form_save', 'form_rollback'],
         maxIterations: 8,
         // 会话里有哪些表（key/标题/字段全列出），模型据此分辨「改哪张、建哪张」
         draftHint: ({ worksheet }) => toWorksheetBlock(worksheet),
@@ -245,6 +247,17 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             options: [
               { value: 'continue', label: '加入当前空间', style: 'primary' },
               { value: 'abort', label: '先不加入', style: 'danger' },
+            ],
+            coversRisk: true,
+          },
+          {
+            // 回滚同样写库（追加新版本），执行前征求同意（阶段 5 / 5.5）
+            id: 'rollback-approval',
+            beforeTool: 'form_rollback',
+            prompt: '确认把这张表单回滚到上一版？',
+            options: [
+              { value: 'continue', label: '确认回滚', style: 'primary' },
+              { value: 'abort', label: '取消', style: 'danger' },
             ],
             coversRisk: true,
           },
@@ -279,6 +292,23 @@ export class AgentCatalogService implements OnApplicationBootstrap {
               metadata: formId
                 ? { savedFormId: formId, draftForms: worksheet.forms.map(compactEntry) }
                 : undefined,
+              worksheet,
+            }
+          }
+          if (toolName === 'form_rollback') {
+            // 回滚成功：把工作台里该表的 schema 换成回滚后的快照（savedSchema 同步换，
+            // 否则下一次 form_save 的 diff 会把整场回滚当成大改动）。
+            const schema = (result as any)?.schema
+            if (!schema) return null
+            const worksheet = resolved
+              ? markRestored(state.formWorksheet, resolved, schema)
+              : state.formWorksheet
+            return {
+              draftUpdate: { type: 'FormArtifact', data: { schema } },
+              metadata: {
+                draftSchema: schema,
+                draftForms: worksheet.forms.map(compactEntry),
+              },
               worksheet,
             }
           }

@@ -165,6 +165,34 @@ describe('LangChainToolBridge', () => {
     expect(gateway.calls[2].args.clientRequestId).toBeUndefined()
   })
 
+  it('form_rollback 命中已保存的表时注入 formId，未保存/新建的表不注入（5.5）', async () => {
+    const FORM_ROLLBACK = { ...FORM_SAVE, name: 'form_rollback' }
+    const { bridge, gateway } = makeBridge({ form_rollback: FORM_ROLLBACK })
+    const worksheet = {
+      forms: [
+        { key: 'f1', title: '客户登记表', schema: {}, formId: 'uuid-1' },
+        { key: 'f2', title: '员工登记表', schema: {} },
+      ],
+      focusKey: 'f1',
+    }
+
+    // 命中已保存的 f1 → 注入 formId
+    await bridge.run('form_rollback', {}, {
+      userToken: 'tok',
+      formWorksheet: worksheet,
+      formTarget: { kind: 'update', key: 'f1' },
+    })
+    expect(gateway.calls[0].args.formId).toBe('uuid-1')
+
+    // 命中没保存过的 f2（无 formId）→ 不注入，工具据此报「没有可回滚的版本」
+    await bridge.run('form_rollback', {}, {
+      userToken: 'tok',
+      formWorksheet: worksheet,
+      formTarget: { kind: 'update', key: 'f2' },
+    })
+    expect(gateway.calls[1].args.formId).toBeUndefined()
+  })
+
   it('confirmRequired 抛 ToolConfirmationRequiredError，携带 tool/args/risk/callId', async () => {
     const { bridge, gateway } = makeBridge({ data_export: DATA_EXPORT })
     gateway.result = {

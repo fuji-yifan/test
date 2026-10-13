@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, computed, markRaw } from 'vue'
-import { useAgentChat, type ConfirmOption } from '@/composables/useAgentChat'
+import { useAgentChat, type ConfirmOption, type AgentFieldDiff } from '@/composables/useAgentChat'
 import { marked } from 'marked'
 import PreviewPanel from '@/components/PreviewPanel.vue'
 import FlowPreviewGraph from '@/components/flow/FlowPreviewGraph.vue'
@@ -148,6 +148,11 @@ function confirmOptions(tc: any): ConfirmOption[] {
 function answerConfirm(tc: any, option: ConfirmOption) {
   // 回执复用 /agent/chat；message 只作聊天记录展示，后端以 confirmAction 为准
   sendMessage(option.label, tc.callId, undefined, option.value)
+}
+
+/** 保存前 diff 是否有内容（阶段 5 / 5.4）；三组都空就不渲染 */
+function hasDiff(diff?: AgentFieldDiff): boolean {
+  return !!diff && (diff.added.length > 0 || diff.modified.length > 0 || diff.removed.length > 0)
 }
 
 const RISK_LABEL: Record<string, string> = { low: '低', medium: '中', high: '高', critical: '极高' }
@@ -323,6 +328,21 @@ watch(() => isLoading.value, (l, was) => {
                       <div v-if="tc.tool" class="confirm-meta">
                         即将执行 <code>{{ tc.tool }}</code>
                         <span v-if="riskLabel(tc.risk)" class="confirm-risk">风险 {{ riskLabel(tc.risk) }}</span>
+                      </div>
+                      <!-- 保存前的字段级变更（阶段 5 / 5.4）：写库前让用户看清改了什么 -->
+                      <div v-if="hasDiff(tc.diff)" class="confirm-diff">
+                        <div v-if="tc.diff.added.length" class="diff-row diff-added">
+                          <span class="diff-tag">新增</span>
+                          <span class="diff-items">{{ tc.diff.added.map((f: any) => f.name).join('、') }}</span>
+                        </div>
+                        <div v-if="tc.diff.modified.length" class="diff-row diff-modified">
+                          <span class="diff-tag">修改</span>
+                          <span class="diff-items">{{ tc.diff.modified.map((f: any) => `${f.name}（${f.changes.join('/')}）`).join('、') }}</span>
+                        </div>
+                        <div v-if="tc.diff.removed.length" class="diff-row diff-removed">
+                          <span class="diff-tag">删除</span>
+                          <span class="diff-items">{{ tc.diff.removed.map((f: any) => f.name).join('、') }}</span>
+                        </div>
                       </div>
                       <div class="confirm-actions">
                         <el-button
@@ -692,6 +712,13 @@ watch(() => isLoading.value, (l, was) => {
 .confirm-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: #909399; }
 .confirm-meta code { font-size: 11px; background: #f4e3c8; color: #8a6d3b; padding: 1px 5px; border-radius: 4px; }
 .confirm-risk { color: #b88230; }
+.confirm-diff { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.diff-row { display: flex; gap: 6px; font-size: 12px; line-height: 1.5; }
+.diff-tag { flex: none; padding: 0 6px; border-radius: 4px; font-size: 11px; }
+.diff-items { color: #606266; word-break: break-all; }
+.diff-added .diff-tag { background: #e7f5e9; color: #3a9d5d; }
+.diff-modified .diff-tag { background: #fdf6ec; color: #b88230; }
+.diff-removed .diff-tag { background: #fdecec; color: #c45656; }
 .confirm-actions { display: flex; gap: 8px; margin-top: 8px; }
 
 /* 被抢占后自动中断的检查点：灰化留痕，不可交互 */

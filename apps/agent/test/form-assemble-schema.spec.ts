@@ -291,6 +291,62 @@ describe('form_assemble_schema 字段合并', () => {
     ).rejects.toThrow(/name 与 type/)
   })
 
+  it('按 id 改 key：认领旧字段、保留 id 与属性，不产生重复（阶段 5 / 5.3）', async () => {
+    const first = await tool.execute({
+      fields: [{ key: 'xingming', name: '姓名', type: 'input', text: '请输入姓名' }],
+    })
+    const id = first.schema.fields[0].id
+
+    const second = await tool.execute({
+      fields: [{ id, key: 'name' }],
+      existingSchema: first.schema,
+    })
+
+    expect(second.schema.fields).toHaveLength(1)
+    expect(second.schema.fields[0].key).toBe('name')
+    expect(second.schema.fields[0].id).toBe(id)
+    expect(second.schema.fields[0].name).toBe('姓名')
+    expect(second.schema.fields[0].props.placeholder).toBe('请输入姓名')
+    expect(second.summary).toContain('修改 1 个字段')
+  })
+
+  it('空 key 的布局控件按 id 合并（key 回退覆盖不到）', async () => {
+    const first = await tool.execute({
+      fields: [{ key: 'name', name: '姓名', type: 'input' }],
+    })
+    // buildField 不产布局控件，模拟编辑器/服务端 schema 里 key 为 '' 的 card
+    const withCard = {
+      ...first.schema,
+      fields: [...first.schema.fields, { id: 'field_card', key: '', name: '分组', type: 'card' }],
+    }
+
+    const second = await tool.execute({
+      fields: [{ id: 'field_card', name: '基本信息' }],
+      existingSchema: withCard,
+    })
+
+    expect(second.schema.fields).toHaveLength(2)
+    const card = second.schema.fields.find((f: any) => f.id === 'field_card')
+    expect(card.name).toBe('基本信息')
+    expect(card.key).toBe('')
+    expect(second.summary).toContain('修改 1 个字段')
+  })
+
+  it('removeFields 支持按 id 删除', async () => {
+    const first = await tool.execute({
+      fields: [
+        { key: 'name', name: '姓名', type: 'input' },
+        { key: 'phone', name: '手机号', type: 'input' },
+      ],
+    })
+    const phoneId = first.schema.fields[1].id
+
+    const second = await tool.execute({ removeFields: [phoneId], existingSchema: first.schema })
+
+    expect(second.schema.fields.map((f: any) => f.key)).toEqual(['name'])
+    expect(second.summary).toContain('删除 1 个字段')
+  })
+
   it('更新后 summary 用「已更新」而不是「已生成」', async () => {
     const first = await tool.execute({
       fields: [

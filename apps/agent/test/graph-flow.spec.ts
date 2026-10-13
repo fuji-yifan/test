@@ -432,6 +432,39 @@ describe('LangGraph 编排', () => {
     expect(saves[1].args.formId).toBeUndefined()
   })
 
+  it('重名消歧（5.2）：目标命中多张同名表先弹候选，选完再执行（form_save 也不例外）', async () => {
+    const h = buildHarness([
+      { calls: [{ id: 'c1', name: 'form_assemble_schema', args: { target: '客户登记表', fields: [{ key: 'a' }] } }] },
+      { calls: [{ id: 'c2', name: 'form_assemble_schema', args: { target: '员工登记表', fields: [{ key: 'b' }] } }] },
+      { calls: [{ id: 'c3', name: 'form_save', args: { name: '登记表', target: '登记表' } }] },
+      { content: '保存好了。' },
+    ])
+
+    // 两张表各自过 schema-review
+    let r = await runTurn(h, '建两张表再保存')
+    expect(r.interrupted?.checkpointId).toBe('schema-review')
+    r = await resumeTurn(h, { action: 'continue' })
+    expect(r.interrupted?.checkpointId).toBe('schema-review')
+
+    // 第三问：form_save 的 target『登记表』同时命中两张 → 必须消歧。
+    // （旧实现把消歧放在 beforeTool 检查点之后，检查点答完 gate 直接 act → 永远问不到，
+    //  会静默写到 keys[0]，即错的表。）
+    r = await resumeTurn(h, { action: 'continue' })
+    expect(r.interrupted?.kind).toBe('disambiguate')
+    const opts = (r.interrupted?.options ?? []) as any[]
+    expect(opts.map((o) => o.value)).toEqual(['f1', 'f2'])
+    expect(String(r.interrupted?.prompt)).toContain('2 张')
+
+    // 选中 f2 → 改写 target 后执行；消歧那一步已合并放行保存确认，故不再多弹一次
+    r = await resumeTurn(h, { action: 'f2' })
+    expect(r.interrupted).toBeUndefined()
+
+    const saves = h.gateway.calls.filter((c) => c.name === 'form_save')
+    expect(saves).toHaveLength(1)
+    // target 已被改写成用户选的那张 key
+    expect(saves[0].args.target).toBe('f2')
+  })
+
   it('跨轮：第二轮的 system prompt 里带着上一轮的表清单', async () => {
     const h = buildHarness([
       { calls: [{ id: 'c1', name: 'form_assemble_schema', args: { target: '客户登记表', fields: [{ key: 'cust' }] } }] },

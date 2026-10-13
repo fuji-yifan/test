@@ -15,7 +15,7 @@
 | 2 | 失败迭代（eval 接 CI） | ✅ 完成（§3.1；harness 抽取 + eval 11 例 + CI，commit `d95097d`；`tsc` 干净） |
 | 3 | 持久化（会话/执行权/幂等） | ✅ 切片 A/B/C 全部完成（分支 `feat/agent-session-mysql`，未合 master、未灰度）：**A** 会话落 MySQL（`7b8255f`）；**B** 执行权租约（行锁+TTL+心跳）；**C** 幂等下沉（server 唯一键）· 详案 §3.2 |
 | 4 | 成本（token 预算 + usage + **缓存**） | ✅ 完成（§3.3；分支 `feat/agent-stage4-cost`，叠于阶段 3）；`vitest` 908 全绿 + `tsc` 干净；未合/未灰度 |
-| 5 | 业务落地（寻址/diff/撤销） | ⬜ 未开始 · 详案已备 §3.4 |
+| 5 | 业务落地（寻址/diff/撤销） | ✅ 完成（§3.4；分支 `feat/agent-stage5-business`，叠于阶段 4）；`vitest` 931 全绿 + `tsc` 干净；未合/未灰度 |
 | 6 | 安全（提示注入/审计/配额）+ **兜底与降级** | ⬜ 未开始 · 详案已备 §3.5（含 **S7 兜底与降级**） |
 | 7 | 技能管理 | ⬜ 未开始 · 详案已备 §3.6 |
 | 8 | **长期记忆（用户级）+ 知识沉淀 + MCP** | ⬜ 未开始 · **升级为正式设计**（§3.7；长期记忆提为正式，MCP 仍留后） |
@@ -784,16 +784,49 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 5. 「回滚到上一版」端点（读 `form_versions`）接前端入口。
 
 **任务清单**
-- [ ] 5.1 `resolveFormTarget` 优先稳定 id
-- [ ] 5.2 重名消歧 UX（候选列表 + 选择）
-- [ ] 5.3 `mergeField` 按字段 id 合并（key 回退）
-- [ ] 5.4 保存前字段 diff 预览
-- [ ] 5.5 回滚到上一版（基于 `form_versions`）
+- [x] 5.1 `resolveFormTarget` 优先稳定 id
+- [x] 5.2 重名消歧 UX（候选列表 + 选择）
+- [x] 5.3 `mergeField` 按字段 id 合并（key 回退）
+- [x] 5.4 保存前字段 diff 预览
+- [x] 5.5 回滚到上一版（基于 `form_versions`）
 
 **验收**：重名表可精确寻址；改 key 不丢字段；保存前可见 diff；可回滚到上一版。
 
 **风险与取舍**：老 worksheet 无 id ⇒ 必须回退兼容（缺字段走旧路径）；diff 会多一轮确认 ⇒ 可配
 （低风险保存免确认）。
+
+**阶段 5 落地（2026-10-13，分支 `feat/agent-stage5-business`，叠于阶段 4）**
+- **5.1 寻址优先稳定 id**：`resolveFormTarget`（`worksheet.ts`）在「key 精确」**之前**加「formId 精确」分支
+  （`entry.formId === raw` → `update`）；`toWorksheetBlock` 已保存的表在行尾印 `id=<formId>`，模型据此可跨会话稳定寻址。
+- **5.2 重名消歧 UX（interrupt）**：`resolveFormTarget` 重名返 `ambiguous` 不再静默取 `keys[0]`。`kind` 封闭联合
+  （`InterruptPayload`/`PendingAsk`/`PendingGraphInterrupt`/`ConfirmRequiredPayload`）加 `'disambiguate'`；
+  `firstPendingAsk` 在 afterTool 检查点**之后**、beforeTool 检查点**之前**，对 head 是 `FORM_TOOLS` 且
+  `resolveFormTarget(target, ws).kind === 'ambiguous'` 时返回候选询问（`options[].label` 必须带 `key`——重名即归一
+  标题相同，仅标题无法区分）。`gate` 新增分支（在 `ask.checkpoint!` 之前，否则抛 TypeError）：选中 key 命中
+  → `gateOutcome:'act'` 并把 head 的 `args.target` 改写为 chosenKey；非法值 → `halt`。
+  **关键坑（实测踩到）**：消歧**不能**放在 beforeTool 检查点循环**之后**——检查点答复后 `gate` 直接返回 `act`，
+  消歧永远问不到，`form_save`/`form_rollback` 会静默写到 `keys[0]`（错的表）。改成放在检查点**之前**后，选中目标
+  那一步**同时充当**该工具 beforeTool 检查点的放行：`gate` 的 disambiguate 分支按 `spec.checkpoints` 找到该工具
+  未答复的 beforeTool 检查点，一并记 `checkpointDone(action:'continue')` + 按 `coversRisk` 置 `approved`（消歧与
+  保存确认合并成一次询问，既不问两遍、也不绕过确认）。`form_assemble_schema` 无 beforeTool 检查点 → 消歧即唯一提问。
+  前端**无需改**：确认卡片已按 `options` 泛化渲染，`answerConfirm` 发送 `option.value` 作为 `confirmAction`。
+- **5.3 mergeField 按字段 id 合并（key 回退）**：`simpleField` 加可选 `id`；`form-assemble-schema.tool.ts` 建
+  `byId`+`byKey` 两张索引，每条补丁**先按 id 命中、再按 key 回退**；字段身份 `f.key || f.id`（布局控件
+  `key===''`，只能靠 id）；`mergeField` 允许改 key（按 id 命中新 key 时生效）；`removeFields` 支持 key 与 id。
+  这样「改字段 key」不再变成新增残留重复。
+- **5.4 保存前字段 diff 预览**：`WorksheetEntry` 加 `savedSchema`，`markSaved` 同时写（channel 替换语义，随 checkpoint 存活）。
+  新纯函数 `graph/form-diff.ts`：`diffFields(base, next)` → `{added,modified,removed}`（`changes` 报 标签/类型/必填/选项/提示文字）。
+  `firstPendingAsk` 处理 `beforeTool:'form_save'` 检查点时定位 entry、算 diff 挂到 payload；`askConfirm` 显式转发
+  `diff` 到 `ConfirmRequiredPayload`；前端确认卡片渲染 diff 分组（新增/修改/删除 chips）。
+- **5.5 回滚到上一版**：`ContextService.getFormVersions`（`GET /forms/:id/versions`，按 version desc）。新工具
+  `form_rollback`（`riskLevel:'low'`，args `{target?,formId?,version?}`）读 `versions[1]`（或显式 `version`），
+  用现有 `saveFormDraft`（PATCH，**追加新版本**、非破坏）恢复；`versions.length<2` → 明确报「没有上一版」。
+  `FORM_TOOLS` 加 `form_rollback`，formId 注入含它；`agent-catalog` 的 `extractArtifact` 用 `markRestored` 覆盖
+  entry 的 `schema`/`savedSchema` 并回写 `draft*`；新增 `rollback-approval`（`beforeTool:'form_rollback'`）检查点。
+  平台后台既有版本历史/恢复 UI 不动，只补 agent 侧回滚入口。
+- **验证**：agent `tsc --noEmit` 干净；agent `vitest` **931 全绿**（新增 `form-diff` 7 / `form-rollback` 6 /
+  `form-assemble-schema` +3 / `worksheet` +4 / `tool-bridge` +1 / `graph-flow` +1 重名消歧端到端）；web `vue-tsc --noEmit`
+  干净。真机项（重名弹候选、改 key 不重复、保存卡片见 diff、对话里「回滚到上一版」）留用户手测。
 
 ### 3.5 阶段 6：安全与隔离（落地方案）
 

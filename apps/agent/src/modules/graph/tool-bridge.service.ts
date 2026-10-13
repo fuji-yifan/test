@@ -193,9 +193,10 @@ export class LangChainToolBridge {
       // 模型在追问里常常只给新字段，工具据此按 key 合并，避免原有字段被整表覆盖
       out.existingSchema = target.schema
     }
-    if (name === 'form_save' && !out.formId && target?.formId) {
+    if ((name === 'form_save' || name === 'form_rollback') && !out.formId && target?.formId) {
       // 只有解析到「已落库的那张表」才把 formId 带上 → 修掉「保存表 A 后再建表 B，
-      // B 静默覆盖 A」：B 是 create，永远拿不到 formId。
+      // B 静默覆盖 A」：B 是 create，永远拿不到 formId。form_rollback 同源：
+      // 没保存过的表没有 formId，工具据此报「没有可回滚的版本」（5.5）。
       out.formId = target.formId
     }
     return out
