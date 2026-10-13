@@ -362,6 +362,28 @@ model TaskInstance {
   @@map("task_instances")
 }
 
+// ==================== Agent 会话 ====================
+// Agent 服务的会话行（消息/元数据/展示锁）。由 apps/agent 的 SessionStore 在
+// SESSION_STORE=mysql 模式下读写，server 侧不直接使用；放在这里是为了让表结构
+// 走统一的 Prisma migration 管理（与 graph_checkpoints 同批，用 db push 同步）。
+// 会话 id 就是 LangGraph 的 thread_id：会话行必须在重启后仍能按 id 找回，
+// 否则 getOrCreate 会另建新 id，把已落库的 checkpoint 变成孤儿。
+model AgentSession {
+  id          String   @id @db.VarChar(64)
+  userId      String   @map("user_id") @db.VarChar(64)
+  workspaceId String   @map("workspace_id") @db.VarChar(64) @default("")
+  scenario    String   @db.VarChar(64) @default("")
+  messages    String   @db.LongText
+  metadata    String   @db.LongText
+  locked      Boolean  @default(false)
+  createdAt   BigInt   @default(0) @map("created_at")
+  updatedAt   BigInt   @default(0) @map("updated_at")
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@map("agent_sessions")
+}
+
 // ==================== LangGraph 检查点 ====================
 // LangGraph 的 thread 状态持久化。由 apps/agent 的 MysqlCheckpointSaver 读写，
 // server 侧不直接使用；放在这里是为了让表结构走统一的 Prisma migration 管理。

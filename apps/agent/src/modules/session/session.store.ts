@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common'
+import { createPool, type Pool } from 'mysql2/promise'
+import { MysqlExecutor, type SqlExecutor } from '../graph/sql-executor'
 
 export interface AgentSession {
   id: string
@@ -34,7 +36,7 @@ interface ToolResultRecord {
 }
 
 @Injectable()
-export class SessionStore {
+export class SessionStore implements OnModuleDestroy {
   private readonly logger = new Logger(SessionStore.name)
   private memoryStore: Map<string, AgentSession>
 
@@ -42,10 +44,89 @@ export class SessionStore {
   private db: any = null
   private useSqlite: boolean
 
+  // MySQL（阶段 3 切片 A）：与 checkpoint 共库，表结构由 apps/server 的 Prisma 管理。
+  // 内存 Map 仍是进程内快路径；DB 是权威，重启后按 id 找回会话（getOrCreate 不再另建新 id）。
+  private useMysql: boolean
+  private mysqlFailed = false
+  private pool: Pool | null = null
+  private mysqlExecutor: SqlExecutor | null = null
+
   constructor() {
     this.memoryStore = new Map()
-    this.useSqlite = (process.env.SESSION_STORE || 'memory') === 'sqlite'
-    this.logger.log(`Session store: ${this.useSqlite ? 'sqlite' : 'memory'} (TTL: ${process.env.SESSION_TTL_HOURS || 6}h)`)
+    const store = (process.env.SESSION_STORE || 'memory').toLowerCase()
+    this.useSqlite = store === 'sqlite'
+    this.useMysql = store === 'mysql'
+    const active = this.useMysql ? 'mysql' : this.useSqlite ? 'sqlite' : 'memory'
+    this.logger.log(`Session store: ${active} (TTL: ${process.env.SESSION_TTL_HOURS || 6}h)`)
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    if (this.pool) await this.pool.end().catch(() => {})
+  }
+
+  /**
+   * 惰性建 MySQL 连接池并确保表存在。
+   *
+   * 失败（未配 `AGENT_DATABASE_URL` / 连不上）时**降级回内存**并只告警一次，
+   * 不让会话读写成为硬依赖 —— 与 sqlite 分支的失败处置一致。已失败则不再重试。
+   */
+  private async getMysql(): Promise<SqlExecutor | null> {
+    if (!this.useMysql || this.mysqlFailed) return null
+    if (this.mysqlExecutor) return this.mysqlExecutor
+
+    const url = process.env.AGENT_DATABASE_URL
+    if (!url) {
+      this.mysqlFailed = true
+      this.logger.warn('SESSION_STORE=mysql 但未配置 AGENT_DATABASE_URL，回退内存存储')
+      return null
+    }
+    try {
+      this.pool = createPool({
+        uri: url,
+        connectionLimit: parseInt(process.env.AGENT_DB_POOL_SIZE || '5', 10),
+        waitForConnections: true,
+      })
+      this.mysqlExecutor = new MysqlExecutor(this.pool)
+      await this.mysqlExecutor.execute(`
+        CREATE TABLE IF NOT EXISTS agent_sessions (
+          id VARCHAR(64) NOT NULL,
+          user_id VARCHAR(64) NOT NULL,
+          workspace_id VARCHAR(64) NOT NULL DEFAULT '',
+          scenario VARCHAR(64) NOT NULL DEFAULT '',
+          messages LONGTEXT NOT NULL,
+          metadata LONGTEXT NOT NULL,
+          locked TINYINT(1) NOT NULL DEFAULT 0,
+          created_at BIGINT NOT NULL DEFAULT 0,
+          updated_at BIGINT NOT NULL DEFAULT 0,
+          PRIMARY KEY (id),
+          KEY idx_agent_sessions_user (user_id),
+          KEY idx_agent_sessions_workspace (workspace_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `)
+      this.logger.log('Session store: MySQL 已就绪')
+      return this.mysqlExecutor
+    } catch (err) {
+      this.logger.warn('MySQL 初始化失败，回退内存存储', (err as Error).message)
+      this.mysqlFailed = true
+      if (this.pool) await this.pool.end().catch(() => {})
+      this.pool = null
+      this.mysqlExecutor = null
+      return null
+    }
+  }
+
+  private mysqlRowToSession(row: any): AgentSession {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      workspaceId: row.workspace_id || '',
+      scenario: row.scenario || '',
+      messages: JSON.parse(String(row.messages ?? '[]')),
+      metadata: JSON.parse(String(row.metadata ?? '{}')),
+      locked: row.locked === 1 || row.locked === true,
+      createdAt: Number(row.created_at) || 0,
+      updatedAt: Number(row.updated_at) || 0,
+    }
   }
 
   private async getDb(): Promise<any> {
@@ -119,6 +200,31 @@ export class SessionStore {
       this.persistDb()
     }
 
+    // 写 MySQL
+    const mysql = await this.getMysql()
+    if (mysql) {
+      await mysql.execute(
+        `INSERT INTO agent_sessions
+           (id, user_id, workspace_id, scenario, messages, metadata, locked, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           user_id = VALUES(user_id), workspace_id = VALUES(workspace_id), scenario = VALUES(scenario),
+           messages = VALUES(messages), metadata = VALUES(metadata), locked = VALUES(locked),
+           updated_at = VALUES(updated_at)`,
+        [
+          session.id,
+          session.userId,
+          session.workspaceId,
+          session.scenario,
+          JSON.stringify(session.messages),
+          JSON.stringify(session.metadata),
+          session.locked ? 1 : 0,
+          session.createdAt,
+          session.updatedAt,
+        ],
+      )
+    }
+
     return session
   }
 
@@ -131,6 +237,17 @@ export class SessionStore {
         return null
       }
       return cached
+    }
+
+    // 查 MySQL
+    const mysql = await this.getMysql()
+    if (mysql) {
+      const rows = await mysql.query<any>('SELECT * FROM agent_sessions WHERE id = ?', [id])
+      if (!rows.length) return null
+      const session = this.mysqlRowToSession(rows[0])
+      if (this.isExpired(session)) return null
+      this.memoryStore.set(id, session)
+      return session
     }
 
     // 查 SQLite
@@ -175,6 +292,22 @@ export class SessionStore {
       this.persistDb()
     }
 
+    const mysql = await this.getMysql()
+    if (mysql) {
+      await mysql.execute(
+        'UPDATE agent_sessions SET messages=?, metadata=?, locked=?, scenario=?, workspace_id=?, updated_at=? WHERE id=?',
+        [
+          JSON.stringify(session.messages),
+          JSON.stringify(session.metadata),
+          session.locked ? 1 : 0,
+          session.scenario,
+          session.workspaceId,
+          session.updatedAt,
+          id,
+        ],
+      )
+    }
+
     return session
   }
 
@@ -185,9 +318,24 @@ export class SessionStore {
       db.run('DELETE FROM sessions WHERE id = ?', [id])
       this.persistDb()
     }
+    const mysql = await this.getMysql()
+    if (mysql) {
+      await mysql.execute('DELETE FROM agent_sessions WHERE id = ?', [id])
+    }
   }
 
   async listByUser(userId: string): Promise<AgentSession[]> {
+    const mysql = await this.getMysql()
+    if (mysql) {
+      const rows = await mysql.query<any>(
+        'SELECT * FROM agent_sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 50',
+        [userId],
+      )
+      return rows
+        .map((row) => this.mysqlRowToSession(row))
+        .filter((s) => !this.isExpired(s))
+    }
+
     const db = await this.getDb()
     if (!db) {
       // 内存兜底
