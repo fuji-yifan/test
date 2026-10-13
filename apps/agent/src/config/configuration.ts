@@ -31,6 +31,10 @@ export const throttleConfig = registerAs('throttle', () => ({
 export const sessionConfig = registerAs('session', () => ({
   store: process.env.SESSION_STORE || 'memory',
   ttlHours: parseInt(process.env.SESSION_TTL_HOURS || '6', 10),
+  // 执行权租约（阶段 3 切片 B）：仅 SESSION_STORE=mysql 时生效，memory 即降级/回滚。
+  leaseEnabled: process.env.SESSION_LEASE_ENABLED !== 'false',
+  leaseTtlMs: parseInt(process.env.SESSION_LEASE_TTL_MS || '30000', 10),
+  leaseHeartbeatMs: parseInt(process.env.SESSION_LEASE_HEARTBEAT_MS || '10000', 10),
 }))
 
 export const contextConfig = registerAs('context', () => ({

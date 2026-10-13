@@ -384,6 +384,17 @@ model AgentSession {
   @@map("agent_sessions")
 }
 
+// 会话执行权租约（阶段 3 切片 B）：跨副本互斥 + 崩溃自愈。
+// 由 apps/agent 的 SessionStore 运行时自建；声明在此是为了让 `db push` 不会把它当多余表删掉。
+model AgentSessionLease {
+  sessionId String @id @map("session_id") @db.VarChar(64)
+  owner     String @db.VarChar(128)
+  expiresAt BigInt @map("expires_at")
+  updatedAt BigInt @map("updated_at")
+
+  @@map("agent_session_leases")
+}
+
 // ==================== LangGraph 检查点 ====================
 // LangGraph 的 thread 状态持久化。由 apps/agent 的 MysqlCheckpointSaver 读写，
 // server 侧不直接使用；放在这里是为了让表结构走统一的 Prisma migration 管理。

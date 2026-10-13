@@ -103,6 +103,16 @@ export class SessionStore implements OnModuleDestroy {
           KEY idx_agent_sessions_workspace (workspace_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `)
+      // 执行权租约（阶段 3 切片 B）：独立表，幂等自建，不给已存在的 agent_sessions 加列。
+      await this.mysqlExecutor.execute(`
+        CREATE TABLE IF NOT EXISTS agent_session_leases (
+          session_id VARCHAR(64) NOT NULL,
+          owner VARCHAR(128) NOT NULL,
+          expires_at BIGINT NOT NULL DEFAULT 0,
+          updated_at BIGINT NOT NULL DEFAULT 0,
+          PRIMARY KEY (session_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `)
       this.logger.log('Session store: MySQL 已就绪')
       return this.mysqlExecutor
     } catch (err) {
@@ -353,6 +363,82 @@ export class SessionStore implements OnModuleDestroy {
     return rows[0].values
       .map((row: any[]) => this.rowToSession(row))
       .filter((s: AgentSession) => !this.isExpired(s))
+  }
+
+  // ---- 执行权租约（阶段 3 切片 B）----
+  // 跨副本互斥 + 崩溃自愈：owner + 过期时间。无 MySQL（memory / sqlite / 连接失败）时
+  // 全部降级为「直接放行」，等于纯内存现状，不阻断请求。
+
+  /**
+   * 抢租约。原子 upsert 做条件 steal：仅当「已过期」或「owner 就是自己」时才改写。
+   *
+   * MySQL 的 ON DUPLICATE KEY UPDATE 表达式按左→右、用**已更新值**求值，故 owner 必须
+   * 写在 expires_at 之前（否则 owner 会读到刚刷新的 expires_at，误判成可抢）。
+   * 写后回读判 owner==me：刚把自己 expires_at 设成 now+ttl，别的副本不可能立刻 steal，
+   * 故回读无竞态；这样也无需让 SqlExecutor 暴露 affectedRows。
+   */
+  async acquireLease(
+    sessionId: string,
+    owner: string,
+    ttlMs: number,
+  ): Promise<{ granted: boolean; degraded: boolean }> {
+    const mysql = await this.getMysql()
+    if (!mysql) return { granted: true, degraded: true } // 无 DB：单实例语义，直接放行
+
+    const now = Date.now()
+    await mysql.execute(
+      `INSERT INTO agent_session_leases (session_id, owner, expires_at, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         owner      = IF(expires_at < ? OR owner = ?, VALUES(owner), owner),
+         expires_at = IF(expires_at < ? OR owner = ?, VALUES(expires_at), expires_at),
+         updated_at = IF(expires_at < ? OR owner = ?, VALUES(updated_at), updated_at)`,
+      [sessionId, owner, now + ttlMs, now, now, owner, now, owner, now, owner],
+    )
+    const rows = await mysql.query<{ owner: string }>(
+      'SELECT owner FROM agent_session_leases WHERE session_id = ?',
+      [sessionId],
+    )
+    return { granted: rows[0]?.owner === owner, degraded: false }
+  }
+
+  /** 心跳续期。先 UPDATE 再回读：若期间被别的副本抢走，owner!=me → 返回 false。 */
+  async renewLease(sessionId: string, owner: string, ttlMs: number): Promise<boolean> {
+    const mysql = await this.getMysql()
+    if (!mysql) return true
+
+    const now = Date.now()
+    await mysql.execute(
+      'UPDATE agent_session_leases SET expires_at = ?, updated_at = ? WHERE session_id = ? AND owner = ?',
+      [now + ttlMs, now, sessionId, owner],
+    )
+    const rows = await mysql.query<{ owner: string }>(
+      'SELECT owner FROM agent_session_leases WHERE session_id = ?',
+      [sessionId],
+    )
+    return rows[0]?.owner === owner
+  }
+
+  /** 释放租约。带 owner 条件：非持有者释放无效（镜像「只有持有者解锁」不变式）。 */
+  async releaseLease(sessionId: string, owner: string): Promise<void> {
+    const mysql = await this.getMysql()
+    if (!mysql) return
+    await mysql.execute(
+      'DELETE FROM agent_session_leases WHERE session_id = ? AND owner = ?',
+      [sessionId, owner],
+    )
+  }
+
+  /** 只读探测（测试/诊断用）。 */
+  async getLease(sessionId: string): Promise<{ owner: string; expiresAt: number } | null> {
+    const mysql = await this.getMysql()
+    if (!mysql) return null
+    const rows = await mysql.query<{ owner: string; expires_at: unknown }>(
+      'SELECT owner, expires_at FROM agent_session_leases WHERE session_id = ?',
+      [sessionId],
+    )
+    if (!rows.length) return null
+    return { owner: rows[0].owner, expiresAt: Number(rows[0].expires_at) || 0 }
   }
 
   // ---- 内部方法 ----

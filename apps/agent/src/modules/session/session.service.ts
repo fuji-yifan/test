@@ -1,8 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common'
 import { SessionStore, AgentSession } from './session.store'
 
+/** 会话被另一副本占用（跨副本无法抢占，安全优先：直接回绝而非双写）。 */
+export class SessionBusyError extends Error {
+  constructor(message = '会话正在另一副本执行中，请稍后重试') {
+    super(message)
+    this.name = 'SessionBusyError'
+  }
+}
+
 @Injectable()
-export class SessionService {
+export class SessionService implements OnModuleDestroy {
   private readonly logger = new Logger(SessionService.name)
 
   /**
@@ -13,7 +21,21 @@ export class SessionService {
    */
   private readonly inflight = new Map<string, AbortController>()
 
+  /** 本进程标识（租约 owner）：同实例恒等，保证单实例路径不用等 DB。 */
+  private readonly instanceId = process.env.SESSION_INSTANCE_ID || `inst_${this.nanoid()}`
+  private readonly leaseTtlMs = parseInt(process.env.SESSION_LEASE_TTL_MS || '30000', 10)
+  private readonly leaseHeartbeatMs = parseInt(process.env.SESSION_LEASE_HEARTBEAT_MS || '10000', 10)
+  private readonly leaseEnabled = process.env.SESSION_LEASE_ENABLED !== 'false'
+
+  /** 持租约期间的续期定时器（按会话）。 */
+  private readonly leaseHeartbeats = new Map<string, ReturnType<typeof setInterval>>()
+
   constructor(private store: SessionStore) {}
+
+  onModuleDestroy(): void {
+    for (const timer of this.leaseHeartbeats.values()) clearInterval(timer)
+    this.leaseHeartbeats.clear()
+  }
 
   async create(params: {
     userId: string
@@ -96,24 +118,40 @@ export class SessionService {
     controller: AbortController,
     waitMs = 15000,
   ): Promise<{ preempted: boolean }> {
+    // 抢占第一步：同步 abort 上一轮，让信号立刻传到 graph.stream（不因后面的 await 延后）。
     const current = this.inflight.get(sessionId)
+    if (current) current.abort()
+
+    // 进程内接管（单实例快路径，原样保留）：等待上一轮让位 / 超时强制接管，落位为持有者。
+    let preempted: boolean
     if (!current) {
       this.inflight.set(sessionId, controller)
       await this.store.update(sessionId, { locked: true }).catch(() => {})
-      return { preempted: false }
+      preempted = false
+    } else {
+      const deadline = Date.now() + waitMs
+      while (this.inflight.get(sessionId) === current && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      if (this.inflight.get(sessionId) === current) {
+        this.logger.warn(`会话 ${sessionId} 上一轮 ${waitMs}ms 未让出执行权，本轮强制接管`)
+      }
+      this.inflight.set(sessionId, controller)
+      await this.store.update(sessionId, { locked: true }).catch(() => {})
+      preempted = true
     }
 
-    current.abort()
-    const deadline = Date.now() + waitMs
-    while (this.inflight.get(sessionId) === current && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 50))
-    }
-    if (this.inflight.get(sessionId) === current) {
-      this.logger.warn(`会话 ${sessionId} 上一轮 ${waitMs}ms 未让出执行权，本轮强制接管`)
-    }
-    this.inflight.set(sessionId, controller)
-    await this.store.update(sessionId, { locked: true }).catch(() => {})
-    return { preempted: true }
+    // 跨副本租约。安全优先：另一副本持**活**租约时，轮询等它释放/过期，等到 waitMs 仍拿不到
+    // 就回绝（SessionBusyError）—— 绝不跨副本强制抢，因为跨进程无法 abort 对方正在跑的 run，
+    // 硬抢会让两个副本同时写同一张图。崩溃留下的死锁由 TTL 过期回收。
+    // 无 MySQL（memory/sqlite/连接失败）或未启用时降级放行，等于纯内存现状。
+    //
+    // 必须**在进程内接管之后**取租约：owner 是进程级实例 id，被抢占的上一轮在让位时会走
+    // releaseRun 释放「它以为的」租约；若本轮提前取好，会被上一轮顺手删掉、心跳也被清，
+    // 于是本继任轮脱锁运行。放到接管之后，上一轮的释放先发生，本轮再取就是干净的。
+    await this.ensureLease(sessionId, waitMs)
+
+    return { preempted }
   }
 
   /**
@@ -123,7 +161,58 @@ export class SessionService {
   async releaseRun(sessionId: string, controller: AbortController): Promise<void> {
     if (this.inflight.get(sessionId) !== controller) return
     this.inflight.delete(sessionId)
+    this.clearHeartbeat(sessionId)
+    try { await this.store.releaseLease?.(sessionId, this.instanceId) } catch {}
     await this.store.update(sessionId, { locked: false }).catch(() => {})
+  }
+
+  /** 抢租约；未实现（fake store）或关闭时降级为「直接放行」。 */
+  private async tryAcquireLease(sessionId: string): Promise<{ granted: boolean; degraded: boolean }> {
+    if (!this.leaseEnabled || this.leaseTtlMs <= 0) return { granted: true, degraded: true }
+    if (typeof this.store.acquireLease !== 'function') return { granted: true, degraded: true }
+    return this.store.acquireLease(sessionId, this.instanceId, this.leaseTtlMs)
+  }
+
+  /** 拿到租约才算进入本轮；抢不到（另一副本持活租约）→ 回绝。抢到且落库则开心跳。 */
+  private async ensureLease(sessionId: string, waitMs: number): Promise<void> {
+    let lease = await this.tryAcquireLease(sessionId)
+    const deadline = Date.now() + waitMs
+    while (!lease.granted && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 100))
+      lease = await this.tryAcquireLease(sessionId)
+    }
+    if (!lease.granted) {
+      this.logger.warn(`会话 ${sessionId} 被其它副本占用且 ${waitMs}ms 内未释放，本轮回绝`)
+      throw new SessionBusyError()
+    }
+    if (!lease.degraded) this.startHeartbeat(sessionId)
+  }
+
+  /** 持租约期间续期；续期发现已被夺走 → 让本进程自退，避免双写。 */
+  private startHeartbeat(sessionId: string): void {
+    this.clearHeartbeat(sessionId)
+    const timer = setInterval(() => {
+      this.store
+        .renewLease(sessionId, this.instanceId, this.leaseTtlMs)
+        .then((ok) => {
+          if (!ok) {
+            this.logger.warn(`会话 ${sessionId} 租约已被其它副本夺走，本进程中止该轮`)
+            this.clearHeartbeat(sessionId)
+            this.inflight.get(sessionId)?.abort()
+          }
+        })
+        .catch(() => {})
+    }, this.leaseHeartbeatMs)
+    if (typeof timer.unref === 'function') timer.unref()
+    this.leaseHeartbeats.set(sessionId, timer)
+  }
+
+  private clearHeartbeat(sessionId: string): void {
+    const timer = this.leaseHeartbeats.get(sessionId)
+    if (timer) {
+      clearInterval(timer)
+      this.leaseHeartbeats.delete(sessionId)
+    }
   }
 
   async updateMetadata(sessionId: string, metadata: Record<string, any>): Promise<void> {
