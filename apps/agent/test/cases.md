@@ -47,7 +47,7 @@
 
 ## 二、自动化测试（单测）
 
-`vitest`，2026-10-13 实测 **13 个文件 / 886 条全绿**，`tsc --noEmit` 干净（注意 `tsconfig.json` 只 include `src/**/*`，spec 不在类型检查范围内）。
+`vitest`，2026-10-13 实测 **13 个文件 / 887 条全绿**，`tsc --noEmit` 干净（注意 `tsconfig.json` 只 include `src/**/*`，spec 不在类型检查范围内）。
 
 跑法（WSL1 起不了 node，借 Windows node）：`cmd.exe /c "cd /d D:\frontend\低代码平台\apps\agent && npx vitest run"`。
 
@@ -61,7 +61,7 @@ CI（阶段 2 起）：`.github/workflows/agent.yml` 起 MySQL service 后 `pnpm
 | `test/worksheet.spec.ts` | 21 | 会话级工作台：多表寻址与增量契约（3.9、3.10） |
 | `test/langgraph-turn.spec.ts` | 15 | SSE 方言、`stopReason`、error code 过滤（3.5、3.13） |
 | `test/form-assemble-schema.spec.ts` | 14 | 按 key 合并字段（3.1） |
-| `test/tool-bridge.spec.ts` | 8 | 工具桥接与大结果截断（3.11） |
+| `test/tool-bridge.spec.ts` | 9 | 工具桥接与大结果截断（3.11）；`form_save` 注入 `clientRequestId` 幂等键（阶段 3 切片 C） |
 | `test/session-lease.spec.ts` | 7 | 执行权租约接入：抢到放行 / 抢不到回绝 / 心跳续期 / renew 失败自退 / 只持有者释放 / 降级 / 同实例抢占后继任轮仍持锁（阶段 3 切片 B） |
 | `test/session-preempt.spec.ts` | 5 | 执行权抢占（3.7） |
 | `test/tool-registry.spec.ts` | 4 | 工具注册与风险等级 |

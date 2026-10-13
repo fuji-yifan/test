@@ -137,6 +137,26 @@ describe('LangChainToolBridge', () => {
     expect(gateway.calls[1].args.formId).toBe('f-explicit')
   })
 
+  it('form_save 把 toolCall id 注入为 clientRequestId（幂等键，切片 C）', async () => {
+    const { bridge, gateway } = makeBridge({ form_save: FORM_SAVE, data_export: DATA_EXPORT })
+
+    // 有 id：form_save 带上 clientRequestId
+    await bridge
+      .build(['form_save'])[0]
+      .invoke(toolCallInput('form_save', { title: '报名表' }, 'call-x'))
+    expect(gateway.calls[0].args.clientRequestId).toBe('call-x')
+
+    // 无 id：不注入
+    await bridge.build(['form_save'])[0].invoke(toolCallInput('form_save', {}, undefined as any))
+    expect(gateway.calls[1].args.clientRequestId).toBeUndefined()
+
+    // 非 form_save：不注入（幂等键只服务于表单创建）
+    await bridge
+      .build(['data_export'])[0]
+      .invoke(toolCallInput('data_export', { id: 'sub-1' }, 'call-y'))
+    expect(gateway.calls[2].args.clientRequestId).toBeUndefined()
+  })
+
   it('confirmRequired 抛 ToolConfirmationRequiredError，携带 tool/args/risk/callId', async () => {
     const { bridge, gateway } = makeBridge({ data_export: DATA_EXPORT })
     gateway.result = {

@@ -13,7 +13,7 @@
 | 1 | **会话记忆（上下文工程）** | ✅ 完成（§2 + §2.11；`tsc` + `vitest` 全绿 + 真机探针 6/6，已 commit `c046fd5`） |
 | 1b | **会话上下文统一治理（§2.12）** | ✅ 完成（§2.12；Ledger 台账 + 领域 Facts + 预算投影，commit `c0e7ce4`）；`vitest` 全绿 + `tsc` 干净；D6 工具结果预算并入阶段 4 |
 | 2 | 失败迭代（eval 接 CI） | ✅ 完成（§3.1；harness 抽取 + eval 11 例 + CI，commit `d95097d`；`tsc` 干净） |
-| 3 | 持久化（会话/执行权/幂等） | 🚧 进行中（分支 `feat/agent-session-mysql`，未合 master）：**切片 A** 会话落 MySQL（`7b8255f`）✅；**切片 B** 执行权租约（行锁+TTL+心跳）✅；**切片 C** 幂等下沉 ⬜ · 详案 §3.2 |
+| 3 | 持久化（会话/执行权/幂等） | ✅ 切片 A/B/C 全部完成（分支 `feat/agent-session-mysql`，未合 master、未灰度）：**A** 会话落 MySQL（`7b8255f`）；**B** 执行权租约（行锁+TTL+心跳）；**C** 幂等下沉（server 唯一键）· 详案 §3.2 |
 | 4 | 成本（token 预算 + usage + **缓存**） | ⬜ 未开始 · 详案已备 §3.3（含 **D5 缓存机制**） |
 | 5 | 业务落地（寻址/diff/撤销） | ⬜ 未开始 · 详案已备 §3.4 |
 | 6 | 安全（提示注入/审计/配额）+ **兜底与降级** | ⬜ 未开始 · 详案已备 §3.5（含 **S7 兜底与降级**） |
@@ -647,7 +647,7 @@ LLM 兜底质量靠阶段 6 的观测（Langfuse）抽样，不靠 eval。
 **任务清单**
 - [x] 3.1 Prisma `Session` model + `session.store.ts` MySQL 实现（切片 A，`7b8255f`）
 - [x] 3.2 执行权租约（行锁 + TTL 回收）（切片 B，见下「切片 B 落地」）
-- [ ] 3.3 幂等下沉：幂等表 + `form_save` 唯一约束 + 网关降级为缓存（切片 C，未做）
+- [x] 3.3 幂等下沉：幂等表 + `form_save` 唯一约束（切片 C，见下「切片 C 落地」；网关内存缓存改造归入阶段 6 S3.3）
 - [x] 3.4 `persist` 写 MySQL + 存量回填脚本（切片 A：`store.update` 已落库，persist 经 store 回写）
 - [x] 3.5 开关 `SESSION_STORE=mysql` + 灰度（切片 A；灰度待真机）
 
@@ -662,7 +662,18 @@ LLM 兜底质量靠阶段 6 的观测（Langfuse）抽样，不靠 eval。
 - **配置**：`configuration.ts` + `.env.example` 加 `SESSION_LEASE_ENABLED` / `SESSION_LEASE_TTL_MS`(30000) / `SESSION_LEASE_HEARTBEAT_MS`(10000) / 可选 `SESSION_INSTANCE_ID`。
 - **测试**：`test/session-lease.spec.ts`（7，纯逻辑：抢到放行/抢不到回绝/心跳续期/renew 失败自退/只持有者释放/降级/同实例抢占后继任轮仍持锁）、`test/session-lease-mysql.spec.ts`（4，真库两实例：并发互斥/TTL 过期自愈/非 owner 无效）；既有 `session-preempt.spec.ts` 5 条不变式继续绿。全量 **886 条 / 13 文件绿**，`tsc --noEmit` 干净。
 - **取租约的时机**：必须在**进程内接管完成之后**。owner 是进程级共享，被抢占的上一轮让位时会走 `releaseRun` 释放「它以为的」租约；若继任轮提前取好，会被上一轮顺手删掉、心跳也被清，继任轮脱锁运行。已加回归单测锁死（`同实例抢占：被抢占轮让位后，继任轮仍持有租约与心跳`）。
-- **未做**：真机多副本灰度；切片 C（幂等下沉）。
+- **未做**：真机多副本灰度。
+
+### 切片 C 落地（幂等下沉，2026-10-13）
+**落地分支** `feat/agent-session-mysql`（与切片 A/B 同分支，未合 master）。
+- **独立幂等表** `idempotency_keys(id PK=clientRequestId, resource_id 可空, created_at)`：server 侧经 `prisma db push` 建（**新增表，非 ALTER**）。选独立表而非给 `Form` 加 `@@unique([workspaceId, clientRequestId])`：不动 formpu 最大的 `forms` 表（drift 风险），且更通用（阶段 6 S3.3 复用）。
+- **幂等键 = `tool_call` id**：`tool-bridge.injectContext` 为 `form_save` 注入 `clientRequestId = opts.requestId`（`resolveToolCallId`，现网关同一来源）→ `form-save.tool` → `context.saveFormDraft` → POST body → server。**不进入 LLM 可见的 `inputSchema`**，靠 registry passthrough 送入工具（与 token/workspaceId 同路径）。
+- **server 写入边界**：`form.service.create` 收 `clientRequestId` 时先快查命中即返回；否则 `$transaction`（create 幂等行 → create 表单 → 回填 resourceId），唯一冲突（`P2002`）回读返回既有表单。**无键时完全走原路径**（`prisma.form.create`）→ 非 agent 创建零影响。`update` 解构**剥离** `clientRequestId`（防御性，防漏进 Prisma）。
+- **并发正确性**：InnoDB 唯一键插入让重复事务阻塞至首个提交，随后 P2002 → 回读已提交 `resourceId`，无「键在但资源为空」窗口。
+- **键的覆盖范围**：覆盖「同一 tool_call 被重放」（resume / 重新确认 / 图重放）；**不覆盖**「LLM 重新思考后发出新 call.id 的逻辑重试」——后者是新请求，本就应新建。
+- **网关内存 Set 未改**：`form_save` 是 `risk:'low'`，纳入内存快路径需「写工具」风险分级 → 属**阶段 6 S3.3**，本切片不越界。切片 C 后幂等正确性**不再依赖**该内存 Set。
+- **无环境开关**：仅当 agent 送键时激活；回滚 = 回退代码或 `DROP TABLE idempotency_keys`（易失数据）。
+- **测试**：agent 侧 `test/tool-bridge.spec.ts` +1（form_save 注入 clientRequestId；无 id / 非 form_save 不注入）→ 全量 **887 条 / 13 文件绿**，agent + server `tsc --noEmit` 干净。server 无 jest harness，改以**真库手测**验证：同一 `clientRequestId` 两次 `formService.create` → 同一 formId、`forms` 只落 1 行、`idempotency_keys` 1 行。
 
 **验收**：服务重启后会话可继续；两个副本并发抢占不失效；重复 `form_save` 只落一行。
 

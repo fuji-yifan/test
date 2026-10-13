@@ -40,6 +40,8 @@ export class FormSaveTool {
     tags?: string[]
     target?: string
     formId?: string
+    /** 幂等键（阶段 3 切片 C，由 tool-bridge 注入的 tool_call id）：同一键重放只落一行 */
+    clientRequestId?: string
     token?: string
     workspaceId?: string
   }): Promise<any> {
@@ -65,6 +67,7 @@ export class FormSaveTool {
         category: args.category,
         tags: args.tags,
         formId: args.formId,
+        clientRequestId: args.clientRequestId,
       },
       args.workspaceId,
     )

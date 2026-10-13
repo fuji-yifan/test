@@ -103,7 +103,7 @@ export class LangChainToolBridge {
     ctx: ToolCallContext = {},
     opts?: { requestId?: string; confirmed?: boolean },
   ): Promise<GatewayResult> {
-    const finalArgs = this.injectContext(name, args, ctx)
+    const finalArgs = this.injectContext(name, args, ctx, opts?.requestId)
     const gatewayOpts = {
       requestId: opts?.requestId,
       userId: ctx.userId,
@@ -153,10 +153,15 @@ export class LangChainToolBridge {
     name: string,
     args: Record<string, unknown>,
     ctx: ToolCallContext,
+    requestId?: string,
   ): Record<string, unknown> {
     const out = { ...args }
     out.token = ctx.userToken || ''
     out.workspaceId = ctx.workspaceId || ''
+
+    // form_save 幂等键（阶段 3 切片 C）：把本次 tool_call id 作为 clientRequestId 透传到 server，
+    // 由 server 的 idempotency_keys 唯一键去重（网关内存 Set 只对 risk!=='low' 生效，form_save 是 low）。
+    if (name === 'form_save' && requestId) out.clientRequestId = requestId
 
     // 没有工作台（非表单 agent / 单测直连）：单槽行为
     if (!ctx.formWorksheet) {

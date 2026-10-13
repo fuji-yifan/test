@@ -33,17 +33,58 @@ export class FormService {
     }
   }
 
-  async create(workspaceId: string, userId: string, dto: { name: string; description?: string; category?: string }) {
-    return this.prisma.form.create({
-      data: {
-        workspaceId,
-        name: dto.name,
-        description: dto.description || '',
-        category: dto.category || null,
-        createdBy: userId,
-        updatedBy: userId,
-      },
-    })
+  /**
+   * 创建表单。带 `clientRequestId` 时幂等：同一键只落一行。
+   *
+   * 幂等权威在 server 写入边界（阶段 3 切片 C）——agent 的 form_save 在 tool_call 被重放
+   * （resume / 重新确认 / 图重放）时会重复调用，靠 `idempotency_keys` 唯一键去重，而不是
+   * 依赖网关内存 Set（仅 risk!=='low' 生效，form_save 是 low，等于没有）。
+   *
+   * 并发：唯一键插入让重复事务阻塞至首个提交，随后抛 P2002；此时回读已提交的 resourceId
+   * 返回同一张表单，无「键在但资源为空」的窗口。
+   */
+  async create(
+    workspaceId: string,
+    userId: string,
+    dto: { name: string; description?: string; category?: string; clientRequestId?: string },
+  ) {
+    const formData = {
+      workspaceId,
+      name: dto.name,
+      description: dto.description || '',
+      category: dto.category || null,
+      createdBy: userId,
+      updatedBy: userId,
+    }
+
+    const crid = dto.clientRequestId
+    if (!crid) return this.prisma.form.create({ data: formData })
+
+    // 快查：已处理过就直接返回既有表单
+    const seen = await this.prisma.idempotencyKey.findUnique({ where: { id: crid } })
+    if (seen?.resourceId) {
+      const existing = await this.prisma.form.findUnique({ where: { id: seen.resourceId } })
+      if (existing) return existing
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.idempotencyKey.create({ data: { id: crid } })
+        const form = await tx.form.create({ data: formData })
+        await tx.idempotencyKey.update({ where: { id: crid }, data: { resourceId: form.id } })
+        return form
+      })
+    } catch (e: any) {
+      // 并发下另一请求先落键：回读它创建的表单，保证只落一行
+      if (e?.code === 'P2002') {
+        const key = await this.prisma.idempotencyKey.findUnique({ where: { id: crid } })
+        if (key?.resourceId) {
+          const existing = await this.prisma.form.findUnique({ where: { id: key.resourceId } })
+          if (existing) return existing
+        }
+      }
+      throw e
+    }
   }
 
   async getById(id: string) {
@@ -55,7 +96,7 @@ export class FormService {
     return form
   }
 
-  async update(id: string, userId: string, dto: { name?: string; description?: string; category?: string; schema?: any; settings?: any; targetVersion?: number }) {
+  async update(id: string, userId: string, dto: { name?: string; description?: string; category?: string; schema?: any; settings?: any; targetVersion?: number; clientRequestId?: string }) {
     // 如果 Schema 更新，保存版本快照
     if (dto.schema) {
       // 指定目标版本 → 覆盖已有版本；否则 → 新建版本
@@ -91,8 +132,9 @@ export class FormService {
       await this.cache.invalidateFormSchema(id)
     }
 
-    // 剥离 targetVersion（只用于版本快照，不是 Form 表的字段）
-    const { targetVersion, ...formData } = dto
+    // 剥离 targetVersion（只用于版本快照，不是 Form 表的字段）与 clientRequestId（幂等键，
+    // 仅创建路径使用，绝不能落进 Form 表）
+    const { targetVersion, clientRequestId, ...formData } = dto
     return this.prisma.form.update({
       where: { id },
       data: { ...formData, updatedBy: userId },

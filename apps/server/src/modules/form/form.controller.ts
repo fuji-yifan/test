@@ -32,7 +32,7 @@ export class FormController {
   create(
     @Param('wsId') wsId: string,
     @CurrentUser('userId') userId: string,
-    @Body() dto: { name: string; description?: string },
+    @Body() dto: { name: string; description?: string; clientRequestId?: string },
   ) {
     return this.formService.create(wsId, userId, dto)
   }

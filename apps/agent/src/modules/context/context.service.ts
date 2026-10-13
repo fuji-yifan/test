@@ -119,7 +119,12 @@ export class ContextService {
     // 创建新表单
     const created: any = await this.fetch(`/api/v1/workspaces/${wsId}/forms`, token, {
       method: 'POST',
-      body: JSON.stringify({ name: data.name, description: data.description }),
+      body: JSON.stringify({
+        name: data.name,
+        description: data.description,
+        // 幂等键（阶段 3 切片 C）：server 端 idempotency_keys 唯一键去重，同一键重放只落一行
+        clientRequestId: data.clientRequestId,
+      }),
     })
     const formId = created?.id
     if (!formId) return created
