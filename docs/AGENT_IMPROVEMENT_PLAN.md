@@ -16,7 +16,7 @@
 | 3 | 持久化（会话/执行权/幂等） | ✅ 切片 A/B/C 全部完成（§3.2；分支 `feat/agent-session-mysql`）：**A** 会话落 MySQL（`7b8255f`）；**B** 执行权租约（行锁+TTL+心跳，`dfc3fc2`）；**C** 幂等下沉（server 唯一键，`94ccd1e`）。**已合 master（2026-10-14）**，未灰度 |
 | 4 | 成本（token 预算 + usage + **缓存**） | ✅ 完成（§3.3；分支 `feat/agent-stage4-cost`，叠于阶段 3）；`vitest` 908 全绿 + `tsc` 干净。**已合 master（2026-10-14）**，未灰度 |
 | 5 | 业务落地（寻址/diff/撤销） | ✅ 完成（§3.4；分支 `feat/agent-stage5-business`，叠于阶段 4）；`vitest` 931 全绿 + `tsc` 干净。**已合 master（2026-10-14）**，未灰度 |
-| 6 | 安全（提示注入/审计/配额）+ **兜底与降级** | ◐ 大部分完成（§3.5）：**S1（RLS 除外）+ S2（agent 工具审计落库 + server 登录/权限拒绝审计 S2.4）+ S3.3 + S4（软删除/回收站/删除工具 HITL/防覆盖推广）+ S5.1 + S7**＝「整套无外部依赖项」；分支 `feat/agent-stage6-security`（已合 master，2026-10-14）+ `feat/agent-stage6-s2-audit` + `feat/agent-stage6-auth-audit` + `feat/agent-stage6-antidelete`（后三者叠于 master，未合未灰度）；`vitest` **1021 全绿** + 三端 `tsc` 干净。RLS/S2.3/S3.1/S5.2/S6.1/S6.2（SOPS）需外部基建或属别的链路，推迟 |
+| 6 | 安全（提示注入/审计/配额）+ **兜底与降级** | ◐ 大部分完成（§3.5）：**S1（RLS 除外）+ S2（agent 工具审计落库 + server 登录/权限拒绝审计 S2.4）+ S3.3 + S4（软删除/回收站/删除工具 HITL/防覆盖推广）+ S5.1 + S7**＝「整套无外部依赖项」；分支 `feat/agent-stage6-security`（已合 master，2026-10-14）+ `feat/agent-stage6-s2-audit` + `feat/agent-stage6-auth-audit` + `feat/agent-stage6-antidelete`（后三者叠于 master，未合未灰度）；`vitest` **1023 全绿** + 三端 `tsc` 干净。RLS/S2.3/S3.1/S5.2/S6.1/S6.2（SOPS）需外部基建或属别的链路，推迟 |
 | 7 | 技能管理 | ✅ 完成（本轮 D1 + D2；§3.6；分支 `feat/agent-stage7-skills`，叠于阶段 6）：frontmatter + 技能↔工具绑定校验；`vitest` 962 全绿 + `tsc` 干净；**已合 master（2026-10-14）**，未灰度。D3/D4/D5 明确挂到依赖阶段 |
 | 8 | **长期记忆（用户级）+ 知识沉淀 + MCP** | ◐ 长期记忆 8.1–8.4 完成（§3.7；分支 `feat/agent-stage8-memory`，叠于阶段 7）：表 + 提取 + 召回 + 查看/删除；`vitest` 992 全绿 + 三端 `tsc` 干净；**已合 master（2026-10-14）**，未灰度。**8.5 RAG 推迟**（无嵌入/向量基建），MCP 仍留后 |
 
@@ -939,7 +939,7 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 >   （修「两处名单各写一份、各自漂移」）。
 > - **web 最小回收站 UI**：`FormListView` 加「回收站」对话框（列被删表单 + 其被删版本，可恢复表单/版本）；
 >   删除确认文案由「删除后无法恢复」改「将移入回收站，可由回收站恢复」；`FormSettingsView` 同步文案。
-> - **验证**：agent `tsc` + server `tsc` + web `vue-tsc --noEmit` 三端干净；agent `vitest` **1021 全绿**
+> - **验证**：agent `tsc` + server `tsc` + web `vue-tsc --noEmit` 三端干净；agent `vitest` **1023 全绿**
 >   （新增 `form-delete.spec.ts` 7 例、tool-bridge 防覆盖 2 例、hallucination-guard 2 例、tool-cache 写名单 1 例）。
 > - **真机（留用户）**：删除表单/版本 → 默认列表不再出现、回收站可见、恢复后回归；删除走确认检查点。
 
