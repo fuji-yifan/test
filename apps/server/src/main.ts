@@ -10,6 +10,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { useContextMiddleware } from './common/request-context'
 import { AuditContextInterceptor } from './common/interceptors/audit-context.interceptor'
 import { CacheService } from './modules/cache/cache.service'
+import { loadOpenBaoSecrets } from './bootstrap/secret-loader'
 
 /**
  * JWT 密钥守卫（阶段 6 / S2.4）：
@@ -31,6 +32,8 @@ function assertJwtSecret(logger: Logger) {
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap')
+  // 先装载密钥托管（阶段 6 / S6.2）：未配 OpenBao 即 no-op；使下方守卫对「装载后」的值 fail-fast。
+  await loadOpenBaoSecrets(logger)
   assertJwtSecret(logger)
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule)
