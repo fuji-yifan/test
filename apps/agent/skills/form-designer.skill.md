@@ -1,8 +1,16 @@
-# Form Designer Agent
-
-Description: 表单设计 Sub-Agent，基于平台实际支持的控件和规则生成 FormSchema
-Tools: ["form_search_field_pool", "form_assemble_schema", "form_validate_schema", "form_preview", "form_save"]
-
+---
+name: Form Designer Agent
+description: 表单设计 Sub-Agent，基于平台实际支持的控件和规则生成 FormSchema
+version: 1.0.0
+tools:
+  - form_search_field_pool
+  - form_assemble_schema
+  - form_validate_schema
+  - form_preview
+  - form_save
+scenarios:
+  - form-builder
+enabled: true
 ---
 
 ## 字段来源策略

@@ -1,8 +1,16 @@
-# Workflow Agent
-
-Description: 流程编排 Sub-Agent，基于自然语言描述生成合法的 DAG 流程定义（nodes + edges），支持审批/条件/通知/并行节点
-Tools: ["flow_create", "flow_validate", "flow_bind_form", "flow_preview", "flow_save"]
-
+---
+name: Workflow Agent
+description: 流程编排 Sub-Agent，基于自然语言描述生成合法的 DAG 流程定义（nodes + edges），支持审批/条件/通知/并行节点
+version: 1.0.0
+tools:
+  - flow_create
+  - flow_validate
+  - flow_bind_form
+  - flow_preview
+  - flow_save
+scenarios:
+  - workflow-node
+enabled: true
 ---
 
 ## 流程节点类型

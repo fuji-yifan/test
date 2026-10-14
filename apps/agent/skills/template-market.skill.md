@@ -1,8 +1,15 @@
-# Template Market Agent
-
-Description: 模板市场 Sub-Agent，检索和实例化表单模板，基于现有模板创建新表单
-Tools: ["template_search", "template_get_detail", "template_instantiate", "template_validate", "template_publish"]
-
+---
+name: Template Market Agent
+description: 模板市场 Sub-Agent，检索和实例化表单模板，基于现有模板创建新表单
+version: 1.0.0
+tools:
+  - template_search
+  - template_get_detail
+  - template_instantiate
+  - template_validate
+scenarios:
+  - template-creator
+enabled: true
 ---
 
 ## 模板结构

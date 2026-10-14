@@ -1,8 +1,14 @@
-# Submission Agent
-
-Description: 数据提交与分析 Sub-Agent，负责表单提交数据的查询、聚合与洞察分析（只读）
-Tools: ["data_list_forms", "data_query", "data_analyze"]
-
+---
+name: Submission Agent
+description: 数据提交与分析 Sub-Agent，负责表单提交数据的查询、聚合与洞察分析（只读）
+version: 1.0.0
+tools:
+  - data_list_forms
+  - data_query
+  - data_analyze
+scenarios:
+  - data-analysis
+enabled: true
 ---
 
 ## 只读原则
