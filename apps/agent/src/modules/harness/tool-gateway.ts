@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, Optional } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { ToolRegistry } from './tool.registry'
 import { SessionService } from '../session/session.service'
@@ -6,6 +6,8 @@ import { ToolResultCache } from '../cache/tool-cache.service'
 import { AuditStore } from '../audit/audit.store'
 import { withTimeout, isTimeoutError } from './timeout'
 import { WRITE_TOOLS } from './write-tools'
+import { combineDecisions, evaluateBuiltinPolicy, type PolicyDecision } from './policy-rules'
+import { PolicyEngineService } from '../infra/policy-engine.service'
 
 export { WRITE_TOOLS }
 
@@ -38,6 +40,8 @@ interface AuditEntry {
   /** 工具执行耗时（ms），确认/缓存短路路径为 0 */
   durationMs: number
   timestamp: number
+  /** 策略备注（阶段 6 / S3.2，如 pii_access）：随审计 details.note 落库 */
+  auditNote?: string
 }
 
 /** writeAudit 入参：traceId/confirmed/durationMs 之外的可选审计字段 */
@@ -57,6 +61,8 @@ export class ToolGateway {
     private cache: ToolResultCache,
     private config: ConfigService,
     private audit: AuditStore,
+    /** 外部策略引擎（S3.1，可选注入：未配置即 no-op）。内置纯规则（S3.2）恒跑、不依赖它。 */
+    @Optional() private policy?: PolicyEngineService,
   ) {}
 
   /** 工具风险等级（供上层——如直调端点的绕过防护——查询） */
@@ -102,6 +108,45 @@ export class ToolGateway {
 
     // 风险评级
     const risk = this.registry.getRisk(toolName)
+
+    // 策略门（阶段 6 / S3.1+S3.2）：内置纯规则恒跑 + 可选外部 PDP；deny 直接拦、requireConfirm 兜底确认
+    const policyDecision = await this.evaluatePolicy(toolName, args, risk, opts)
+    if (policyDecision.decision === 'deny') {
+      this.logger.warn(`Policy denied: ${toolName} (${policyDecision.reason})`)
+      await this.writeAudit({
+        tool: toolName,
+        args,
+        ok: false,
+        summary: `POLICY_DENIED (${policyDecision.reason})`,
+        risk,
+        userId: opts?.userId,
+        workspaceId: opts?.workspaceId,
+        requestId: opts?.requestId,
+        sessionId: opts?.sessionId,
+        confirmed: false,
+        durationMs: 0,
+      })
+      return { ok: false, error: 'policy_denied', summary: `策略拒绝：${policyDecision.reason}`, risk }
+    }
+    if (policyDecision.decision === 'requireConfirm' && risk === 'low') {
+      // 仅在内置兜底命中（删除类工具风险被误评 low）时触发；medium+ 交给下方风险门
+      const summary = `Tool "${toolName}" requires confirmation (policy: ${policyDecision.reason})`
+      await this.writeAudit({
+        tool: toolName,
+        args,
+        ok: false,
+        summary: `AWAITING_CONFIRMATION (policy: ${policyDecision.reason})`,
+        risk,
+        userId: opts?.userId,
+        workspaceId: opts?.workspaceId,
+        requestId: opts?.requestId,
+        sessionId: opts?.sessionId,
+        confirmed: false,
+        durationMs: 0,
+      })
+      return { ok: false, confirmRequired: true, confirmCallId: `confirm_${this.nanoid()}`, risk, summary }
+    }
+    const policyNote = policyDecision.decision === 'warn' ? policyDecision.auditNote : undefined
 
     // medium+ 风险需确认门
     if (risk !== 'low') {
@@ -149,6 +194,7 @@ export class ToolGateway {
         sessionId: opts?.sessionId,
         confirmed: false,
         durationMs: 0,
+        auditNote: policyNote,
       })
       return { ok: true, summary: cached.summary, result: cached.result }
     }
@@ -201,6 +247,7 @@ export class ToolGateway {
       sessionId: opts?.sessionId,
       confirmed: false,
       durationMs: Date.now() - startedAt,
+      auditNote: policyNote,
     })
 
     return {
@@ -218,6 +265,27 @@ export class ToolGateway {
     opts?: { requestId?: string; userId?: string; workspaceId?: string; sessionId?: string },
   ): Promise<GatewayResult> {
     const risk = this.registry.getRisk(toolName)
+
+    // 策略门（确认后路径）：只处理 deny（requireConfirm 已被用户确认，不再拦）
+    const policyDecision = await this.evaluatePolicy(toolName, args, risk, opts)
+    if (policyDecision.decision === 'deny') {
+      this.logger.warn(`Policy denied (confirmed): ${toolName} (${policyDecision.reason})`)
+      await this.writeAudit({
+        tool: toolName,
+        args,
+        ok: false,
+        summary: `POLICY_DENIED (${policyDecision.reason})`,
+        risk,
+        userId: opts?.userId,
+        workspaceId: opts?.workspaceId,
+        requestId: opts?.requestId,
+        sessionId: opts?.sessionId,
+        confirmed: true,
+        durationMs: 0,
+      })
+      return { ok: false, error: 'policy_denied', summary: `策略拒绝：${policyDecision.reason}`, risk }
+    }
+    const policyNote = policyDecision.decision === 'warn' ? policyDecision.auditNote : undefined
 
     let result: Awaited<ReturnType<ToolRegistry['call']>>
     const startedAt = Date.now()
@@ -257,6 +325,7 @@ export class ToolGateway {
       sessionId: opts?.sessionId,
       confirmed: true,
       durationMs: Date.now() - startedAt,
+      auditNote: policyNote,
     })
 
     return {
@@ -278,6 +347,38 @@ export class ToolGateway {
   }
 
   // ==================== 内部方法 ====================
+
+  /**
+   * 策略判定：内置纯规则（恒跑，S3.2）∪ 可选外部 PDP（S3.1）。取最严者。
+   * 外部未配置时 `this.policy` 为空 → 只跑内置，零外呼。
+   */
+  private async evaluatePolicy(
+    toolName: string,
+    args: Record<string, unknown>,
+    risk: string,
+    opts?: { userId?: string; workspaceId?: string },
+  ): Promise<PolicyDecision> {
+    const isWrite = this.isWrite(toolName)
+    const builtin = evaluateBuiltinPolicy({
+      tool: toolName,
+      args,
+      risk,
+      workspaceId: opts?.workspaceId,
+      isWrite,
+      bulkThreshold: this.config?.get<number>('infra.policyBulkThreshold'),
+    })
+    const external = this.policy
+      ? await this.policy.check({
+          tool: toolName,
+          args,
+          risk,
+          isWrite,
+          userId: opts?.userId,
+          workspaceId: opts?.workspaceId,
+        })
+      : null
+    return combineDecisions(builtin, external)
+  }
 
   private async writeAudit(entry: AuditInput): Promise<void> {
     const traceId = entry.requestId || `tr_${this.nanoid(12)}`
@@ -310,6 +411,7 @@ export class ToolGateway {
           ok: entry.ok,
           summary: entry.summary,
           args: entry.args,
+          note: entry.auditNote,
         })
         .catch(() => {})
     }

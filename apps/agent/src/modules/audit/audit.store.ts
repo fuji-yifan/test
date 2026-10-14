@@ -21,6 +21,8 @@ export interface AuditRecord {
   /** 原始 args（写库前由本 store 脱敏） */
   args: Record<string, unknown>
   error?: string
+  /** 策略备注（阶段 6 / S3.2，如 pii_access）：落 details.note，不单独建列 */
+  note?: string
 }
 
 /**
@@ -95,6 +97,7 @@ export class AuditStore implements OnModuleDestroy {
       summary: entry.summary,
       argsPreview: serializeArgsPreview(entry.args),
       ...(entry.error ? { error: entry.error } : {}),
+      ...(entry.note ? { note: entry.note } : {}),
     })
 
     try {

@@ -10,6 +10,7 @@ import configuration, {
   checkpointConfig,
   contextConfig,
   deepseekConfig,
+  infraConfig,
   userMemoryConfig,
 } from './config/configuration'
 
@@ -28,6 +29,7 @@ import { ContextModule } from './modules/context/context.module'
 import { CheckpointModule } from './modules/graph/checkpoint.module'
 import { AgentGraphModule } from './modules/graph/graph.module'
 import { AgentCacheModule } from './modules/cache/cache.module'
+import { InfraModule } from './modules/infra/infra.module'
 
 import { HubController } from './modules/hub/hub.controller'
 import { HealthController } from './modules/health/health.controller'
@@ -36,7 +38,16 @@ import { HealthController } from './modules/health/health.controller'
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [configuration, deepseekConfig, contextConfig, checkpointConfig, cacheConfig, userMemoryConfig, auditConfig],
+      load: [
+        configuration,
+        deepseekConfig,
+        contextConfig,
+        checkpointConfig,
+        cacheConfig,
+        userMemoryConfig,
+        auditConfig,
+        infraConfig,
+      ],
       envFilePath: ['.env'],
     }),
     ThrottlerModule.forRoot([
@@ -62,6 +73,7 @@ import { HealthController } from './modules/health/health.controller'
     CheckpointModule,
     AgentGraphModule,
     AgentCacheModule,
+    InfraModule,
   ],
   controllers: [HubController, HealthController],
   providers: [

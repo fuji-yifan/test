@@ -83,6 +83,33 @@ export const userMemoryConfig = registerAs('userMemory', () => ({
 }))
 
 /**
+ * 外部基建适配（阶段 6）：观测 / 策略引擎 / 护栏。
+ *
+ * 一律 **env-gated、不配即 no-op**，默认值与「未引入这些基建」的现状完全一致。
+ * - 追踪（S2.3）：`otlpEndpoint`（OTEL_EXPORTER_OTLP_ENDPOINT）或 `langfuseHost` 之一 → 导出 span；均空 → 只透传 traceId。
+ * - 策略引擎（S3.1）：`policyEngineUrl` 空 → 只跑内置纯规则（policy-rules.ts）。
+ * - 护栏（S5.2）：`guardrailsUrl` 空 → 跳过输入/输出护栏。
+ */
+export const infraConfig = registerAs('infra', () => ({
+  // S2.3 追踪 / Langfuse
+  otlpEndpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || '',
+  langfuseHost: process.env.LANGFUSE_HOST || '',
+  serviceName: process.env.OTEL_SERVICE_NAME || 'furmx-agent',
+  tracingEnabled: (process.env.TRACING_ENABLED || 'true') === 'true',
+  tracingTimeoutMs: parseInt(process.env.TRACING_TIMEOUT_MS || '2000', 10),
+  // S3.1 外部策略引擎（Cerbos / OPA）
+  policyEngineUrl: process.env.POLICY_ENGINE_URL || '',
+  policyEngineToken: process.env.POLICY_ENGINE_TOKEN || '',
+  policyEngineTimeoutMs: parseInt(process.env.POLICY_ENGINE_TIMEOUT_MS || '2000', 10),
+  policyEngineFailClosed: (process.env.POLICY_ENGINE_FAIL_CLOSED || 'false') === 'true',
+  // S3.2 内置策略阈值（恒开；只影响触发点）
+  policyBulkThreshold: parseInt(process.env.POLICY_BULK_THRESHOLD || '100', 10),
+  // S5.2 NeMo Guardrails sidecar
+  guardrailsUrl: process.env.NEMO_GUARDRAILS_URL || '',
+  guardrailsTimeoutMs: parseInt(process.env.NEMO_GUARDRAILS_TIMEOUT_MS || '2000', 10),
+}))
+
+/**
  * 工具调用审计（阶段 6 / S2）：落 server 的 `audit_logs` 表（agent 只写不建）。
  * 无 `AGENT_DATABASE_URL` / 连不上 → store 自动 no-op 降级。`enabled=false` 一键回滚（仅留内存缓冲）。
  */
