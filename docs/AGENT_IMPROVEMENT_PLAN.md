@@ -18,7 +18,7 @@
 | 5 | 业务落地（寻址/diff/撤销） | ✅ 完成（§3.4；分支 `feat/agent-stage5-business`，叠于阶段 4）；`vitest` 931 全绿 + `tsc` 干净；未合/未灰度 |
 | 6 | 安全（提示注入/审计/配额）+ **兜底与降级** | ◐ 部分完成（§3.5；分支 `feat/agent-stage6-security`，叠于阶段 5）：已落 **S1（RLS 除外）+ S3.3 + S5.1 + S7**＝「整套无外部依赖项」；`vitest` 955 全绿 + `tsc` 干净；未合/未灰度。RLS/S2/S3.1/S5.2/S6 需外部基建，推迟 |
 | 7 | 技能管理 | ✅ 完成（本轮 D1 + D2；§3.6；分支 `feat/agent-stage7-skills`，叠于阶段 6）：frontmatter + 技能↔工具绑定校验；`vitest` 962 全绿 + `tsc` 干净；**未合 master、未灰度**。D3/D4/D5 明确挂到依赖阶段 |
-| 8 | **长期记忆（用户级）+ 知识沉淀 + MCP** | ⬜ 未开始 · **升级为正式设计**（§3.7；长期记忆提为正式，MCP 仍留后） |
+| 8 | **长期记忆（用户级）+ 知识沉淀 + MCP** | ◐ 长期记忆 8.1–8.4 完成（§3.7；分支 `feat/agent-stage8-memory`，叠于阶段 7）：表 + 提取 + 召回 + 查看/删除；`vitest` 992 全绿 + 三端 `tsc` 干净；**未合 master、未灰度**。**8.5 RAG 推迟**（无嵌入/向量基建），MCP 仍留后 |
 
 ---
 
@@ -1150,11 +1150,39 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 5. （后半）知识沉淀：文档接入 → 切分 → 向量库 → 检索注入。
 
 **任务清单**
-- [ ] 8.1 Prisma `user_memory` 表 + `db push`
-- [ ] 8.2 提取器 `extractUserFacts`（保守 + `source` 溯源）+ 单测
-- [ ] 8.3 召回注入（top-K，并入 `projectMemory` 预算）
-- [ ] 8.4 查看 / 删除入口（API + 前端）
-- [ ] 8.5 知识沉淀 RAG（文档 → 向量 → 检索）；MCP 另留
+- [x] 8.1 Prisma `user_memory` 表 + `db push`
+- [x] 8.2 提取器 `extractUserFacts`（保守 + `source` 溯源）+ 单测
+- [x] 8.3 召回注入（top-K，并入 `projectMemory` 预算）
+- [x] 8.4 查看 / 删除入口（API + 前端）
+- [ ] 8.5 知识沉淀 RAG（文档 → 向量 → 检索）；MCP 另留 — **推迟**：全仓无嵌入/向量能力，
+  DeepSeek 官方 API 不提供 embeddings，需外部基建（性质同阶段 6 推迟项）；MCP 仍留下个项目。
+
+**落地（2026-10-14，分支 `feat/agent-stage8-memory`，叠于阶段 7，未合 master）**
+- **新模块** `apps/agent/src/modules/memory/`：`user-memory.types.ts` / `user-memory.pure.ts`
+  （纯函数：`parseExtraction` 解析 + 敏感过滤 + 去重、`rankMemories` 词重合 + 新近度、`capCandidates`）/
+  `user-memory.store.ts`（照 `session.store.ts` 的 mysql2 直连：惰性建池、`CREATE TABLE IF NOT EXISTS user_memory`、
+  `upsertMany`/`list`/`remove`/`available`，无库→ no-op 降级）/ `user-memory.extractor.ts`（便宜模型 +
+  严格 system：只抽跨会话稳定事实、只输出 JSON、拿不准输出 `[]`；短轮跳过）/ `user-memory.service.ts`
+  （门面：`retrieve`/`list`/`remove`/`extractAndStore`，收敛开关与护栏）/ `memory.module.ts`。
+- **8.1**：`apps/server/prisma/schema.prisma` 加 `UserMemory` model（`@@unique([userId,workspaceId,kind,key])`）；
+  `db push`（`--skip-generate`）建出 `user_memory`。表结构两处对齐：Prisma 声明（防 `db push` 误删）+ 运行时自建。
+- **8.2 触发**：`langgraph-turn.service.finish()` 在 `sendFinalMessage` 之后 **fire-and-forget**
+  （`!interrupted && !halted && !gaveUp && extractEnabled`）→ `memory.extractAndStore(session, result, userMessage)`；
+  service 内按 `sessionId` 做**进程内并发去重**，`upsertMany` 按唯一键幂等。
+- **8.3 召回**：`agent-state.ts` 加 `userMemory` channel；`agent-graph.service.routerNode` 每轮
+  `memory.retrieve(userId, workspaceId, userMessage, topK)` 写 channel（失败/关/无库 → `[]`）；
+  `conversation-state.projectMemory` 新增 `<user_memory>` 段（**接在 facts 之后、progress 之前**，计入同一预算）；
+  `subgraph.factory.prepare()` 透传 `state.userMemory`。无嵌入，词法近似相关度（同 template-search「不做向量」口径）。
+- **8.4**：`hub.controller.ts` 加 `GET /agent/memory`（`workspaceId` 取 JWT 声明，缺省用 query 补）+
+  `DELETE /agent/memory/:id`（软删，作用域限 `userId`）；`ProfileView.vue` 加「长期记忆」section-card（列表 +
+  单条删除 + 空态/loading，`fetch('/agent-api/api/v1/agent/memory')`）。**只读 + 删除**，手工写入不开放（只经提取器）。
+- **配置**：`configuration.ts` 加 `userMemoryConfig`（`enabled`/`extractEnabled`/`recallTopK=5`/`extractMaxPerTurn=5`/`maxScan=200`），
+  注册进 `app.module.ts` 的 `ConfigModule.forRoot`；`.env.example` 补齐并注明「无 MySQL → 自动 no-op 降级」。
+- **回滚**：`USER_MEMORY_ENABLED=false`（召回 + 提取全停）；`USER_MEMORY_EXTRACT_ENABLED=false`（只停写、保留召回）；
+  无 `AGENT_DATABASE_URL` → store 自动降级；`DROP TABLE user_memory` 彻底回退。
+- **验证**：三端 `tsc --noEmit` 干净；`vitest` 全量 **992 绿**（26 文件，含新增 `user-memory.spec` /
+  `user-memory-mysql.spec` / `user-memory-extract.spec` + `conversation-state`/`graph-flow` 各加 `<user_memory>` 用例）；
+  `db push` 建表成功。**真机待验**（见验收）。
 
 **验收**：新会话能记住该用户的偏好 / 常用对象，无需重问；用户可查看并删除其长期记忆；
 召回不越 `(userId, workspaceId)` 边界；关闭本阶段时行为回退到「仅会话内记忆」。
