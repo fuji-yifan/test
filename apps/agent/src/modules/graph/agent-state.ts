@@ -14,6 +14,7 @@ import { Annotation } from '@langchain/langgraph'
 import type { BaseMessage } from '@langchain/core/messages'
 import type { OrchestrationPlan } from '../hub/hub.types'
 import type { FormWorksheet } from './worksheet'
+import type { UserMemoryRecord } from '../memory/user-memory.types'
 
 /** 平台里的四个领域 Agent */
 export type AgentKey = 'form-designer' | 'workflow' | 'template' | 'submission'
@@ -222,6 +223,15 @@ export const AgentState = Annotation.Root({
   sessionFacts: Annotation<Record<string, Record<string, unknown>>>({
     reducer: (prev, next) => ({ ...(prev ?? {}), ...(next ?? {}) }),
     default: () => ({}),
+  }),
+  /**
+   * 本轮召回到的**用户长期记忆**（阶段 8 §3.7）：跨会话、按 (userId, workspaceId) 取，
+   * 每轮由 routerNode 从 UserMemoryService 拉一次（替换语义，无库/开关关时为 []）。
+   * 由 projectMemory 渲染进 `<user_memory>` 段注入模型，与会话内记忆互补。
+   */
+  userMemory: Annotation<UserMemoryRecord[]>({
+    reducer: (_p, n) => n ?? [],
+    default: () => [],
   }),
   /** 需要回写 session.metadata 的补丁（保持与 legacy 前端/接口兼容） */
   sessionMetadataPatch: Annotation<Record<string, unknown>>({

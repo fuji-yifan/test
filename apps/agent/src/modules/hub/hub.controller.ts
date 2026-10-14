@@ -5,6 +5,7 @@ import {
   Delete,
   Logger,
   Param,
+  Query,
   Body,
   Res,
   UseGuards,
@@ -19,6 +20,7 @@ import { LangGraphTurnService } from './langgraph-turn.service'
 import { RouterService } from '../graph/router.service'
 import { SessionService } from '../session/session.service'
 import { ToolGateway } from '../harness/tool-gateway'
+import { UserMemoryService } from '../memory/user-memory.service'
 
 @ApiTags('Agent')
 @ApiBearerAuth()
@@ -32,6 +34,7 @@ export class HubController {
     private toolGateway: ToolGateway,
     private langGraphTurn: LangGraphTurnService,
     private router: RouterService,
+    private userMemory: UserMemoryService,
   ) {}
 
   /** POST /agent/chat — SSE 流式聊天（LangGraph 编排入口） */
@@ -199,6 +202,39 @@ export class HubController {
   async deleteSession(@Param('id') id: string): Promise<any> {
     await this.sessionService.delete(id)
     return { deleted: true }
+  }
+
+  /**
+   * GET /agent/memory — 当前用户的长期记忆（阶段 8 / 8.4）。
+   *
+   * workspaceId 优先取 JWT 声明，缺省时用查询参数补（JWT 不签该声明，靠前端 context 带）。
+   * 无库 / 降级时 store 返回空列表，与「还没有记忆」表现一致。
+   */
+  @Get('memory')
+  async listMemory(
+    @CurrentUser() user: { userId: string; workspaceId?: string },
+    @Query('workspaceId') workspaceId?: string,
+  ): Promise<any> {
+    const ws = (user.workspaceId || workspaceId || '').trim()
+    const records = await this.userMemory.list(user.userId, ws)
+    return records.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      key: r.key,
+      value: r.value,
+      confidence: r.confidence,
+      updatedAt: r.updatedAt,
+    }))
+  }
+
+  /** DELETE /agent/memory/:id — 软删一条长期记忆（作用域限当前用户，防越权） */
+  @Delete('memory/:id')
+  async deleteMemory(
+    @CurrentUser() user: { userId: string },
+    @Param('id') id: string,
+  ): Promise<any> {
+    const deleted = await this.userMemory.remove(id, user.userId)
+    return { deleted }
   }
 
   /** GET /agent/scenarios — 可用 Sub-Agent 列表 + 示例提示 */

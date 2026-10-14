@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common'
 import { ToolsModule } from '../harness/tools.module'
 import { SessionModule } from '../session/session.module'
+import { MemoryModule } from '../memory/memory.module'
 import { CheckpointModule } from './checkpoint.module'
 import { LangChainToolBridge } from './tool-bridge.service'
 import { AgentCatalogService } from './agent-catalog'
@@ -18,7 +19,7 @@ import { GraphRunnerService } from './graph-runner.service'
  * 领域 Agent 的声明集中在 AgentCatalogService，加 Agent 只需要改那一处。
  */
 @Module({
-  imports: [ToolsModule, SessionModule, CheckpointModule],
+  imports: [ToolsModule, SessionModule, MemoryModule, CheckpointModule],
   providers: [
     LangChainToolBridge,
     AgentCatalogService,

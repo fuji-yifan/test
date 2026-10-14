@@ -24,7 +24,7 @@ export interface Harness {
 export function createBuildHarness(getSaver: () => unknown) {
   return function buildHarness(
     script: Script,
-    overrides?: { catalogSpec?: any; config?: Record<string, unknown> },
+    overrides?: { catalogSpec?: any; config?: Record<string, unknown>; memories?: any[] },
   ): Harness {
     const registry = new FakeRegistry() as any
     const gateway = new FakeGateway()
@@ -50,7 +50,15 @@ export function createBuildHarness(getSaver: () => unknown) {
     const router = new RouterService(catalog, llm as any)
     const plan = new PlanService()
     const checkpoint = { enabled: true, get saver() { return getSaver() } } as any
-    const graphs = new AgentGraphService(router, plan, catalog, subgraphs, checkpoint, config)
+    // 假长期记忆：recall 回 overrides.memories（默认空），写入/删除为 no-op
+    const memory = {
+      retrieve: async () => overrides?.memories ?? [],
+      available: async () => (overrides?.memories?.length ?? 0) > 0,
+      list: async () => overrides?.memories ?? [],
+      remove: async () => false,
+      extractAndStore: async () => undefined,
+    } as any
+    const graphs = new AgentGraphService(router, plan, catalog, subgraphs, checkpoint, config, memory)
     const sessions = {
       updateMetadata: async () => undefined,
       addMessage: async () => undefined,

@@ -7,6 +7,7 @@
  * 本文件只做「已知字段 → 文本」的确定性拼装，不调 LLM、不做推断，便于单测。
  */
 import type { AgentKey, TurnLedgerEntry } from './agent-state'
+import type { UserMemoryRecord } from '../memory/user-memory.types'
 
 /** 会话级状态：跨轮保留，注入状态栏时只承载这些字段（表清单仍由 draftHint 贴 system） */
 export interface ConversationMeta {
@@ -99,6 +100,8 @@ export interface SessionMemory {
   ledger?: TurnLedgerEntry[]
   /** 领域事实：agentKey -> 标量键值（§2.12.3 Facts），供跨 Agent 交接 */
   facts?: Record<string, Record<string, unknown>>
+  /** 用户级长期记忆（阶段 8 §3.7）：跨会话召回，作为 `<user_memory>` 段注入 */
+  userMemory?: UserMemoryRecord[]
 }
 
 /** projectMemory 的入参（手册 §2.12-D3） */
@@ -154,6 +157,10 @@ const SUMMARY_MAX = 800
 const FACTS_PER_AGENT_MAX = 5
 /** 单条事实值的字符上限 */
 const FACT_VALUE_MAX = 60
+/** `<user_memory>` 段最多渲染几条长期记忆 */
+const USER_MEMORY_LINE_MAX = 8
+/** 单条长期记忆 value 的渲染字符上限（比库里的 200 更短，只为注入用） */
+const USER_MEMORY_VALUE_MAX = 80
 
 /** 台账结局 → 中文短标签 */
 const OUTCOME_LABEL: Record<string, string> = {
@@ -193,6 +200,34 @@ function buildFactsBlock(
   }
   if (lines.length === 0) return ''
   return `<session_facts>\n${lines.join('\n')}\n</session_facts>`
+}
+
+/**
+ * 用户长期记忆段（阶段 8 §3.7-D2）：把召回到的跨会话记忆渲染成 `<user_memory>`，
+ * 只渲染标量 key=value，按预算截断（软删/空值跳过）。与会话内 Facts 同优先级带。
+ */
+function buildUserMemoryBlock(mem: UserMemoryRecord[] | undefined, budgetChars: number): string {
+  const records = (mem ?? []).filter(
+    (r) => (r?.key ?? '').trim() && (r?.value ?? '').trim() && r.state !== 'forgotten',
+  )
+  if (records.length === 0 || budgetChars <= 0) return ''
+  const header = '<user_memory>\n'
+  const footer = '\n</user_memory>'
+  const avail = budgetChars - header.length - footer.length
+  if (avail <= 0) return ''
+  const lines: string[] = []
+  let used = 0
+  for (const r of records.slice(0, USER_MEMORY_LINE_MAX)) {
+    const value = String(r.value).replace(/\s+/g, ' ').trim()
+    const clipped =
+      value.length > USER_MEMORY_VALUE_MAX ? `${value.slice(0, USER_MEMORY_VALUE_MAX)}…` : value
+    const line = `- ${r.kind}: ${r.key} = ${clipped}`
+    if (used + line.length > avail && lines.length > 0) break
+    lines.push(line)
+    used += line.length + 1
+  }
+  if (lines.length === 0) return ''
+  return `${header}${lines.join('\n')}${footer}`
 }
 
 /** 会话进展段（Ledger 渲染，手册 §2.12.3/D4）：让「这句刚才答过、这轮做到哪」可见 */
@@ -275,8 +310,8 @@ export function buildRepeatNotice(ledger: TurnLedgerEntry[] | undefined): string
  * 末尾 user 消息的记忆块。替换过去分散的 `buildMemoryBlock`，统一 L1/L2/L3/Ledger 的
  * 截断口径与 token 预算。
  *
- * 预算优先级（§2.11「隔离优于压缩」）：L1 结构 > 领域事实 > 进展台账 > 摘要 > 近期原文。
- * 渲染顺序：L1 状态栏 → 领域事实 → 重复提示 → 会话进展 → 摘要 → 近期窗口。
+ * 预算优先级（§2.11「隔离优于压缩」）：L1 结构 > 领域事实 / 用户长期记忆 > 进展台账 > 摘要 > 近期原文。
+ * 渲染顺序：L1 状态栏 → 领域事实 → 用户长期记忆 → 重复提示 → 会话进展 → 摘要 → 近期窗口。
  *
  * 摘要在**预算分配**上排在近期原文之前：摘要承载的是已被裁掉、别处看不到的旧轮叙事，
  * 若把它排到最后，近期窗口一填满预算就会把它饿死 —— 那样「摘要」白算（花了 LLM 却不注入）。
@@ -295,6 +330,9 @@ export function projectMemory(mem: SessionMemory, opts: ProjectMemoryOptions = {
   const facts = buildFactsBlock(mem.facts, budget - used)
   if (facts) used += facts.length + 1
 
+  const userMemory = buildUserMemoryBlock(mem.userMemory, budget - used)
+  if (userMemory) used += userMemory.length + 1
+
   const progress = buildProgressBlock(mem.ledger, budget - used)
   if (progress) used += progress.length + 1
 
@@ -303,7 +341,7 @@ export function projectMemory(mem: SessionMemory, opts: ProjectMemoryOptions = {
 
   const recent = buildRecentBlock(mem.recent, budget - used)
 
-  return [bar, facts, notice, progress, summary, recent].filter(Boolean).join('\n')
+  return [bar, facts, userMemory, notice, progress, summary, recent].filter(Boolean).join('\n')
 }
 
 /**

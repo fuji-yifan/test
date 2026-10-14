@@ -92,13 +92,25 @@ function newSession(metadata: Record<string, any> = {}): AgentSession {
   }
 }
 
+/** 假长期记忆：记录轮末提取调用（真实实现在 user-memory 自己的 spec 里测）。 */
+function makeMemory() {
+  const extracted: { session: AgentSession; result: RunGraphResult; userMessage: string }[] = []
+  const memory = {
+    async extractAndStore(session: AgentSession, result: RunGraphResult, userMessage: string) {
+      extracted.push({ session, result, userMessage })
+    },
+  }
+  return { memory: memory as any, extracted }
+}
+
 function makeService(script: Parameters<typeof makeRunner>[0], session = newSession()) {
   const { runner, calls } = makeRunner(script)
   const { sessions, patches } = makeSessions(session)
   const { sse, events } = makeSse()
+  const { memory, extracted } = makeMemory()
   const config = { get: (key: string) => (key === 'deepseek.model' ? 'deepseek-chat' : undefined) }
-  const service = new LangGraphTurnService(runner, sessions, config as any)
-  return { service, calls, patches, events, sse, session }
+  const service = new LangGraphTurnService(runner, sessions, config as any, memory)
+  return { service, calls, patches, events, sse, session, extracted }
 }
 
 function typesOf(events: Recorded[]): string[] {
@@ -476,6 +488,39 @@ describe('LangGraphTurnService — 悬挂中断', () => {
   })
 })
 
+describe('LangGraphTurnService — 轮末长期记忆提取（阶段 8 / 8.2）', () => {
+  it('正常完成的一轮触发一次提取，带上本轮用户原话', async () => {
+    const session = newSession()
+    const { service, sse, extracted } = makeService({ result: OK_RESULT }, session)
+
+    await service.runTurn({ ...turnParams(session, { message: '以后都用中文回答' }), sse })
+
+    expect(extracted).toHaveLength(1)
+    expect(extracted[0].userMessage).toBe('以后都用中文回答')
+    expect(extracted[0].result).toBe(OK_RESULT)
+  })
+
+  it('中断（interrupted）不提取', async () => {
+    const session = newSession()
+    const { service, sse, extracted } = makeService(
+      { result: { ...OK_RESULT, interrupted: { ...INTERRUPT_PAYLOAD } } },
+      session,
+    )
+    await service.runTurn({ ...turnParams(session), sse })
+    expect(extracted).toHaveLength(0)
+  })
+
+  it('用户中断（halted）/系统放弃（gaveUp）不提取', async () => {
+    const a = makeService({ result: { ...OK_RESULT, halted: true } }, newSession())
+    await a.service.runTurn({ ...turnParams(a.session), sse: a.sse })
+    expect(a.extracted).toHaveLength(0)
+
+    const b = makeService({ result: { ...OK_RESULT, gaveUp: true } }, newSession())
+    await b.service.runTurn({ ...turnParams(b.session), sse: b.sse })
+    expect(b.extracted).toHaveLength(0)
+  })
+})
+
 describe('LangGraphTurnService — 用量软上限告警（阶段 4 / 4.4）', () => {
   function makeWithLimit(limit: number, usage: { inputTokens: number; outputTokens: number }) {
     const { runner } = makeRunner({ result: { finalContent: '', usage, halted: false, gaveUp: false } })
@@ -485,7 +530,8 @@ describe('LangGraphTurnService — 用量软上限告警（阶段 4 / 4.4）', (
     const config = {
       get: (key: string) => (key === 'context.usageSoftLimitTokens' ? limit : undefined),
     }
-    const service = new LangGraphTurnService(runner, sessions, config as any)
+    const { memory } = makeMemory()
+    const service = new LangGraphTurnService(runner, sessions, config as any, memory)
     return { service, events, sse, session }
   }
 
@@ -517,7 +563,8 @@ describe('LangGraphTurnService — 异常', () => {
     }) as any
     const { sessions } = makeSessions(session)
     const config = { get: () => undefined }
-    const service = new LangGraphTurnService(runner, sessions, config as any)
+    const { memory } = makeMemory()
+    const service = new LangGraphTurnService(runner, sessions, config as any, memory)
     const { sse, events } = makeSse()
 
     await expect(service.runTurn({ ...turnParams(session), sse })).resolves.toBeUndefined()

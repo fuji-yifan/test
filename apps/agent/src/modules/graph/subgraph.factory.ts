@@ -254,6 +254,8 @@ export class AgentSubgraphFactory {
         recent: recentTurns(state),
         ledger: state.turnLedger,
         facts: state.sessionFacts,
+        // 用户长期记忆（阶段 8 §3.7）：routerNode 每轮召回到 channel 的跨会话记忆
+        userMemory: state.userMemory,
       },
       {
         budgetTokens: this.config?.get<number>('context.memoryBudgetTokens'),

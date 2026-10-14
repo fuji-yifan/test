@@ -589,6 +589,22 @@ describe('LangGraph 编排', () => {
     expect(block).toContain('- workflow: nodes=1')
   })
 
+  it('§3.7 用户长期记忆：召回的记忆渲染进 <user_memory> 注入子图', async () => {
+    const h = buildHarness([{ content: '好的。' }], {
+      memories: [
+        { id: 'm1', userId: 'u1', workspaceId: 'w1', kind: 'preference', key: '语言', value: '中文', confidence: 0.9 },
+        { id: 'm2', userId: 'u1', workspaceId: 'w1', kind: 'entity', key: '常用表单', value: '教职工信息', confidence: 0.7 },
+      ],
+    })
+
+    await runTurn(h, '再帮我建一张表')
+
+    const block = memoryBlockOf(h)
+    expect(block).toContain('<user_memory>')
+    expect(block).toContain('- preference: 语言 = 中文')
+    expect(block).toContain('- entity: 常用表单 = 教职工信息')
+  })
+
   it('§2.12 D5：目标跳过寒暄，取首个实质消息（存全文）', async () => {
     const h = buildHarness([{ content: '你好，有什么可以帮你？' }, { content: '本月提交已分析完成。' }])
 

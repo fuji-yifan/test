@@ -20,6 +20,7 @@ import { GraphRunnerService, type GraphEvent, type RunGraphResult } from '../gra
 import type { InterruptPayload } from '../graph/subgraph.factory'
 import type { PageContext } from '../graph/agent-state'
 import { SessionService } from '../session/session.service'
+import { UserMemoryService } from '../memory/user-memory.service'
 import type { AgentSession } from '../session/session.store'
 import { extractArtifactData, extractLatestArtifact } from './hub.artifact'
 
@@ -89,6 +90,7 @@ export class LangGraphTurnService {
     private readonly runner: GraphRunnerService,
     private readonly sessions: SessionService,
     private readonly config: ConfigService,
+    private readonly memory: UserMemoryService,
   ) {}
 
   /**
@@ -152,7 +154,7 @@ export class LangGraphTurnService {
       return
     }
 
-    await this.finish(session, result, sse)
+    await this.finish(session, result, sse, body.message)
   }
 
   // ==================== GraphEvent → SSE ====================
@@ -220,11 +222,24 @@ export class LangGraphTurnService {
 
   // ==================== 收尾 ====================
 
-  private async finish(session: AgentSession, result: RunGraphResult, sse: SseWriter): Promise<void> {
+  private async finish(
+    session: AgentSession,
+    result: RunGraphResult,
+    sse: SseWriter,
+    userMessage: string,
+  ): Promise<void> {
     if (result.interrupted) {
       await this.askConfirm(session, result.interrupted, sse)
     } else {
       await this.sendFinalMessage(session, result, sse)
+    }
+
+    // 轮末异步提取长期记忆（阶段 8 §3.7）：fire-and-forget，不 await、不阻塞 SSE 收尾。
+    // 只在正常完成的一轮触发（中断/放弃的话术不具记忆价值）；开关与降级都在 service 内部判。
+    if (!result.interrupted && !result.halted && !result.gaveUp) {
+      void this.memory
+        .extractAndStore(session, result, userMessage)
+        .catch((err) => this.logger.warn(`用户记忆提取失败：${err?.message ?? err}`))
     }
 
     sse.writeEvent(SseEventType.DONE, {

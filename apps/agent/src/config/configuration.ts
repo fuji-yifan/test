@@ -68,6 +68,20 @@ export const cacheConfig = registerAs('cache', () => ({
   enabled: (process.env.TOOL_CACHE_ENABLED || 'true') === 'true',
 }))
 
+/**
+ * 用户长期记忆（阶段 8 §3.7）。
+ *
+ * 无 MySQL（无 AGENT_DATABASE_URL / 连不上）时 store 自动 no-op 降级，等于本阶段未启用。
+ * `enabled=false` 一键回滚（召回 + 提取全停）；`extractEnabled=false` 只停写、保留召回。
+ */
+export const userMemoryConfig = registerAs('userMemory', () => ({
+  enabled: (process.env.USER_MEMORY_ENABLED || 'true') === 'true',
+  extractEnabled: (process.env.USER_MEMORY_EXTRACT_ENABLED || 'true') === 'true',
+  recallTopK: parseInt(process.env.USER_MEMORY_RECALL_TOP_K || '5', 10),
+  extractMaxPerTurn: parseInt(process.env.USER_MEMORY_EXTRACT_MAX_PER_TURN || '5', 10),
+  maxScan: parseInt(process.env.USER_MEMORY_MAX_SCAN || '200', 10),
+}))
+
 /** LangGraph checkpoint 持久化（与 server 共库，表结构由 Prisma migration 管理） */
 export const checkpointConfig = registerAs('checkpoint', () => ({
   databaseUrl: process.env.AGENT_DATABASE_URL || '',

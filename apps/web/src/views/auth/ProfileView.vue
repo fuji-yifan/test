@@ -223,19 +223,149 @@
           </div>
         </el-form>
       </div>
+
+      <!-- 长期记忆（阶段 8 §3.7）：跨对话的偏好/身份/常用对象，AI 后续会话会参考；只读 + 可删 -->
+      <div class="section-card">
+        <div class="section-head">
+          <h4 class="section-title">
+            长期记忆
+          </h4>
+          <span class="section-hint">AI 会记住你的偏好与常用对象，并在新的对话里参考</span>
+        </div>
+
+        <div
+          v-if="memoryLoading"
+          class="memory-empty"
+        >
+          加载中…
+        </div>
+        <div
+          v-else-if="memories.length === 0"
+          class="memory-empty"
+        >
+          暂无长期记忆
+        </div>
+        <ul
+          v-else
+          class="memory-list"
+        >
+          <li
+            v-for="m in memories"
+            :key="m.id"
+            class="memory-item"
+          >
+            <el-tag
+              size="small"
+              effect="plain"
+              class="memory-tag"
+            >
+              {{ KIND_LABEL[m.kind] || m.kind }}
+            </el-tag>
+            <div class="memory-body">
+              <span class="memory-key">{{ m.key }}</span>
+              <span class="memory-value">{{ m.value }}</span>
+            </div>
+            <span class="memory-time">{{ fmtTime(m.updatedAt) }}</span>
+            <el-button
+              text
+              size="small"
+              type="danger"
+              @click="removeMemory(m)"
+            >
+              删除
+            </el-button>
+          </li>
+        </ul>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, computed, reactive, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { CircleCheckFilled, Clock, Calendar, Upload, Lock } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { useWorkspaceStore } from '@/stores/workspace'
 import http from '@/api/client'
 
 const auth = useAuthStore()
+const wsStore = useWorkspaceStore()
 const user = computed(() => auth.currentUser)
+
+// ==================== 长期记忆（阶段 8 §3.7 / 8.4） ====================
+interface MemoryItem {
+  id: string
+  kind: string
+  key: string
+  value: string
+  confidence: number
+  updatedAt?: number
+}
+
+const KIND_LABEL: Record<string, string> = {
+  preference: '偏好',
+  identity: '身份',
+  entity: '常用对象',
+  conclusion: '结论',
+}
+
+const memories = ref<MemoryItem[]>([])
+const memoryLoading = ref(false)
+
+function agentToken(): string {
+  return localStorage.getItem('access_token') || ''
+}
+
+async function loadMemories() {
+  memoryLoading.value = true
+  try {
+    const ws = wsStore.currentId || ''
+    const res = await fetch(
+      `/agent-api/api/v1/agent/memory?workspaceId=${encodeURIComponent(ws)}`,
+      { headers: { Authorization: `Bearer ${agentToken()}` } },
+    )
+    if (!res.ok) { memories.value = []; return }
+    const body = await res.json()
+    memories.value = Array.isArray(body) ? body : (body.data || [])
+  } catch {
+    memories.value = []
+  } finally {
+    memoryLoading.value = false
+  }
+}
+
+async function removeMemory(item: MemoryItem) {
+  try {
+    await ElMessageBox.confirm(`确定删除这条记忆吗？\n「${item.key}」`, '删除记忆', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return // 用户取消
+  }
+  try {
+    const res = await fetch(`/agent-api/api/v1/agent/memory/${encodeURIComponent(item.id)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${agentToken()}` },
+    })
+    if (res.ok) {
+      memories.value = memories.value.filter((m) => m.id !== item.id)
+      ElMessage.success('已删除')
+    } else {
+      ElMessage.error('删除失败')
+    }
+  } catch {
+    ElMessage.error('删除失败')
+  }
+}
+
+function fmtTime(t?: number): string {
+  return t ? new Date(t).toLocaleString('zh-CN') : '-'
+}
+
+onMounted(loadMemories)
 
 const editing = ref(false)
 const editNickname = ref('')
@@ -545,6 +675,74 @@ async function changePassword() {
   display: block;
 }
 
+/* ====== 长期记忆 ====== */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.section-head .section-title { margin: 0; }
+
+.section-hint {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.memory-empty {
+  font-size: 13px;
+  color: #9ca3af;
+  padding: 12px 0;
+}
+
+.memory-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.memory-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f2f3f5;
+}
+
+.memory-item:last-child { border-bottom: none; }
+
+.memory-tag { flex-shrink: 0; }
+
+.memory-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.memory-key {
+  font-size: 14px;
+  color: #303133;
+}
+
+.memory-value {
+  font-size: 13px;
+  color: #909399;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-time {
+  font-size: 12px;
+  color: #c0c4cc;
+  flex-shrink: 0;
+}
+
 /* ====== 暗色 ====== */
 html.dark .profile-banner { background: linear-gradient(135deg, #1e3a5f 0%, #1a3555 50%, #162d47 100%); }
 html.dark .display-name { color: #e2e8f0; }
@@ -558,4 +756,9 @@ html.dark .section-title { color: #e2e8f0; }
 html.dark .info-item { border-bottom-color: #2d3748; }
 html.dark .info-value { color: #cbd5e1; }
 html.dark .info-label { color: #64748b; }
+html.dark .section-hint { color: #64748b; }
+html.dark .memory-item { border-bottom-color: #2d3748; }
+html.dark .memory-key { color: #e2e8f0; }
+html.dark .memory-value { color: #94a3b8; }
+html.dark .memory-time { color: #64748b; }
 </style>

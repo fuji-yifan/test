@@ -22,6 +22,7 @@ import { PlanService } from './plan.service'
 import { AgentCatalogService } from './agent-catalog'
 import { AgentSubgraphFactory } from './subgraph.factory'
 import { CheckpointService } from './checkpoint.module'
+import { UserMemoryService } from '../memory/user-memory.service'
 import {
   AgentState,
   type AgentKey,
@@ -65,6 +66,7 @@ export class AgentGraphService {
     private readonly subgraphs: AgentSubgraphFactory,
     private readonly checkpoint: CheckpointService,
     private readonly config: ConfigService,
+    private readonly memory: UserMemoryService,
   ) {}
 
   /** 编译后的图（懒加载，只编译一次） */
@@ -130,6 +132,15 @@ export class AgentGraphService {
       stateBar,
     })
 
+    // 用户长期记忆召回（阶段 8 §3.7 / 8.3）：每轮一次，由 projectMemory 渲染进 <user_memory>
+    // 注入子图。无库 / 开关关 / 失败 → []（降级为仅会话内记忆），不阻断路由。
+    const userMemory = await this.memory
+      .retrieve(state.userId, state.workspaceId, state.userMessage)
+      .catch((err) => {
+        this.logger.warn(`用户记忆召回失败：${(err as Error).message}`)
+        return []
+      })
+
     // 单 Agent 任务也包成一步计划，让后续只有一条代码路径
     const plan: OrchestrationPlan =
       decision.plan ?? {
@@ -193,6 +204,8 @@ export class AgentGraphService {
       historyTurns,
       turnLedger,
       memorySummary: summary,
+      // 本轮召回到的用户长期记忆（阶段 8 / 8.3），供 projectMemory 渲染
+      userMemory,
       // 每轮对话重建计划上下文
       stepIndex: 0,
       completedSteps: [],

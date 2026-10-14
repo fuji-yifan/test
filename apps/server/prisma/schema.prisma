@@ -405,6 +405,27 @@ model IdempotencyKey {
   @@map("idempotency_keys")
 }
 
+// 用户级长期记忆（阶段 8 §3.7）：跨对话、按 (userId, workspaceId) 存取的稳定事实。
+// 由 apps/agent 的 UserMemoryStore 运行时自建；声明在此是为了让 `db push` 不把它当多余表删掉。
+// 只存结构化标量（同 §2.12 Facts 口径），带 source 溯源、state 软删，用户可自助查看/删除。
+model UserMemory {
+  id              String  @id @db.VarChar(64)
+  userId          String  @map("user_id") @db.VarChar(64)
+  workspaceId     String  @map("workspace_id") @db.VarChar(64) @default("")
+  kind            String  @db.VarChar(32) // preference | identity | entity | conclusion
+  key             String  @db.VarChar(128)
+  value           String  @db.VarChar(512)
+  confidence      Float   @default(0.6)
+  sourceSessionId String? @map("source_session_id") @db.VarChar(64)
+  state           String  @db.VarChar(16) @default("active") // active | forgotten
+  createdAt       BigInt  @default(0) @map("created_at")
+  updatedAt       BigInt  @default(0) @map("updated_at")
+
+  @@unique([userId, workspaceId, kind, key], map: "uniq_user_memory")
+  @@index([userId, workspaceId], map: "idx_user_memory_user_ws")
+  @@map("user_memory")
+}
+
 // ==================== LangGraph 检查点 ====================
 // LangGraph 的 thread 状态持久化。由 apps/agent 的 MysqlCheckpointSaver 读写，
 // server 侧不直接使用；放在这里是为了让表结构走统一的 Prisma migration 管理。

@@ -154,14 +154,38 @@ describe('projectMemory — 会话上下文统一投影', () => {
     expect(block).not.toContain('<session_facts>')
   })
 
-  it('渲染顺序：状态栏 → 事实 → 进展', () => {
+  it('用户长期记忆 → 渲染 <user_memory>，跳过空值/软删', () => {
+    const block = projectMemory({
+      l1: {},
+      userMemory: [
+        { id: '1', userId: 'u', workspaceId: 'w', kind: 'preference', key: '语言', value: '中文', confidence: 0.9 },
+        { id: '2', userId: 'u', workspaceId: 'w', kind: 'identity', key: '公司', value: '', confidence: 0.5 },
+        { id: '3', userId: 'u', workspaceId: 'w', kind: 'entity', key: '旧', value: 'x', confidence: 0.5, state: 'forgotten' },
+      ],
+    })
+    expect(block).toContain('<user_memory>')
+    expect(block).toContain('- preference: 语言 = 中文')
+    expect(block).not.toContain('公司')
+    expect(block).not.toContain('旧')
+  })
+
+  it('无长期记忆 → 不渲染该段', () => {
+    const block = projectMemory({ l1: { conversationGoal: 'G' }, userMemory: [] })
+    expect(block).not.toContain('<user_memory>')
+  })
+
+  it('渲染顺序：状态栏 → 事实 → 长期记忆 → 进展', () => {
     const block = projectMemory({
       l1: { conversationGoal: 'G' },
       facts: { template: { templateCount: 2 } },
+      userMemory: [
+        { id: '1', userId: 'u', workspaceId: 'w', kind: 'preference', key: '语言', value: '中文', confidence: 0.9 },
+      ],
       ledger: [{ normAsk: 'a', ask: '找个模板', agent: 'template', outcome: 'artifact' }],
     })
     expect(block.indexOf('<agent_status>')).toBeLessThan(block.indexOf('<session_facts>'))
-    expect(block.indexOf('<session_facts>')).toBeLessThan(block.indexOf('<session_progress>'))
+    expect(block.indexOf('<session_facts>')).toBeLessThan(block.indexOf('<user_memory>'))
+    expect(block.indexOf('<user_memory>')).toBeLessThan(block.indexOf('<session_progress>'))
   })
 })
 
