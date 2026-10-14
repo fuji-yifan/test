@@ -17,7 +17,7 @@
 | 4 | 成本（token 预算 + usage + **缓存**） | ✅ 完成（§3.3；分支 `feat/agent-stage4-cost`，叠于阶段 3）；`vitest` 908 全绿 + `tsc` 干净；未合/未灰度 |
 | 5 | 业务落地（寻址/diff/撤销） | ✅ 完成（§3.4；分支 `feat/agent-stage5-business`，叠于阶段 4）；`vitest` 931 全绿 + `tsc` 干净；未合/未灰度 |
 | 6 | 安全（提示注入/审计/配额）+ **兜底与降级** | ◐ 部分完成（§3.5；分支 `feat/agent-stage6-security`，叠于阶段 5）：已落 **S1（RLS 除外）+ S3.3 + S5.1 + S7**＝「整套无外部依赖项」；`vitest` 955 全绿 + `tsc` 干净；未合/未灰度。RLS/S2/S3.1/S5.2/S6 需外部基建，推迟 |
-| 7 | 技能管理 | ⬜ 未开始 · 详案已备 §3.6 |
+| 7 | 技能管理 | ✅ 完成（本轮 D1 + D2；§3.6；分支 `feat/agent-stage7-skills`，叠于阶段 6）：frontmatter + 技能↔工具绑定校验；`vitest` 962 全绿 + `tsc` 干净；**未合 master、未灰度**。D3/D4/D5 明确挂到依赖阶段 |
 | 8 | **长期记忆（用户级）+ 知识沉淀 + MCP** | ⬜ 未开始 · **升级为正式设计**（§3.7；长期记忆提为正式，MCP 仍留后） |
 
 ---
@@ -74,7 +74,7 @@ Agent 服务已具备完整骨架（LangGraph 父子图、自研 MySQL checkpoin
 | **安全合规** | 阶段 6（§3.5） | ✅ 覆盖（身份 / 审计 / 策略 / 软删 / 注入 / 限流） |
 | **降本增效** | 阶段 4（§3.3 成本 + 缓存）+ 阶段 3（§3.2 并发/幂等增效） | ✅ 基本覆盖 |
 | **记忆联动** | 阶段 1（§2 + §2.11）+ 1b（§2.12）+ 阶段 8（§3.7） | ✅ 会话内已做；**跨会话长期记忆升级为阶段 8 正式设计** |
-| **技能管理** | 阶段 7（§3.6） | ✅ 已出选型（本轮只做 D1 + D2） |
+| **技能管理** | 阶段 7（§3.6） | ✅ **D1 + D2 已落地**（frontmatter + 绑定校验）；D3/D4/D5 随依赖阶段 |
 | **知识沉淀** | 阶段 8（§3.7） | ⬜ **已从占位升级为正式设计**（MCP 仍留后） |
 
 > **2026-10-10 用户决定**：MCP 留到下一个项目；**记忆联动**当时定为只做会话内，要求「会话任意长都能联动 +
@@ -1077,8 +1077,24 @@ S5.2 需 NeMo、S6 需 Redis/SOPS）——dev 环境都不起，故整段不做�
 3. 补单测：合法 frontmatter 正常加载；旧格式回退；坏工具名触发报错。
 
 **任务清单**
-- [ ] 7.1 `.skill.md` 加 YAML frontmatter + `parseMeta` 改解析（含旧格式回退）
-- [ ] 7.2 加载时 skill↔tool 存在性校验（fail-fast）+ 单测
+- [x] 7.1 `.skill.md` 加 YAML frontmatter + `parseMeta` 改解析（含旧格式回退）
+- [x] 7.2 加载时 skill↔tool 存在性校验（fail-fast）+ 单测
+
+**落地（2026-10-14，commit `e62aaa5`，分支 `feat/agent-stage7-skills`，叠于阶段 6；未合/未灰度）**
+- **D1**：4 个 `.skill.md` 头部改 YAML frontmatter（`name/description/version/tools/scenarios/enabled`）。
+  新增 `harness/skills.frontmatter.ts` 的 `parseSkill(content, filename) → { meta, body }`（用 `js-yaml`）：
+  **body 剥离 frontmatter**（否则元数据会漏进 system prompt）；`tools`/`scenarios` 兼容数组与逗号串；
+  无 frontmatter 或 **YAML 抛错 → 回退旧正则**（`body` = 全文，行为与改造前一致）。`SkillMeta` 迁到本文件并经
+  `skills.loader.ts` 再导出（`agent-catalog.ts` 的 `SkillMeta` / `ReturnType<SkillsLoader['getAllMeta']>` 引用不变）。
+- **D2**：`SkillsLoader` 构造函数**注入 `ToolRegistry`**，`loadAll()` 从构造函数**挪到 `onModuleInit`**
+  （Nest 先跑 `ToolRegistry.onModuleInit` 填表，再跑本类，避免读到空注册表）。声明的 `tools` 未注册 → **隔离该技能**
+  （不登记，记入问题清单），**非生产环境启动 `throw`**、生产仅 `logger.error` 不拖垮启动；`enabled:false` 直接跳过。
+- **数据修正**：`template-market.skill.md` 摘除未注册的 `template_publish`（按 §3.6「修正 or 摘除」二选一，选摘除）。
+- **接线**：`tools.module.ts` 的 providers 已含 `ToolRegistry, ToolGateway, SkillsLoader`（同模块，DI 顺序天然满足）；
+  `subgraph.factory.ts` 的 `getAllMeta()` / `loadFull()` 调用签名**未动**。
+- **测试**：新增 `test/skills-loader.spec.ts`（7：parseSkill 合法/`enabled` 缺省与 false/旧格式回退/坏 YAML 回退 +
+  loader 全工具齐备载入 4 技能且 `loadFull` 正文不含 frontmatter / 缺工具抛错）→ **23 文件 / 962 全绿**；agent `tsc` 干净。
+- **未做**：真机（启动即校验、坏工具名报错、旧格式文件回退）；合 master / 灰度。D3/D4/D5 按原计划挂到依赖阶段。
 
 **验收（本轮 D1 + D2）**：4 个技能改 frontmatter 后正常加载；坏工具名的技能启动即报错；
 旧格式文件仍能加载（回退）。
@@ -1191,7 +1207,7 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 - **工具幂等落库（阶段 3）**：Prisma **无 Session / 幂等表**（会话走 sql.js/内存），
   `completedRequestIds` 与 session 内存 Map 重启即失 → 需新增模型 + 迁移（`db push`）。
 - **skill↔tool 校验（阶段 7 D2）**：需给 `SkillsLoader` 注入 `ToolRegistry`，且校验挪到
-  `onModuleInit` 之后（否则读到空注册表）→ 见 §3.6。
+  `onModuleInit` 之后（否则读到空注册表）→ 见 §3.6。**（✅ 阶段 7 已按此落地）**
 
 ### 5.3 高风险项（须单独立项 / 谨慎）
 
