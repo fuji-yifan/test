@@ -90,7 +90,8 @@ export class FormService {
   async getById(id: string) {
     const form = await this.prisma.form.findUnique({
       where: { id },
-      include: { versions: { orderBy: { version: 'desc' }, take: 10 } },
+      // 软删版本不回传（与 getVersions 默认口径一致）
+      include: { versions: { where: { deletedAt: null }, orderBy: { version: 'desc' }, take: 10 } },
     })
     if (!form || form.deletedAt) throw new NotFoundException('表单不存在')
     return form

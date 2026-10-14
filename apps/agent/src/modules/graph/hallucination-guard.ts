@@ -16,7 +16,9 @@ const CLAIM_PATTERNS: { tool: string; re: RegExp; note: string }[] = [
     re: /已(经)?(帮你)?回滚|回滚(成功|完成)/,
     note: '表单回滚',
   },
-  // 版本删除需排在表单删除之前：更具体的「删除版本」先匹配
+  // 版本删除与表单删除在同一 Agent 的 produceTools 里共存，两个正则必须互斥：
+  // 表单删除用负向断言排除「删除…版本 / 版本删除」措辞，否则一次成功的版本删除
+  // 会在 form_version_delete（有结果→continue）之后又被 form_delete 误判（见 spec）。
   {
     tool: 'form_version_delete',
     re: /已(经)?(帮你)?删除.{0,4}版本|版本已(经)?删除/,
@@ -24,7 +26,7 @@ const CLAIM_PATTERNS: { tool: string; re: RegExp; note: string }[] = [
   },
   {
     tool: 'form_delete',
-    re: /已(经)?(帮你)?删除|删除成功|已移入回收站/,
+    re: /已(经)?(帮你)?删除(?!.{0,4}版本)|(?<!版本)删除成功|已移入回收站/,
     note: '表单删除',
   },
   {

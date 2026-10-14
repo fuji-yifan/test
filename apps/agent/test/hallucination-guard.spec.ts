@@ -54,4 +54,20 @@ describe('guardHallucination', () => {
     expect(r.suspicious).toBe(true)
     expect(r.expectedTool).toBe('form_version_delete')
   })
+
+  it('成功删除版本后不被误判为表单删除幻觉（两正则互斥）', () => {
+    const tools = ['form_delete', 'form_version_delete']
+    // 本轮 form_version_delete 成功 → 版本声明命中并有结果 → 不应再落到 form_delete
+    expect(guardHallucination('已经帮你删除 v2 版本了。', tools, ['form_version_delete']).suspicious).toBe(
+      false,
+    )
+    expect(guardHallucination('版本删除成功。', tools, ['form_version_delete']).suspicious).toBe(false)
+  })
+
+  it('成功删除表单后不被版本正则误判', () => {
+    const tools = ['form_delete', 'form_version_delete']
+    expect(guardHallucination('已经帮你删除这张表单了，可在回收站恢复。', tools, ['form_delete']).suspicious).toBe(
+      false,
+    )
+  })
 })
