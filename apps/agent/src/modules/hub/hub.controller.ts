@@ -313,7 +313,11 @@ export class HubController {
       workspaceId: user.workspaceId,
     }
 
-    const result = await this.toolGateway.execute(name, args)
+    // 直调无会话上下文（不传 requestId/sessionId）：审计仍带上身份，便于归属到用户/工作空间
+    const result = await this.toolGateway.execute(name, args, {
+      userId: user.userId,
+      workspaceId: user.workspaceId,
+    })
     if (result.confirmRequired) {
       return {
         code: 0,

@@ -866,6 +866,7 @@ function toolCtx(
     userToken: state.userToken,
     workspaceId: state.workspaceId,
     userId: state.userId,
+    sessionId: state.sessionId,
     savedFormId: state.sessionMetadataPatch?.savedFormId as string | undefined,
     currentSchema: draft?.schema,
     formWorksheet: state.formWorksheet,

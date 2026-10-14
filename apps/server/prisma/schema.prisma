@@ -210,10 +210,21 @@ model AuditLog {
   details      Json     @default("{}")
   ip           String?  @db.VarChar(45)
   createdAt    DateTime @default(now()) @map("created_at")
+  // 阶段 6 / S2（agent 工具调用审计）：由 apps/agent 用 mysql2 直写（同 graph_checkpoint 先例），
+  // 全部可空 —— 不影响 server 既有审计读写与 UI。agent 只 INSERT（append-only），不自建/不 ALTER 本表。
+  traceId      String?  @map("trace_id") @db.VarChar(64)
+  sessionId    String?  @map("session_id") @db.VarChar(64)
+  toolName     String?  @map("tool_name") @db.VarChar(64)
+  riskLevel    String?  @map("risk_level") @db.VarChar(16)
+  confirmed    Boolean? @map("confirmed")
+  durationMs   Int?     @map("duration_ms")
+  resultOk     Boolean? @map("result_ok")
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([traceId], map: "idx_audit_logs_trace")
+  @@index([sessionId], map: "idx_audit_logs_session")
   @@map("audit_logs")
 }
 

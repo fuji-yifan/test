@@ -5,6 +5,7 @@ import { APP_GUARD } from '@nestjs/core'
 import { PassportModule } from '@nestjs/passport'
 import { JwtModule } from '@nestjs/jwt'
 import configuration, {
+  auditConfig,
   cacheConfig,
   checkpointConfig,
   contextConfig,
@@ -35,7 +36,7 @@ import { HealthController } from './modules/health/health.controller'
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [configuration, deepseekConfig, contextConfig, checkpointConfig, cacheConfig, userMemoryConfig],
+      load: [configuration, deepseekConfig, contextConfig, checkpointConfig, cacheConfig, userMemoryConfig, auditConfig],
       envFilePath: ['.env'],
     }),
     ThrottlerModule.forRoot([

@@ -66,7 +66,18 @@ class FakeRedis {
   }
 }
 
-function makeGateway(redis = new FakeRedis(), toolTimeoutMs = 30000) {
+/** 假的审计存储：只记录收到的落库条目，便于断言（阶段 6 / S2）。 */
+class StubAudit {
+  records: any[] = []
+  async available() {
+    return true
+  }
+  async record(entry: any) {
+    this.records.push(entry)
+  }
+}
+
+function makeGateway(redis = new FakeRedis(), toolTimeoutMs = 30000, auditEnabled?: boolean) {
   const registry = new StubRegistry()
   const config = {
     get: (key: string) =>
@@ -74,11 +85,13 @@ function makeGateway(redis = new FakeRedis(), toolTimeoutMs = 30000) {
         'cache.ttlSeconds': 60,
         'cache.enabled': true,
         'context.toolTimeoutMs': toolTimeoutMs,
+        'audit.enabled': auditEnabled,
       } as Record<string, unknown>)[key],
   } as unknown as ConfigService
   const cache = new ToolResultCache(redis as any, config)
-  const gateway = new ToolGateway(registry as any, {} as any, cache, config)
-  return { gateway, registry, cache, redis }
+  const audit = new StubAudit()
+  const gateway = new ToolGateway(registry as any, {} as any, cache, config, audit as any)
+  return { gateway, registry, cache, redis, audit }
 }
 
 describe('ToolGateway × ToolResultCache', () => {
@@ -149,5 +162,81 @@ describe('ToolGateway × ToolResultCache', () => {
 
     expect(res.ok).toBe(false)
     expect(res.error).toBe('timeout')
+  })
+
+  describe('审计落库（阶段 6 / S2）', () => {
+    it('低风险执行成功 → 落库带身份/sessionId/耗时，confirmed=false', async () => {
+      const { gateway, audit } = makeGateway()
+
+      await gateway.execute('data_query', { token: 'tk', q: 'x' }, {
+        workspaceId: 'ws1',
+        userId: 'u1',
+        sessionId: 'sess1',
+        requestId: 'call_abc',
+      })
+
+      expect(audit.records).toHaveLength(1)
+      const rec = audit.records[0]
+      expect(rec).toMatchObject({
+        traceId: 'call_abc',
+        sessionId: 'sess1',
+        userId: 'u1',
+        workspaceId: 'ws1',
+        toolName: 'data_query',
+        riskLevel: 'low',
+        confirmed: false,
+        ok: true,
+      })
+      expect(rec.durationMs).toBeGreaterThanOrEqual(0)
+      expect(rec.summary).toBe('ok')
+      // args 原样交给 store 脱敏（网关不脱敏）
+      expect(rec.args).toMatchObject({ token: 'tk', q: 'x' })
+    })
+
+    it('无 requestId 时生成 tr_ 追溯 id', async () => {
+      const { gateway, audit } = makeGateway()
+
+      await gateway.execute('data_query', {}, { workspaceId: 'ws1' })
+
+      expect(audit.records[0].traceId).toMatch(/^tr_/)
+    })
+
+    it('高风险进确认门 → 落库 ok=false、summary=AWAITING_CONFIRMATION、confirmed=false', async () => {
+      const { gateway, audit } = makeGateway()
+
+      await gateway.execute('data_export', {}, { workspaceId: 'ws1', sessionId: 'sess2' })
+
+      expect(audit.records).toHaveLength(1)
+      const rec = audit.records[0]
+      expect(rec).toMatchObject({ toolName: 'data_export', riskLevel: 'high', ok: false, confirmed: false })
+      expect(rec.summary).toContain('AWAITING_CONFIRMATION')
+    })
+
+    it('executeConfirmed 路径 → 落库 confirmed=true', async () => {
+      const { gateway, audit } = makeGateway()
+
+      await gateway.executeConfirmed('data_export', {}, { workspaceId: 'ws1', sessionId: 'sess3' })
+
+      expect(audit.records).toHaveLength(1)
+      expect(audit.records[0]).toMatchObject({ confirmed: true, sessionId: 'sess3', ok: true })
+    })
+
+    it('audit.enabled=false → 不落库（仍保留内存缓冲）', async () => {
+      const { gateway, audit } = makeGateway(undefined, 30000, false)
+
+      await gateway.execute('data_query', {}, { workspaceId: 'ws1' })
+
+      expect(audit.records).toHaveLength(0)
+      expect(gateway.getAuditLog()).toHaveLength(1)
+    })
+
+    it('缺少 workspaceId → 网关仍调用 store（由 store 决定跳过）', async () => {
+      const { gateway, audit } = makeGateway()
+
+      await gateway.execute('data_query', {}, {})
+
+      expect(audit.records).toHaveLength(1)
+      expect(audit.records[0].workspaceId).toBe('')
+    })
   })
 })

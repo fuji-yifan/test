@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config'
 import { ToolRegistry } from './tool.registry'
 import { SessionService } from '../session/session.service'
 import { ToolResultCache } from '../cache/tool-cache.service'
+import { AuditStore } from '../audit/audit.store'
 import { withTimeout, isTimeoutError } from './timeout'
 
 /**
@@ -37,15 +38,26 @@ interface AuditEntry {
   userId?: string
   workspaceId?: string
   requestId?: string
+  /** 归属会话（阶段 6 / S2）：用于凭 traceId/sessionId 追溯 */
+  sessionId?: string
+  /** 关联 id：优先复用 requestId，否则新生成 `tr_<nanoid>` */
+  traceId: string
+  /** 是否经过人工确认门（execute 路径 false，executeConfirmed 路径 true） */
+  confirmed: boolean
+  /** 工具执行耗时（ms），确认/缓存短路路径为 0 */
+  durationMs: number
   timestamp: number
 }
+
+/** writeAudit 入参：traceId/confirmed/durationMs 之外的可选审计字段 */
+type AuditInput = Omit<AuditEntry, 'id' | 'timestamp' | 'traceId'>
 
 @Injectable()
 export class ToolGateway {
   private readonly logger = new Logger(ToolGateway.name)
   /** 幂等性：已完成的 request_id 集合（内存，重启丢失） */
   private completedRequestIds: Set<string> = new Set()
-  /** 审计日志环形缓冲（最多保留 1000 条） */
+  /** 审计日志环形缓冲（最多保留 1000 条，重启丢失；DB 落库见 AuditStore） */
   private auditLog: AuditEntry[] = []
 
   constructor(
@@ -53,6 +65,7 @@ export class ToolGateway {
     private sessionService: SessionService,
     private cache: ToolResultCache,
     private config: ConfigService,
+    private audit: AuditStore,
   ) {}
 
   /** 工具风险等级（供上层——如直调端点的绕过防护——查询） */
@@ -78,7 +91,7 @@ export class ToolGateway {
   async execute(
     toolName: string,
     args: Record<string, unknown>,
-    opts?: { requestId?: string; userId?: string; workspaceId?: string },
+    opts?: { requestId?: string; userId?: string; workspaceId?: string; sessionId?: string },
   ): Promise<GatewayResult> {
     const tool = this.registry.get(toolName)
     if (!tool) {
@@ -114,6 +127,9 @@ export class ToolGateway {
         userId: opts?.userId,
         workspaceId: opts?.workspaceId,
         requestId: opts?.requestId,
+        sessionId: opts?.sessionId,
+        confirmed: false,
+        durationMs: 0,
       })
 
       return {
@@ -139,11 +155,15 @@ export class ToolGateway {
         userId: opts?.userId,
         workspaceId: opts?.workspaceId,
         requestId: opts?.requestId,
+        sessionId: opts?.sessionId,
+        confirmed: false,
+        durationMs: 0,
       })
       return { ok: true, summary: cached.summary, result: cached.result }
     }
 
     let result: Awaited<ReturnType<ToolRegistry['call']>>
+    const startedAt = Date.now()
     try {
       result = await withTimeout(
         this.registry.call(toolName, args),
@@ -187,6 +207,9 @@ export class ToolGateway {
       userId: opts?.userId,
       workspaceId: opts?.workspaceId,
       requestId: opts?.requestId,
+      sessionId: opts?.sessionId,
+      confirmed: false,
+      durationMs: Date.now() - startedAt,
     })
 
     return {
@@ -201,11 +224,12 @@ export class ToolGateway {
   async executeConfirmed(
     toolName: string,
     args: Record<string, unknown>,
-    opts?: { requestId?: string; userId?: string; workspaceId?: string },
+    opts?: { requestId?: string; userId?: string; workspaceId?: string; sessionId?: string },
   ): Promise<GatewayResult> {
     const risk = this.registry.getRisk(toolName)
 
     let result: Awaited<ReturnType<ToolRegistry['call']>>
+    const startedAt = Date.now()
     try {
       result = await withTimeout(
         this.registry.call(toolName, args),
@@ -239,6 +263,9 @@ export class ToolGateway {
       userId: opts?.userId,
       workspaceId: opts?.workspaceId,
       requestId: opts?.requestId,
+      sessionId: opts?.sessionId,
+      confirmed: true,
+      durationMs: Date.now() - startedAt,
     })
 
     return {
@@ -261,9 +288,11 @@ export class ToolGateway {
 
   // ==================== 内部方法 ====================
 
-  private async writeAudit(entry: Omit<AuditEntry, 'id' | 'timestamp'>): Promise<void> {
+  private async writeAudit(entry: AuditInput): Promise<void> {
+    const traceId = entry.requestId || `tr_${this.nanoid(12)}`
     const record: AuditEntry = {
       ...entry,
+      traceId,
       id: `audit_${this.nanoid()}`,
       timestamp: Date.now(),
     }
@@ -274,8 +303,25 @@ export class ToolGateway {
       this.auditLog = this.auditLog.slice(-1000)
     }
 
-    // 持久化到 session metadata（如果提供了 sessionId 则通过 args 传递）
-    // 注意：Gateway 不持有 session 引用，实际持久化由 Agent 的 onToolSuccess 钩子完成
+    // 落库持久化（阶段 6 / S2）：fire-and-forget，不阻塞工具关键路径；
+    // 无库 / 未配置 workspaceId / 写入失败一律在 AuditStore 内 no-op 降级（只 warn）。
+    if (this.config?.get<boolean>('audit.enabled') !== false) {
+      void this.audit
+        .record({
+          traceId,
+          sessionId: entry.sessionId,
+          userId: entry.userId,
+          workspaceId: entry.workspaceId ?? '',
+          toolName: entry.tool,
+          riskLevel: entry.risk,
+          confirmed: entry.confirmed,
+          durationMs: entry.durationMs,
+          ok: entry.ok,
+          summary: entry.summary,
+          args: entry.args,
+        })
+        .catch(() => {})
+    }
 
     this.logger.log(
       `[AUDIT] ${record.tool} | ok=${record.ok} | risk=${record.risk} | requestId=${record.requestId || 'N/A'}`,

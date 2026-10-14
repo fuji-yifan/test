@@ -34,6 +34,8 @@ export interface ToolCallContext {
   userToken?: string
   workspaceId?: string
   userId?: string
+  /** 归属会话 id（阶段 6 / S2）：审计落库按 sessionId 追溯，由 act 从图状态填进来 */
+  sessionId?: string
   savedFormId?: string
   /** 当前会话已有的表单结构（form-designer 草稿），供 form_assemble_schema 合并 */
   currentSchema?: Record<string, unknown>
@@ -118,6 +120,7 @@ export class LangChainToolBridge {
       requestId: opts?.requestId,
       userId: ctx.userId,
       workspaceId: ctx.workspaceId,
+      sessionId: ctx.sessionId,
     }
 
     if (opts?.confirmed) {
