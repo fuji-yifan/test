@@ -6,6 +6,7 @@ import { FormService } from './form.service'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { PermissionGuard, RequiredPermission } from '../../common/guards/permission.guard'
 import { WorkspaceGuard } from '../../common/guards/workspace.guard'
+import { WorkspaceQuotaGuard, QuotaCheck } from '../../common/guards/workspace-quota.guard'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Public } from '../../common/decorators/public.decorator'
 
@@ -26,8 +27,9 @@ export class FormController {
     return this.formService.list(wsId, query)
   }
 
-  @UseGuards(WorkspaceGuard, PermissionGuard)
+  @UseGuards(WorkspaceGuard, PermissionGuard, WorkspaceQuotaGuard)
   @RequiredPermission('form:create')
+  @QuotaCheck('form')
   @Post('workspaces/:wsId/forms')
   create(
     @Param('wsId') wsId: string,

@@ -3,6 +3,7 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger'
 import { InvitationService } from './invitation.service'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { PermissionGuard, RequiredPermission } from '../../common/guards/permission.guard'
+import { WorkspaceQuotaGuard, QuotaCheck } from '../../common/guards/workspace-quota.guard'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 
 @ApiTags('Invitations')
@@ -13,8 +14,9 @@ export class InvitationController {
   constructor(private invitationService: InvitationService) {}
 
   /** 邀请用户加入工作空间（替代原直接添加成员） */
-  @UseGuards(PermissionGuard)
+  @UseGuards(PermissionGuard, WorkspaceQuotaGuard)
   @RequiredPermission('member:invite')
+  @QuotaCheck('member')
   @Post('workspaces/:wsId/invitations')
   send(
     @Param('wsId') wsId: string,
