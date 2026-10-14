@@ -8,6 +8,7 @@ import { withTimeout, isTimeoutError } from './timeout'
 import { WRITE_TOOLS } from './write-tools'
 import { combineDecisions, evaluateBuiltinPolicy, type PolicyDecision } from './policy-rules'
 import { PolicyEngineService } from '../infra/policy-engine.service'
+import { TracingService } from '../infra/tracing.service'
 
 export { WRITE_TOOLS }
 
@@ -44,8 +45,8 @@ interface AuditEntry {
   auditNote?: string
 }
 
-/** writeAudit 入参：traceId/confirmed/durationMs 之外的可选审计字段 */
-type AuditInput = Omit<AuditEntry, 'id' | 'timestamp' | 'traceId'>
+/** writeAudit 入参：id/timestamp 之外的可选审计字段；`traceId` 可选传入（与 span 同源） */
+type AuditInput = Omit<AuditEntry, 'id' | 'timestamp' | 'traceId'> & { traceId?: string }
 
 @Injectable()
 export class ToolGateway {
@@ -63,6 +64,8 @@ export class ToolGateway {
     private audit: AuditStore,
     /** 外部策略引擎（S3.1，可选注入：未配置即 no-op）。内置纯规则（S3.2）恒跑、不依赖它。 */
     @Optional() private policy?: PolicyEngineService,
+    /** 链路追踪（S2.3，可选注入：未配 endpoint 即零外呼；traceId 恒贯通）。 */
+    @Optional() private tracing?: TracingService,
   ) {}
 
   /** 工具风险等级（供上层——如直调端点的绕过防护——查询） */
@@ -199,6 +202,16 @@ export class ToolGateway {
       return { ok: true, summary: cached.summary, result: cached.result }
     }
 
+    // S2.3：traceId 与审计同源（有 requestId 复用之，否则 `tr_<hex>`）；span 包住真正的工具执行
+    const traceId = this.tracing
+      ? this.tracing.currentTraceId(opts?.requestId)
+      : opts?.requestId || `tr_${this.nanoid(12)}`
+    const span = this.tracing?.startSpan(`tool.${toolName}`, traceId, {
+      risk,
+      workspaceId: opts?.workspaceId,
+      userId: opts?.userId,
+    })
+
     let result: Awaited<ReturnType<ToolRegistry['call']>>
     const startedAt = Date.now()
     try {
@@ -215,6 +228,13 @@ export class ToolGateway {
       } else {
         throw err
       }
+    }
+
+    // S2.3：收口 span（未配 OTLP → 零外呼）；fire-and-forget，不阻塞
+    if (this.tracing && span) {
+      void this.tracing
+        .endSpan(span, { ok: result.ok, durationMs: Date.now() - startedAt, error: result.error })
+        .catch(() => {})
     }
 
     // 幂等标记：成功的写操作
@@ -248,6 +268,7 @@ export class ToolGateway {
       confirmed: false,
       durationMs: Date.now() - startedAt,
       auditNote: policyNote,
+      traceId,
     })
 
     return {
@@ -287,6 +308,16 @@ export class ToolGateway {
     }
     const policyNote = policyDecision.decision === 'warn' ? policyDecision.auditNote : undefined
 
+    // S2.3：traceId 与审计同源；span 包住确认后的真正执行
+    const traceId = this.tracing
+      ? this.tracing.currentTraceId(opts?.requestId)
+      : opts?.requestId || `tr_${this.nanoid(12)}`
+    const span = this.tracing?.startSpan(`tool.${toolName}.confirmed`, traceId, {
+      risk,
+      workspaceId: opts?.workspaceId,
+      userId: opts?.userId,
+    })
+
     let result: Awaited<ReturnType<ToolRegistry['call']>>
     const startedAt = Date.now()
     try {
@@ -302,6 +333,12 @@ export class ToolGateway {
       } else {
         throw err
       }
+    }
+
+    if (this.tracing && span) {
+      void this.tracing
+        .endSpan(span, { ok: result.ok, durationMs: Date.now() - startedAt, error: result.error })
+        .catch(() => {})
     }
 
     if (result.ok && opts?.requestId) {
@@ -326,6 +363,7 @@ export class ToolGateway {
       confirmed: true,
       durationMs: Date.now() - startedAt,
       auditNote: policyNote,
+      traceId,
     })
 
     return {
@@ -381,7 +419,7 @@ export class ToolGateway {
   }
 
   private async writeAudit(entry: AuditInput): Promise<void> {
-    const traceId = entry.requestId || `tr_${this.nanoid(12)}`
+    const traceId = entry.traceId || entry.requestId || `tr_${this.nanoid(12)}`
     const record: AuditEntry = {
       ...entry,
       traceId,
