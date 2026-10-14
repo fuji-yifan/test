@@ -16,7 +16,7 @@
 | 3 | 持久化（会话/执行权/幂等） | ✅ 切片 A/B/C 全部完成（§3.2；分支 `feat/agent-session-mysql`）：**A** 会话落 MySQL（`7b8255f`）；**B** 执行权租约（行锁+TTL+心跳，`dfc3fc2`）；**C** 幂等下沉（server 唯一键，`94ccd1e`）。**已合 master（2026-10-14）**，未灰度 |
 | 4 | 成本（token 预算 + usage + **缓存**） | ✅ 完成（§3.3；分支 `feat/agent-stage4-cost`，叠于阶段 3）；`vitest` 908 全绿 + `tsc` 干净。**已合 master（2026-10-14）**，未灰度 |
 | 5 | 业务落地（寻址/diff/撤销） | ✅ 完成（§3.4；分支 `feat/agent-stage5-business`，叠于阶段 4）；`vitest` 931 全绿 + `tsc` 干净。**已合 master（2026-10-14）**，未灰度 |
-| 6 | 安全（提示注入/审计/配额）+ **兜底与降级** | ◐ 大部分完成（§3.5）：**S1（RLS 除外）+ S2（agent 工具审计落库 + server 登录/权限拒绝审计 S2.4）+ S3.3 + S4（软删除/回收站/删除工具 HITL/防覆盖推广）+ S5.1 + S7**＝「整套无外部依赖项」；分支 `feat/agent-stage6-security`（已合 master，2026-10-14）+ `feat/agent-stage6-s2-audit` + `feat/agent-stage6-auth-audit` + `feat/agent-stage6-antidelete`（后三者叠于 master，未合未灰度）；`vitest` **1023 全绿** + 三端 `tsc` 干净。RLS/S2.3/S3.1/S5.2/S6.1/S6.2（SOPS）需外部基建或属别的链路，推迟 |
+| 6 | 安全（提示注入/审计/配额）+ **兜底与降级** | ✅ 完成（§3.5）：**S1（RLS 除外）+ S2（agent 工具审计落库 + server 登录/权限拒绝审计 S2.4）+ S3.3 + S4（软删除/回收站/删除工具 HITL/防覆盖推广）+ S5.1 + S7**＝「整套无外部依赖项」；分支 `feat/agent-stage6-security`（已合 master，2026-10-14）+ `feat/agent-stage6-s2-audit` + `feat/agent-stage6-auth-audit` + `feat/agent-stage6-antidelete`。**2026-10-14 追加：需外部基建的 S2.3/S3.1/S3.2/S5.2/S6.1/S6.2(OpenBao) 全部实现为 env-gated 适配钩子**（不配即 no-op）——分支 `feat/agent-stage6-s3-policy`(S3.1+S3.2) → `feat/agent-stage6-s2-tracing`(S2.3) → `feat/agent-stage6-s5-guardrails`(S5.2) → `feat/server-stage6-s6-ratelimit`(S6.1) → `feat/server-stage6-s6-openbao`(S6.2)，线性叠于上；`vitest` **1058 全绿** + 三端 `tsc` 干净 + server 真机启动 DI 全解析。**仅剩** RLS（N/A，MySQL 无 RLS）、SOPS（需新依赖）、8.5 RAG（推迟）、MCP（另立项）。全链**未合 master、未 push、未灰度** |
 | 7 | 技能管理 | ✅ 完成（本轮 D1 + D2；§3.6；分支 `feat/agent-stage7-skills`，叠于阶段 6）：frontmatter + 技能↔工具绑定校验；`vitest` 962 全绿 + `tsc` 干净；**已合 master（2026-10-14）**，未灰度。D3/D4/D5 明确挂到依赖阶段 |
 | 8 | **长期记忆（用户级）+ 知识沉淀 + MCP** | ◐ 长期记忆 8.1–8.4 完成（§3.7；分支 `feat/agent-stage8-memory`，叠于阶段 7）：表 + 提取 + 召回 + 查看/删除；`vitest` 992 全绿 + 三端 `tsc` 干净；**已合 master（2026-10-14）**，未灰度。**8.5 RAG 推迟**（无嵌入/向量基建），MCP 仍留后 |
 
@@ -874,7 +874,7 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 - **验收**：任一工具调用可凭 traceId 追到「谁/哪个会话/做了什么/是否人工确认」；审计中**无明文 token**。
 
 > **落地（2026-10-14，agent 侧 S2.1 + S2.2，server 侧 S2.4）**：上面第 1/2/3 已完成——
-> agent 工具调用侧见下；**server 登录/权限拒绝审计见 S2.4**；**仅 S2.3 OTel/Langfuse 仍推迟**（需 Langfuse）。
+> agent 工具调用侧见下；**server 登录/权限拒绝审计见 S2.4**；S2.3 OTel/Langfuse 见下方「外部基建 env-gated 钩子」。
 > - **落库**（新 `apps/agent/src/modules/audit/audit.store.ts`）：复用 server 的 `audit_logs`，`db push` 加 **7 个可空列**
 >   （`trace_id/session_id/tool_name/risk_level/confirmed/duration_ms/result_ok`）+ 2 索引；
 >   agent 只 INSERT（append-only，不自建/不 ALTER/不删除），无 `AGENT_DATABASE_URL`/连不上 → store **no-op 降级**，
@@ -898,8 +898,17 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 >   （`details:{required,reason}`）；无 wsId 的「无法确定工作空间上下文」分支跳过（FK 约束）。
 > - **生产 dev-secret 守卫**（S6.2 的无基建部分）：`main.ts` 在 `NODE_ENV=production` 且 `JWT_SECRET` 缺失/为
 >   `dev-secret` 时 **fail-fast 拒绝启动**；开发环境仅 warn。
-> - **登出审计未做**（用户 2026-10-14 拍板本轮跳过）；S2.3 OTel/Langfuse 仍推迟。
+> - **登出审计未做**（用户 2026-10-14 拍板本轮跳过）。
 > - **验证**：server `tsc --noEmit` 干净（server 无既有单测基建，登录/权限审计以类型检查 + 真机手工验证交付）。
+
+> **落地（2026-10-14，外部基建 env-gated 钩子：S2.3 / S3.1 / S3.2 / S5.2 / S6.1 / S6.2-OpenBao）**
+> —— 用户拍板「凡能用代码完成的都做掉」：把此前推迟的需外部基建项，全部实现为**配 env 才生效、不配即 no-op（与现状逐字节一致）**的适配钩子。**零新增 npm 依赖**（原生 `fetch`）；新依赖一律放构造**末尾 + `@Optional()`**，旧调用签名原样可用。
+> - **S2.3 追踪**（`feat/agent-stage6-s2-tracing`）：新 `infra/tracing.service.ts`——`traceId` **恒贯通**（有 `requestId` 复用、否则 `tr_<hex>`，与工具审计同源）；`OTEL_EXPORTER_OTLP_ENDPOINT` 或 `LANGFUSE_HOST` 空 → **零外呼**，配了 → 每 span 一次 OTLP/HTTP JSON POST（fire-and-forget + 超时 + `warnOnce`，不做完整 SDK）。`tool-gateway` 执行路径 `startSpan`/`endSpan` 包住 `registry.call`；`langgraph-llm.service.ts` 的 `chat` getter 改**薄代理**（`invoke` → `invokeChat`，对既有 mock 透明）、`withTools` 外包 span。
+> - **S3.1+S3.2 策略**（`feat/agent-stage6-s3-policy`）：新 `harness/policy-rules.ts`（叶子纯函数，**恒开、零基建**）——跨租户 `deny` / 删除类工具（误评 `low`）兜底 `requireConfirm` / 批量超阈值 `deny` / 敏感字段 `warn(pii_access)`，**仅显式信号触发**（对既有 fixture 零影响）。新 `infra/policy-engine.service.ts`——`POLICY_ENGINE_URL` 空 → 只跑内置（零外呼）；配了 → POST 给 Cerbos/OPA PDP，与内置**取最严者**；网络失败默认 fail-open，可 `POLICY_ENGINE_FAIL_CLOSED`。`tool-gateway` 在风险门后插策略步（`deny` 拦 + 审计 `POLICY_DENIED`；`warn` 落 `details.note`）。
+> - **S5.2 护栏**（`feat/agent-stage6-s5-guardrails`）：新 `infra/guardrails.service.ts`——`NEMO_GUARDRAILS_URL` 空 → 直通（零外呼）；配了对 LLM 输入（末条 human）/输出各 POST 一次，被拦抛 `GuardrailBlockedError`，传输失败 fail-open。与 S5.1 `wrapUntrusted` 互补。
+> - **S6.1 限流 + 配额**（`feat/server-stage6-s6-ratelimit`，server-only）：新 `common/throttler/{redis-throttler.storage.ts,throttler.guard.ts}`（Redis 有则用 INCR、无则内存；`RATE_LIMIT_ENABLED!=='true'` 直接放行；tracker 分级 ws→user→IP）+ `common/quota/`（`QUOTA_ENABLED!=='true'` 直接放行，超 `Workspace.maxForms/maxMembers` → 429）；`app.module` 加 `ThrottlerModule.forRootAsync` + `APP_GUARD`；建表/邀请路由挂 `WorkspaceQuotaGuard` + `@QuotaCheck`；新增 `apps/server/.env.example`。
+> - **S6.2 OpenBao**（`feat/server-stage6-s6-openbao`，server-only）：新 `bootstrap/secret-loader.ts`——`OPENBAO_ADDR`+`OPENBAO_TOKEN` 都设才启用（否则 no-op）；兼容 KV-v2/v1；仅 `process.env[k]===undefined` 时写入（真 env 优先）；开发失败 warn、生产抛错；置于 `assertJwtSecret` 之前。**SOPS 需新依赖，不做**。
+> - **验证**：agent `vitest` **1058 全绿**（34 文件，新 `policy-rules`/`policy-engine`/`tool-gateway-policy`/`tracing`/`guardrails` 5 个 spec）、三端 `tsc` 干净、server **真机启动 DI 全解析**（仅因 3000 被占未 bind）。**全链未合 master、未 push、未灰度**。
 
 
 #### S3 自动合规策略层（Policy Engine）
@@ -990,17 +999,17 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 - [x] S1.3 submission 行级权限生效 + 全链路 fail-closed（应用层显式成员断言，见「阶段 6 落地」）
 - [x] S2.1 Agent 审计落库 `audit_logs`（扩展字段 + append-only）— 2026-10-14 落地（agent 工具调用侧）
 - [x] S2.2 工具路径身份贯通 + `sanitizeArgs` 落地 — 2026-10-14 落地
-- [ ] S2.3 OTel + Langfuse 接入（traceId 贯穿）— 推迟（需 Langfuse）
+- [x] S2.3 OTel + Langfuse 接入（traceId 贯穿）— **2026-10-14 env-gated 落地**（traceId 恒贯通 + 可选 OTLP 导出；未配端点即零外呼）
 - [x] S2.4 登录/权限拒绝入账 — 2026-10-14 落地（登录成功/失败 + 权限拒绝；**登出**用户拍板本轮跳过）
-- [ ] S3.1 接入 Cerbos/OPA + ToolGateway 前置 policy hook — 推迟（需策略引擎）
-- [ ] S3.2 业务策略文件（删除确认/批量阈值/跨租户/PII）— 推迟（随 S3.1）
+- [x] S3.1 接入 Cerbos/OPA + ToolGateway 前置 policy hook — **2026-10-14 env-gated 落地**（`POLICY_ENGINE_URL` 空则只跑内置）
+- [x] S3.2 业务策略文件（删除确认/批量阈值/跨租户/PII）— **2026-10-14 落地**（`harness/policy-rules.ts`，恒开纯函数）
 - [x] S3.3 风险分级重定 + 写工具幂等修复 + 堵直调绕过
 - [x] S4.1 软删除统一 + 回收站 + 恢复端点 — 2026-10-14 落地
 - [x] S4.2 删除类 HITL 确认 + 防覆盖模式推广 — 2026-10-14 落地
 - [x] S5.1 `wrapUntrusted()` 纯函数 + tool-bridge 接入 + 单测
-- [ ] S5.2 NeMo Guardrails sidecar 接入 — 推迟（需 Python sidecar）
-- [ ] S6.1 server 限流 + workspace/用户配额 + maxConcurrent — 推迟（需 Redis throttler）
-- [ ] S6.2 SOPS/OpenBao 密钥 + 生产禁 dev-secret 守卫 — **生产禁 dev-secret 守卫已落地（2026-10-14）**；SOPS/OpenBao 仍推迟
+- [x] S5.2 NeMo Guardrails sidecar 接入 — **2026-10-14 env-gated 落地**（`NEMO_GUARDRAILS_URL` 空则零外呼，传输失败 fail-open）
+- [x] S6.1 server 限流 + workspace/用户配额 + maxConcurrent — **2026-10-14 env-gated 落地**（`RATE_LIMIT_ENABLED`/`QUOTA_ENABLED` 默认关；Redis 有则用、无则内存）
+- [x] S6.2 SOPS/OpenBao 密钥 + 生产禁 dev-secret 守卫 — **2026-10-14 env-gated 落地**（生产禁 dev-secret 守卫 + OpenBao 装载 `OPENBAO_ADDR`/`OPENBAO_TOKEN` 均设才启用；SOPS 需新依赖不引入）
 - [x] S7.1 工具 / LLM 调用超时熔断（可配）
 - [x] S7.2 幻觉守卫（产物须源自工具结果）
 - [x] S7.3 工具入参 / 结果 schema 校验（fail-closed）
@@ -1012,6 +1021,10 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 `feat/agent-stage6-security`（基于 `feat/agent-stage5-business`），未合 master / 未灰度。
 **凡需外部基建/中间件的 S 项一律推迟**（RLS 需 PG、S2 需 Langfuse、S3.1 需 Cerbos/OPA、
 S5.2 需 NeMo、S6 需 Redis/SOPS）——dev 环境都不起，故整段不做。
+
+> **2026-10-14 补记**：上段「需外部基建项推迟」的范围**已被后续 env-gated 落地补全**——S2.3/S3.1/
+> S3.2/S5.2/S6.1/S6.2(OpenBao) 均已实现为「不配 env 即 no-op、配了才生效」的适配钩子，
+> 详见本文档「阶段 6 外部基建 env-gated 钩子落地（2026-10-14）」小节。
 
 - **S7 兜底与降级（先做，作地基）**
   - S7.1：`harness/timeout.ts` 的 `withTimeout`（超时抛 `TimeoutError`，与 `AbortError` 区分）。
@@ -1372,6 +1385,24 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 | `USER_MEMORY_EXTRACT_ENABLED` | `true` | 只停写、**保留召回** | `false` |
 | `USER_MEMORY_RECALL_TOP_K` / `_EXTRACT_MAX_PER_TURN` / `_MAX_SCAN` | `5` / `5` / `200` | 召回条数 / 每轮最多落库 / 预扫条数 | — |
 | `AUDIT_ENABLED` | `true` | 工具审计落库 `audit_logs`（阶段 6 / S2，agent 侧）；**`false` = 只留内存环形缓冲**（去 `AGENT_DATABASE_URL` 亦使其 no-op） | `false` |
+| `TRACING_ENABLED` | `true` | 追踪总开关（阶段 6 / S2.3）；**无 endpoint 时仍为 no-op**（traceId 恒贯通，但不外呼） | `false` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` / `LANGFUSE_HOST` | 空 | OTLP/Langfuse 导出端点（S2.3）；**都空 = 零外呼** | 置空 |
+| `OTEL_SERVICE_NAME` | `furmx-agent` | 追踪 service.name 资源属性 | — |
+| `POLICY_ENGINE_URL` | 空 | 外部 PDP（Cerbos/OPA）地址（阶段 6 / S3.1）；**空 = 只跑内置策略** | 置空 |
+| `POLICY_ENGINE_FAIL_CLOSED` | `false` | 外部 PDP 网络失败时是否 fail-closed（`true` = 拒绝） | `false`（fail-open） |
+| `POLICY_BULK_THRESHOLD` | `100` | 内置批量阈值（S3.2）：写工具显式量级 > 此值 → deny | — |
+| `NEMO_GUARDRAILS_URL` | 空 | NeMo Guardrails sidecar 地址（阶段 6 / S5.2）；**空 = 零外呼**（传输失败 fail-open） | 置空 |
+
+**server 侧 env 开关（读 `apps/server/.env`；新建，见 `apps/server/.env.example`）**：
+
+| 开关 | 默认 | 作用 | 回退值 |
+|---|---|---|---|
+| `RATE_LIMIT_ENABLED` | `false` | 全局限流（阶段 6 / S6.1）；**`false` = 守卫恒放行（等同现状）** | `false` |
+| `RATE_LIMIT_TTL_MS` / `RATE_LIMIT_LIMIT` | `60000` / `120` | 限流窗口 / 窗口内上限 | — |
+| `QUOTA_ENABLED` | `false` | workspace 配额（S6.1）：建表查 `maxForms`、邀请查 `maxMembers`；**`false` = 不检查** | `false` |
+| `OPENBAO_ADDR` / `OPENBAO_TOKEN` | 空 | OpenBao（Vault 兼容）密钥装载（阶段 6 / S6.2）；**两者缺一 = no-op**；装载仅在 `process.env[k]===undefined` 时写入（真 env 优先） | 置空 |
+| `OPENBAO_SECRET_PATH` | `secret/data/furmx` | KV 路径（KV-v2；KV-v1 用 `secret/furmx`） | — |
+| `REDIS_HOST` / `REDIS_PORT` | 空 / `6379` | 限流计数器后端（S6.1）；**空 = 内存版**（单进程内生效） | 置空 |
 
 **代码级改动（无 env 开关；回退 = revert 对应提交，或删表）**
 
@@ -1426,6 +1457,17 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 - [ ] 对话中让 agent 删除一张表 → 弹 **delete-approval** 确认；确认后表单从列表消失、**回收站**可见、点「恢复表单」后回归（S4.1/S4.2）
 - [ ] 删除某历史版本 → 弹 **version-delete-approval** 确认；回收站可恢复该版本；**已发布版本仍不可删**（S4.1/S4.2）
 
+**阶段 6 外部基建钩子（可选；**不配 env = 不加这些步骤行为不变** —— 逐项起基建后才生效）**
+- [ ] **S2.3 追踪**：起 OTLP collector（或 Langfuse）→ 填 `OTEL_EXPORTER_OTLP_ENDPOINT`（或 `LANGFUSE_HOST`）→ 跑一轮带工具对话 → 后端收到 trace，**span 的 `traceId` 与 `audit_logs.trace_id` 同值**；不配端点 → 零外呼、行为不变
+- [ ] **S3.1 策略引擎**：起 Cerbos/OPA → 填 `POLICY_ENGINE_URL` → 配一条 deny 规则命中某工具 → 该工具调用被拒（`policy_denied` + 审计行）；把 `POLICY_ENGINE_URL` 置空 → 只跑内置策略、行为回退
+- [ ] **S3.1 fail-closed**：`POLICY_ENGINE_URL` 指向坏地址 + `POLICY_ENGINE_FAIL_CLOSED=true` → 工具**被拒**；改回 `false` → fail-open 放行
+- [ ] **S3.2 内置策略**：对话让 agent 调**删除类**工具 → 弹确认（内置 requireConfirm）；让 agent 指定**别的 workspaceId** → 拒绝（跨租户）；构造**批量 > `POLICY_BULK_THRESHOLD`** 的写 → 拒绝（可用 `POLICY_BULK_THRESHOLD=1` 便于手测）
+- [ ] **S5.2 Guardrails**：起 NeMo sidecar → 填 `NEMO_GUARDRAILS_URL` → 发一条会被拦的输入 → 被拦（降级话术）；sidecar 挂掉 → **fail-open**（不因外呼失败卡死对话）
+- [ ] **S6.1 限流**：`RATE_LIMIT_ENABLED=true RATE_LIMIT_LIMIT=5` 重启 server → 6 秒内猛打任一端点 → **429**；设 `REDIS_HOST` → `redis-cli KEYS 'throttle:*'` 见计数递增（多副本共享）；全不设 → 响应不变
+- [ ] **S6.1 配额**：`QUOTA_ENABLED=true`，把某 workspace `maxForms` 调到已用数 → 建表接口 **429「配额已用尽」**；邀请同理查 `maxMembers`
+- [ ] **S6.2 OpenBao**：起 dev OpenBao（或 `node -e` stub）→ 填 `OPENBAO_ADDR`+`OPENBAO_TOKEN` → **启动日志见「已装载 N 项密钥」**；不设 → 启动日志与今天一致
+- [ ] **S6.2 生产守卫**：`OPENBAO_ADDR`/`OPENBAO_TOKEN` 均设 + `NODE_ENV=production` + 装载失败 → **启动抛错**（带空密钥不上线）；开发环境仅 warn
+
 **阶段 7（技能管理）**
 - [ ] 启动即校验技能 frontmatter；故意写坏工具名 → 该技能**隔离** + 报错/告警，服务仍起
 - [ ] 旧格式（无 frontmatter）技能文件 → **回退**正常加载
@@ -1463,8 +1505,10 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 *本文档随实现推进更新；每完成一阶段，回来更新文首「进度」表与对应章节状态。*
 *收口（2026-10-14）：阶段 3–8 已**合并到 `master`**（fast-forward `0f60ac9`→`5d34962`，15 提交；`vitest` 992 全绿 + 三端 `tsc` 干净）；
 回滚开关总表与真机灰度清单见 **§7**。*
-*现状：阶段 0–8 的**在手范围**均已完成；余下仅**显式推迟项**——MCP（下个项目）、8.5 RAG（无嵌入/向量基建）、
-阶段 6 需外部基建项（RLS/Langfuse/Cerbos/OPA/NeMo/限流/SOPS）、阶段 7 D4/D5（挂策略引擎/eval）。*
+*现状：阶段 0–8 的**在手范围**均已完成；阶段 6 原「需外部基建推迟项」（S2.3/S3.1/S3.2/S5.2/S6.1/S6.2-OpenBao）
+已于 **2026-10-14 全部实现为 env-gated 适配钩子**（不配 env 即 no-op，配了才生效）。
+余下仅**显式推迟项**——MCP（下个项目）、8.5 RAG（无嵌入/向量基建）、S1.2 RLS（MySQL 无 RLS，走应用层 fail-closed 替代）、
+SOPS（需新依赖，不引入）、阶段 7 D4/D5（挂策略引擎/eval）。*
 ***动手前先看 §5 实现可行性核查**（架构衔接点与高风险项）。*
 *§2.12（2026-10-12）：Ledger 台账 + `sessionFacts` 领域事实 + `projectMemory` 预算投影 + 会话进展呈现 +
 goal 跳寒暄存全文；**D6 工具结果预算并入阶段 4 §3.3-D2**，落地时合并。*
