@@ -6,6 +6,7 @@ import type { StructuredToolInterface } from '@langchain/core/tools'
 import { CircuitBreakerOpenError } from './llm.types'
 import { TimeoutError } from '../harness/timeout'
 import { TracingService } from '../infra/tracing.service'
+import { GuardrailsService, GuardrailBlockedError } from '../infra/guardrails.service'
 
 /** 绑定工具后的模型；`invoke` 外面包了一层熔断 */
 export interface BoundGraphModel {
@@ -32,6 +33,8 @@ export class LangGraphLlmService {
     private readonly config: ConfigService,
     /** 链路追踪（S2.3，可选注入：未配 endpoint 即零外呼）。 */
     @Optional() private readonly tracing?: TracingService,
+    /** 输入/输出护栏（S5.2，可选注入：未配 sidecar 即直通）。 */
+    @Optional() private readonly guardrails?: GuardrailsService,
   ) {
     const apiKey = this.config.get<string>('deepseek.apiKey')
     if (!apiKey) {
@@ -73,18 +76,22 @@ export class LangGraphLlmService {
    */
   async invokeChat(messages: unknown, options?: unknown): Promise<AIMessage> {
     this.checkBreaker()
+    await this.guardInput(messages)
     const span = this.tracing?.startSpan('llm.chat', this.tracing.currentTraceId())
     const startedAt = Date.now()
+    let res: AIMessage
     try {
-      const res = await this.model.invoke(messages as never, options as never)
+      res = (await this.model.invoke(messages as never, options as never)) as AIMessage
       this.failures = 0
-      this.endSpan(span, { ok: true, durationMs: Date.now() - startedAt })
-      return res as AIMessage
     } catch (err) {
       this.recordFailure()
       this.endSpan(span, { ok: false, durationMs: Date.now() - startedAt, error: (err as Error)?.message })
       throw err
     }
+    // 护栏拦截不算 LLM 失败（不污染熔断计数），span 亦记为失败收口
+    await this.guardOutput(res, span, startedAt)
+    this.endSpan(span, { ok: true, durationMs: Date.now() - startedAt })
+    return res
   }
 
   /** 绑定工具后的模型，产出带 tool_calls 的 AIMessage（外包一层可选 span） */
@@ -93,6 +100,7 @@ export class LangGraphLlmService {
     return {
       invoke: async (messages, options) => {
         this.checkBreaker()
+        await this.guardInput(messages)
         const span = this.tracing?.startSpan('llm.withTools', this.tracing.currentTraceId())
         const startedAt = Date.now()
         try {
@@ -104,6 +112,29 @@ export class LangGraphLlmService {
           throw err
         }
       },
+    }
+  }
+
+  /** 输入护栏：未注入即直通；被拦抛 `GuardrailBlockedError`（调用侧自行降级）。 */
+  private async guardInput(messages: unknown): Promise<void> {
+    if (!this.guardrails) return
+    const list = Array.isArray(messages) ? messages : [messages]
+    const r = await this.guardrails.checkInput(list)
+    if (!r.allowed) throw new GuardrailBlockedError('input', r.reason)
+  }
+
+  /** 输出护栏：未注入即直通；被拦记 span 为失败并抛 `GuardrailBlockedError`。 */
+  private async guardOutput(
+    res: AIMessage,
+    span: ReturnType<TracingService['startSpan']> | undefined,
+    startedAt: number,
+  ): Promise<void> {
+    if (!this.guardrails) return
+    const text = typeof res.content === 'string' ? res.content : JSON.stringify(res.content ?? '')
+    const r = await this.guardrails.checkOutput(text)
+    if (!r.allowed) {
+      this.endSpan(span, { ok: false, durationMs: Date.now() - startedAt, error: `guardrail:${r.reason}` })
+      throw new GuardrailBlockedError('output', r.reason)
     }
   }
 
