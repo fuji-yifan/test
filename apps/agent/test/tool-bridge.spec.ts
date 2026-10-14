@@ -193,6 +193,59 @@ describe('LangChainToolBridge', () => {
     expect(gateway.calls[1].args.formId).toBeUndefined()
   })
 
+  it('防覆盖推广（S4.2）：删除工具/flow_bind_form 命中已有表注入 formId，create 不注入', async () => {
+    const t = { ...FORM_SAVE }
+    const { bridge, gateway } = makeBridge({ form_delete: t, form_version_delete: t, flow_bind_form: t })
+    const worksheet = {
+      forms: [
+        { key: 'f1', title: '客户登记表', schema: {}, formId: 'uuid-1' },
+        { key: 'f2', title: '员工登记表', schema: {} },
+      ],
+      focusKey: 'f1',
+    }
+
+    // 命中已落库的 f1 → 注入 formId（删除/绑定都以该表为目标）
+    for (const name of ['form_delete', 'form_version_delete', 'flow_bind_form']) {
+      await bridge.run(name, {}, {
+        userToken: 'tok',
+        formWorksheet: worksheet,
+        formTarget: { kind: 'update', key: 'f1' },
+      })
+    }
+    expect(gateway.calls.slice(0, 3).map((c) => c.args.formId)).toEqual(['uuid-1', 'uuid-1', 'uuid-1'])
+
+    // 目标是 create（新表）→ 一律不注入，杜绝误删/绑定会话里的旧表
+    await bridge.run('form_delete', {}, {
+      userToken: 'tok',
+      formWorksheet: worksheet,
+      formTarget: { kind: 'create', key: 'f-new' },
+    })
+    expect(gateway.calls[3].args.formId).toBeUndefined()
+
+    // 未保存过的 f2（无 formId）→ 不注入，工具据此报「没有确定要删除的表」
+    await bridge.run('form_delete', {}, {
+      userToken: 'tok',
+      formWorksheet: worksheet,
+      formTarget: { kind: 'update', key: 'f2' },
+    })
+    expect(gateway.calls[4].args.formId).toBeUndefined()
+  })
+
+  it('无工作台（单槽）时删除工具沿用 savedFormId，但不覆盖显式 formId', async () => {
+    const t = { ...FORM_SAVE }
+    const { bridge, gateway } = makeBridge({ form_delete: t })
+
+    await bridge.build(['form_delete'], { savedFormId: 'f-existing' })[0].invoke(
+      toolCallInput('form_delete', {}, 'c1'),
+    )
+    await bridge.build(['form_delete'], { savedFormId: 'f-existing' })[0].invoke(
+      toolCallInput('form_delete', { formId: 'f-explicit' }, 'c2'),
+    )
+
+    expect(gateway.calls[0].args.formId).toBe('f-existing')
+    expect(gateway.calls[1].args.formId).toBe('f-explicit')
+  })
+
   it('confirmRequired 抛 ToolConfirmationRequiredError，携带 tool/args/risk/callId', async () => {
     const { bridge, gateway } = makeBridge({ data_export: DATA_EXPORT })
     gateway.result = {

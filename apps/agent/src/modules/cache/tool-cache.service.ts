@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config'
 import { createHash } from 'node:crypto'
 import type Redis from 'ioredis'
 import { REDIS_CLIENT } from './redis.module'
+import { WRITE_TOOLS } from '../harness/write-tools'
 
 /**
  * 只读工具白名单：命中缓存即短路返回、跳过 registry.call（阶段 4 / 4.5）。
@@ -11,9 +12,6 @@ import { REDIS_CLIENT } from './redis.module'
  * 写工具也缓存住。这些工具都只打 server HTTP 读接口。
  */
 const READ_ONLY_TOOLS = new Set(['data_query', 'data_list_forms', 'template_search', 'template_get_detail'])
-
-/** 写工具白名单：执行成功后失效本工作空间缓存（只失效、不写缓存）。 */
-const WRITE_TOOLS = new Set(['form_save', 'form_rollback', 'template_instantiate', 'flow_save'])
 
 /** 缓存值：只存回放只读工具所需的字段（GatewayResult 子集） */
 export interface CachedToolResult {

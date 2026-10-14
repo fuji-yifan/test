@@ -70,6 +70,21 @@ export class ContextService {
     return Array.isArray(list) ? list : []
   }
 
+  /** 软删除表单（移入回收站，可由 server 侧恢复）——阶段 6 / S4 */
+  async deleteForm(token: string, formId: string): Promise<any> {
+    return this.fetch(`/api/v1/forms/${formId}`, token, { method: 'DELETE' })
+  }
+
+  /** 软删除表单的指定历史版本快照（移入回收站，可恢复）——阶段 6 / S4 */
+  async deleteFormVersion(token: string, formId: string, version: number): Promise<any> {
+    return this.fetch(`/api/v1/forms/${formId}/versions/${version}`, token, { method: 'DELETE' })
+  }
+
+  /** 从回收站恢复被软删除的表单——阶段 6 / S4 */
+  async restoreForm(token: string, formId: string): Promise<any> {
+    return this.fetch(`/api/v1/forms/${formId}/restore`, token, { method: 'POST' })
+  }
+
   async getSubmissions(token: string, formId: string, params?: {
     page?: number; pageSize?: number; startDate?: string; endDate?: string
   }): Promise<any> {

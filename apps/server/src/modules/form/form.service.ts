@@ -196,9 +196,9 @@ export class FormService {
     })
   }
 
-  async getVersions(formId: string) {
+  async getVersions(formId: string, includeDeleted = false) {
     return this.prisma.formVersion.findMany({
-      where: { formId },
+      where: includeDeleted ? { formId } : { formId, deletedAt: null },
       orderBy: { version: 'desc' },
     })
   }
@@ -209,9 +209,42 @@ export class FormService {
     if (form && form.publishedVersion === version) {
       throw new Error('不能删除当前已发布的版本')
     }
-    return this.prisma.formVersion.delete({
+    // 软删除（S4.1）：保留快照，可从回收站恢复
+    return this.prisma.formVersion.update({
       where: { formId_version: { formId, version } },
+      data: { deletedAt: new Date() },
     })
+  }
+
+  /** 恢复被软删除的版本快照 */
+  async restoreVersion(formId: string, version: number) {
+    return this.prisma.formVersion.update({
+      where: { formId_version: { formId, version } },
+      data: { deletedAt: null },
+    })
+  }
+
+  /** 从回收站恢复被软删除的表单 */
+  async restore(id: string) {
+    return this.prisma.form.update({
+      where: { id },
+      data: { deletedAt: null },
+    })
+  }
+
+  /** 回收站：列出工作空间内被软删除的表单，及其被软删除的版本快照 */
+  async listRecycle(workspaceId: string) {
+    const list = await this.prisma.form.findMany({
+      where: { workspaceId, deletedAt: { not: null } },
+      orderBy: { deletedAt: 'desc' },
+      include: {
+        versions: {
+          where: { deletedAt: { not: null } },
+          orderBy: { version: 'desc' },
+        },
+      },
+    })
+    return { list }
   }
 
   /**

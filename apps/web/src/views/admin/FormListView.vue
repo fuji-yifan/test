@@ -52,6 +52,7 @@
             value="unbound"
           />
         </el-select>
+        <el-button @click="openRecycle">回收站</el-button>
         <el-button type="primary" @click="createForm">新建表单</el-button>
       </div>
     </div>
@@ -340,6 +341,71 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 回收站 -->
+    <el-dialog
+      v-model="showRecycle"
+      title="回收站"
+      width="640px"
+    >
+      <div v-loading="recycleLoading">
+        <el-empty
+          v-if="!recycleLoading && recycleForms.length === 0"
+          description="回收站为空"
+        />
+        <el-table
+          v-else
+          :data="recycleForms"
+          size="small"
+        >
+          <el-table-column
+            label="表单"
+            min-width="200"
+          >
+            <template #default="{ row }">
+              <div>{{ row.name }}</div>
+              <div
+                v-for="v in row.versions"
+                :key="v.version"
+                class="recycle-version"
+              >
+                版本 v{{ v.version }}
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  @click="restoreVersion(row, v)"
+                >
+                  恢复此版本
+                </el-button>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="删除时间"
+            width="180"
+          >
+            <template #default="{ row }">
+              {{ formatDate(row.deletedAt) }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="操作"
+            width="100"
+          >
+            <template #default="{ row }">
+              <el-button
+                link
+                type="primary"
+                @click="restoreForm(row)"
+              >
+                恢复表单
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -502,13 +568,66 @@ function deleteForm(f: Form) {
     () => http.delete(`/forms/${f.id}`),
     {
       title: '删除确认',
-      message: `确定删除表单「${f.name}」？删除后无法恢复。`,
+      message: `确定删除表单「${f.name}」？将移入回收站，可由回收站恢复。`,
       confirmText: '删除',
-      successMsg: '已删除',
+      successMsg: '已移入回收站',
       type: 'warning',
     },
     () => fetchList(),
   )
+}
+
+// ==================== 回收站 ====================
+interface RecycleVersion {
+  version: number
+  deletedAt: string
+}
+interface RecycleForm {
+  id: string
+  name: string
+  deletedAt: string
+  versions: RecycleVersion[]
+}
+const showRecycle = ref(false)
+const recycleLoading = ref(false)
+const recycleForms = ref<RecycleForm[]>([])
+
+async function openRecycle() {
+  showRecycle.value = true
+  await fetchRecycle()
+}
+
+async function fetchRecycle() {
+  recycleLoading.value = true
+  try {
+    const res: any = await http.get(`/workspaces/${wsId.value}/forms/recycle`)
+    const payload = res?.data ?? res
+    recycleForms.value = (payload?.list ?? []) as RecycleForm[]
+  } catch {
+    recycleForms.value = []
+  } finally {
+    recycleLoading.value = false
+  }
+}
+
+async function restoreForm(f: RecycleForm) {
+  try {
+    await http.post(`/forms/${f.id}/restore`)
+    ElMessage.success('已恢复表单')
+    await Promise.all([fetchRecycle(), fetchList()])
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || e?.message || '恢复失败')
+  }
+}
+
+async function restoreVersion(f: RecycleForm, v: RecycleVersion) {
+  try {
+    await http.post(`/forms/${f.id}/versions/${v.version}/restore`)
+    ElMessage.success(`已恢复版本 v${v.version}`)
+    await fetchRecycle()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || e?.message || '恢复失败')
+  }
 }
 
 function statusLabel(s: string) { return s === 'published' ? '已发布' : s === 'archived' ? '已归档' : '草稿' }
@@ -541,4 +660,6 @@ function formatDate(d: string) { return d ? new Date(d).toLocaleDateString('zh-C
 .workflow-item:last-child { border-bottom: none; }
 .workflow-item:hover .wf-name { color: #409eff; }
 .wf-name { font-size: 13px; color: #303133; }
+
+.recycle-version { font-size: 12px; color: #909399; margin-top: 4px; }
 </style>

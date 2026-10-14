@@ -223,9 +223,11 @@ export class AgentCatalogService implements OnApplicationBootstrap {
           'form_preview',
           'form_save',
           'form_rollback',
+          'form_delete',
+          'form_version_delete',
         ],
-        serverTools: ['form_preview', 'form_save', 'form_rollback'],
-        produceTools: ['form_save', 'form_rollback'],
+        serverTools: ['form_preview', 'form_save', 'form_rollback', 'form_delete', 'form_version_delete'],
+        produceTools: ['form_save', 'form_rollback', 'form_delete', 'form_version_delete'],
         maxIterations: 8,
         // 会话里有哪些表（key/标题/字段全列出），模型据此分辨「改哪张、建哪张」
         draftHint: ({ worksheet }) => toWorksheetBlock(worksheet),
@@ -264,6 +266,28 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             options: [
               { value: 'continue', label: '确认回滚', style: 'primary' },
               { value: 'abort', label: '取消', style: 'danger' },
+            ],
+            coversRisk: true,
+          },
+          {
+            // 删除表单是破坏性操作（阶段 6 / S4.2），执行前必须人工确认
+            id: 'delete-approval',
+            beforeTool: 'form_delete',
+            prompt: '确认删除这张表单？（将移入回收站，可由管理员恢复）',
+            options: [
+              { value: 'continue', label: '确认删除', style: 'danger' },
+              { value: 'abort', label: '取消', style: 'primary' },
+            ],
+            coversRisk: true,
+          },
+          {
+            // 删除历史版本同属破坏性操作（阶段 6 / S4.2）
+            id: 'version-delete-approval',
+            beforeTool: 'form_version_delete',
+            prompt: '确认删除这个历史版本？（将移入回收站，可由管理员恢复）',
+            options: [
+              { value: 'continue', label: '确认删除', style: 'danger' },
+              { value: 'abort', label: '取消', style: 'primary' },
             ],
             coversRisk: true,
           },

@@ -16,7 +16,7 @@
 | 3 | 持久化（会话/执行权/幂等） | ✅ 切片 A/B/C 全部完成（§3.2；分支 `feat/agent-session-mysql`）：**A** 会话落 MySQL（`7b8255f`）；**B** 执行权租约（行锁+TTL+心跳，`dfc3fc2`）；**C** 幂等下沉（server 唯一键，`94ccd1e`）。**已合 master（2026-10-14）**，未灰度 |
 | 4 | 成本（token 预算 + usage + **缓存**） | ✅ 完成（§3.3；分支 `feat/agent-stage4-cost`，叠于阶段 3）；`vitest` 908 全绿 + `tsc` 干净。**已合 master（2026-10-14）**，未灰度 |
 | 5 | 业务落地（寻址/diff/撤销） | ✅ 完成（§3.4；分支 `feat/agent-stage5-business`，叠于阶段 4）；`vitest` 931 全绿 + `tsc` 干净。**已合 master（2026-10-14）**，未灰度 |
-| 6 | 安全（提示注入/审计/配额）+ **兜底与降级** | ◐ 部分完成（§3.5；分支 `feat/agent-stage6-security`，叠于阶段 5）：已落 **S1（RLS 除外）+ S2（agent 工具审计落库/身份贯通/脱敏）+ S3.3 + S5.1 + S7**＝「整套无外部依赖项」；`vitest` 1009 全绿 + `tsc` 干净。**已合 master（2026-10-14）**，未灰度。RLS/S2.3-4/S3.1/S5.2/S6 需外部基建或属别的链路，推迟 |
+| 6 | 安全（提示注入/审计/配额）+ **兜底与降级** | ◐ 大部分完成（§3.5）：**S1（RLS 除外）+ S2（agent 工具审计落库 + server 登录/权限拒绝审计 S2.4）+ S3.3 + S4（软删除/回收站/删除工具 HITL/防覆盖推广）+ S5.1 + S7**＝「整套无外部依赖项」；分支 `feat/agent-stage6-security`（已合 master，2026-10-14）+ `feat/agent-stage6-s2-audit` + `feat/agent-stage6-auth-audit` + `feat/agent-stage6-antidelete`（后三者叠于 master，未合未灰度）；`vitest` **1021 全绿** + 三端 `tsc` 干净。RLS/S2.3/S3.1/S5.2/S6.1/S6.2（SOPS）需外部基建或属别的链路，推迟 |
 | 7 | 技能管理 | ✅ 完成（本轮 D1 + D2；§3.6；分支 `feat/agent-stage7-skills`，叠于阶段 6）：frontmatter + 技能↔工具绑定校验；`vitest` 962 全绿 + `tsc` 干净；**已合 master（2026-10-14）**，未灰度。D3/D4/D5 明确挂到依赖阶段 |
 | 8 | **长期记忆（用户级）+ 知识沉淀 + MCP** | ◐ 长期记忆 8.1–8.4 完成（§3.7；分支 `feat/agent-stage8-memory`，叠于阶段 7）：表 + 提取 + 召回 + 查看/删除；`vitest` 992 全绿 + 三端 `tsc` 干净；**已合 master（2026-10-14）**，未灰度。**8.5 RAG 推迟**（无嵌入/向量基建），MCP 仍留后 |
 
@@ -873,8 +873,8 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
   4. append-only：不提供删除接口；关键字段同步落 Langfuse。
 - **验收**：任一工具调用可凭 traceId 追到「谁/哪个会话/做了什么/是否人工确认」；审计中**无明文 token**。
 
-> **落地（2026-10-14，agent 侧 S2.1 + S2.2）**：上面第 1/2/3（agent 工具调用部分）已完成，
-> **S2.3 OTel/Langfuse 与 S2.4 登录审计仍推迟**（分别需 Langfuse、属 server auth 链路）。
+> **落地（2026-10-14，agent 侧 S2.1 + S2.2，server 侧 S2.4）**：上面第 1/2/3 已完成——
+> agent 工具调用侧见下；**server 登录/权限拒绝审计见 S2.4**；**仅 S2.3 OTel/Langfuse 仍推迟**（需 Langfuse）。
 > - **落库**（新 `apps/agent/src/modules/audit/audit.store.ts`）：复用 server 的 `audit_logs`，`db push` 加 **7 个可空列**
 >   （`trace_id/session_id/tool_name/risk_level/confirmed/duration_ms/result_ok`）+ 2 索引；
 >   agent 只 INSERT（append-only，不自建/不 ALTER/不删除），无 `AGENT_DATABASE_URL`/连不上 → store **no-op 降级**，
@@ -888,6 +888,18 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 >   彻底 = 回退代码（新列可空，不回退也不影响 server 读写）。**直调端点仍只允许只读工具**（S3.3 未动）。
 > - **验证**：`tsc` 干净；`vitest` **1009 全绿**（28 文件，含新 `sanitize-args.spec.ts` 8 例、
 >   `audit-mysql.spec.ts` 3 例真库、`tool-gateway.spec.ts` +6 例审计断言）。
+>
+> **落地（2026-10-14，server 侧 S2.4：登录/权限拒绝审计 + 生产密钥守卫）**：分支 `feat/agent-stage6-auth-audit`。
+> - `AuditModule` 改 **`@Global()`** → `AuthService` / `PermissionGuard` 直接注入 `AuditService`。
+> - **登录/注册/失败审计**：`auth.service` 的 `login`（成功 `auth.login` / 失败 `auth.login_failed`）、
+>   `register` 写 `audit_logs`，带 `ip`（controller 取 `X-Forwarded-For` 首个）；**用户不存在或无 ws 则不写库**
+>   （`audit_logs.workspace_id` 为 NOT NULL+FK），仅记 warn。fire-and-forget，不阻塞登录。
+> - **权限拒绝审计**：`permission.guard` 在「非成员」「权限不足」两处拒绝**前**写 `auth.permission_denied`
+>   （`details:{required,reason}`）；无 wsId 的「无法确定工作空间上下文」分支跳过（FK 约束）。
+> - **生产 dev-secret 守卫**（S6.2 的无基建部分）：`main.ts` 在 `NODE_ENV=production` 且 `JWT_SECRET` 缺失/为
+>   `dev-secret` 时 **fail-fast 拒绝启动**；开发环境仅 warn。
+> - **登出审计未做**（用户 2026-10-14 拍板本轮跳过）；S2.3 OTel/Langfuse 仍推迟。
+> - **验证**：server `tsc --noEmit` 干净（server 无既有单测基建，登录/权限审计以类型检查 + 真机手工验证交付）。
 
 
 #### S3 自动合规策略层（Policy Engine）
@@ -909,6 +921,27 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
   3. 把 `form_save` 的「create 不注入 formId/existingSchema」防覆盖模式（`tool-bridge.service.ts:171`）
      推广到其它写工具。
 - **验收**：误删可在回收站恢复；未确认的删除不落库。
+
+> **落地（2026-10-14，S4.1 + S4.2）**：分支 `feat/agent-stage6-antidelete`。
+> - **S4.1 软删除 + 回收站 + 恢复**：`FormVersion` 加 `deletedAt`（`db push` 加可空列 `deleted_at`）；
+>   `form.service.deleteVersion` 由**硬删改软删**（仍挡「已发布版本」）；`getVersions` 默认过滤 `deletedAt:null`；
+>   新 `restoreVersion`（还原版本）、`restore`（还原表单）、`listRecycle`（回收站：被删表单 + 其被删版本）。
+>   新路由：`POST forms/:id/restore`、`POST forms/:id/versions/:version/restore`、`GET workspaces/:wsId/forms/recycle`。
+> - **S4.2 删除类 HITL + 防覆盖推广**：新增 agent 工具 `form_delete` / `form_version_delete`（`riskLevel:'high'`，
+>   经 `ContextService.deleteForm/deleteFormVersion` 转发）；form-designer `toolNames/serverTools/produceTools`
+>   收录两工具，新增检查点 `delete-approval` / `version-delete-approval`（`coversRisk`）→ **执行前必须人工确认**。
+>   幻觉守卫补「已删除」声明 → `form_delete` / `form_version_delete` 的映射（版本删除模式前置，更具体者优先）。
+> - **防覆盖「有界」推广**：`tool-bridge.injectContext` 的 formId 注入集合由 `form_save` 扩到
+>   `form_rollback/form_delete/form_version_delete/flow_bind_form`（抽 `FORM_ID_TOOLS`）；仍严格遵循
+>   「**命中已有表才注入、`create` 一律不注入**」→ 建新表时永不误伤/误删会话里的旧表。
+> - **WRITE_TOOLS 单一权威**：新 `harness/write-tools.ts`（无 import 的叶子模块）导出写工具集合，
+>   `tool-gateway`（幂等门）与 `tool-cache`（缓存失效）共用，补齐 `flow_bind_form` + 两个删除工具
+>   （修「两处名单各写一份、各自漂移」）。
+> - **web 最小回收站 UI**：`FormListView` 加「回收站」对话框（列被删表单 + 其被删版本，可恢复表单/版本）；
+>   删除确认文案由「删除后无法恢复」改「将移入回收站，可由回收站恢复」；`FormSettingsView` 同步文案。
+> - **验证**：agent `tsc` + server `tsc` + web `vue-tsc --noEmit` 三端干净；agent `vitest` **1021 全绿**
+>   （新增 `form-delete.spec.ts` 7 例、tool-bridge 防覆盖 2 例、hallucination-guard 2 例、tool-cache 写名单 1 例）。
+> - **真机（留用户）**：删除表单/版本 → 默认列表不再出现、回收站可见、恢复后回归；删除走确认检查点。
 
 #### S5 防提示注入 / 防泄露
 
@@ -958,16 +991,16 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 - [x] S2.1 Agent 审计落库 `audit_logs`（扩展字段 + append-only）— 2026-10-14 落地（agent 工具调用侧）
 - [x] S2.2 工具路径身份贯通 + `sanitizeArgs` 落地 — 2026-10-14 落地
 - [ ] S2.3 OTel + Langfuse 接入（traceId 贯穿）— 推迟（需 Langfuse）
-- [ ] S2.4 登录/登出/权限拒绝入账 — 推迟（属 server auth 链路，后续小切片）
+- [x] S2.4 登录/权限拒绝入账 — 2026-10-14 落地（登录成功/失败 + 权限拒绝；**登出**用户拍板本轮跳过）
 - [ ] S3.1 接入 Cerbos/OPA + ToolGateway 前置 policy hook — 推迟（需策略引擎）
 - [ ] S3.2 业务策略文件（删除确认/批量阈值/跨租户/PII）— 推迟（随 S3.1）
 - [x] S3.3 风险分级重定 + 写工具幂等修复 + 堵直调绕过
-- [ ] S4.1 软删除统一 + 回收站 + 恢复端点 — 推迟（本轮范围外）
-- [ ] S4.2 删除类 HITL 确认 + 防覆盖模式推广 — 推迟（随 S4.1）
+- [x] S4.1 软删除统一 + 回收站 + 恢复端点 — 2026-10-14 落地
+- [x] S4.2 删除类 HITL 确认 + 防覆盖模式推广 — 2026-10-14 落地
 - [x] S5.1 `wrapUntrusted()` 纯函数 + tool-bridge 接入 + 单测
 - [ ] S5.2 NeMo Guardrails sidecar 接入 — 推迟（需 Python sidecar）
 - [ ] S6.1 server 限流 + workspace/用户配额 + maxConcurrent — 推迟（需 Redis throttler）
-- [ ] S6.2 SOPS/OpenBao 密钥 + 生产禁 dev-secret 守卫 — 推迟（需密钥基建）
+- [ ] S6.2 SOPS/OpenBao 密钥 + 生产禁 dev-secret 守卫 — **生产禁 dev-secret 守卫已落地（2026-10-14）**；SOPS/OpenBao 仍推迟
 - [x] S7.1 工具 / LLM 调用超时熔断（可配）
 - [x] S7.2 幻觉守卫（产物须源自工具结果）
 - [x] S7.3 工具入参 / 结果 schema 校验（fail-closed）
@@ -1349,6 +1382,8 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 | 6 S5.1 | 工具结果不可信封装 `wrapUntrusted` + 白名单 | revert `f7786f7` |
 | 6 S7 | 超时熔断（有 env）+ 幻觉守卫 + 输出 schema 校验 + 分级降级 | revert `1a1348d`（超时可单独用 env 关） |
 | 6 S2 | 工具审计落库 server `audit_logs`（加 7 可空列）+ 身份贯通 + `sanitizeArgs` 脱敏（有 env：`AUDIT_ENABLED`） | `AUDIT_ENABLED=false`（只留内存缓冲）；彻底 revert 本次提交（新列可空，不回退也不影响 server） |
+| 6 S2.4 | server 登录/注册/失败 + 权限拒绝审计（`AuthService`/`PermissionGuard` 写 `audit_logs`，`AuditModule @Global`）+ 生产禁 `dev-secret` 守卫 | revert 本次提交（审计是新增写入，删代码即停；`audit_logs` 无需改表）；生产守卫随代码回退（不建议） |
+| 6 S4 | `FormVersion` 软删（加可空列 `deleted_at`）+ 回收站/恢复端点 + `form_delete`/`form_version_delete` 工具（HITL 检查点）+ 防覆盖推广 + `WRITE_TOOLS` 单一权威 | revert 本次提交；`form_versions.deleted_at` 列可留（可空，不回退也不影响）；回收站/恢复为**新增端点**，删代码即失效 |
 | 7 D1/D2 | 技能 YAML frontmatter + 技能↔工具绑定校验（坏技能**隔离**不拖垮启动） | revert `e62aaa5` |
 | 5 | formId 寻址 + 重名消歧 + 字段 id 合并 + diff 预览 + form_rollback | revert `e7c35c0` |
 | 3 C | form_save 幂等下沉（server `idempotency_keys` 唯一键） | revert `94ccd1e` 或 `DROP TABLE idempotency_keys` |
@@ -1386,6 +1421,10 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 - [ ] 写工具风险 ≥ medium：直调 `POST /agent/tools/:name` → 拒（`code 40300`）
 - [ ] 跨 workspace 读 submission → **被拒**（fail-closed）
 - [ ] 跑一轮含写工具（触发确认）的对话 → `SELECT trace_id,session_id,user_id,tool_name,risk_level,confirmed,duration_ms,result_ok,details FROM audit_logs WHERE tool_name IS NOT NULL` 见 `agent.tool_call` 行，且 `details` **不含明文 token**；`AUDIT_ENABLED=false` 时**不再写入**
+- [ ] 登录成功/失败 → `audit_logs` 见 `auth.login` / `auth.login_failed`（带 `ip`）；越权访问 → `auth.permission_denied`（S2.4）
+- [ ] `NODE_ENV=production` 且 `JWT_SECRET` 缺失/为 `dev-secret` → 服务**启动直接失败**（S2.4）
+- [ ] 对话中让 agent 删除一张表 → 弹 **delete-approval** 确认；确认后表单从列表消失、**回收站**可见、点「恢复表单」后回归（S4.1/S4.2）
+- [ ] 删除某历史版本 → 弹 **version-delete-approval** 确认；回收站可恢复该版本；**已发布版本仍不可删**（S4.1/S4.2）
 
 **阶段 7（技能管理）**
 - [ ] 启动即校验技能 frontmatter；故意写坏工具名 → 该技能**隔离** + 报错/告警，服务仍起

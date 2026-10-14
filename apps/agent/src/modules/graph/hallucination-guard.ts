@@ -16,6 +16,17 @@ const CLAIM_PATTERNS: { tool: string; re: RegExp; note: string }[] = [
     re: /已(经)?(帮你)?回滚|回滚(成功|完成)/,
     note: '表单回滚',
   },
+  // 版本删除需排在表单删除之前：更具体的「删除版本」先匹配
+  {
+    tool: 'form_version_delete',
+    re: /已(经)?(帮你)?删除.{0,4}版本|版本已(经)?删除/,
+    note: '版本删除',
+  },
+  {
+    tool: 'form_delete',
+    re: /已(经)?(帮你)?删除|删除成功|已移入回收站/,
+    note: '表单删除',
+  },
   {
     tool: 'template_instantiate',
     re: /已(用模板)?生成(一份)?表单|模板已(实例化|生成)/,

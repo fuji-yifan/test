@@ -404,13 +404,13 @@ async function doRestoreInternal(row: FormVersion) {
 
 function deleteVersion(row: FormVersion) {
   ElMessageBox.confirm(
-    `确定删除 v${row.version} 版本快照？此操作不可恢复。`,
+    `确定删除 v${row.version} 版本快照？将移入回收站，可由回收站恢复。`,
     '删除版本',
     { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
   ).then(async () => {
     try {
       await http.delete(`/forms/${formId}/versions/${row.version}`)
-      ElMessage.success(`v${row.version} 已删除`)
+      ElMessage.success(`v${row.version} 已移入回收站`)
       fetchVersions()
     } catch (e: unknown) {
       ElMessage.error((e as { response?: { data?: { message?: string } } }).response?.data?.message || '删除失败')

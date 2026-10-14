@@ -62,6 +62,19 @@ export class FormController {
   }
 
   @UseGuards(PermissionGuard)
+  @RequiredPermission('form:edit')
+  @Post('forms/:id/restore')
+  restore(@Param('id') id: string) {
+    return this.formService.restore(id)
+  }
+
+  @UseGuards(WorkspaceGuard)
+  @Get('workspaces/:wsId/forms/recycle')
+  listRecycle(@Param('wsId') wsId: string) {
+    return this.formService.listRecycle(wsId)
+  }
+
+  @UseGuards(PermissionGuard)
   @RequiredPermission('form:publish')
   @Post('forms/:id/publish')
   publish(@Param('id') id: string, @CurrentUser('userId') userId: string) {
@@ -96,6 +109,13 @@ export class FormController {
   @Delete('forms/:id/versions/:version')
   deleteVersion(@Param('id') id: string, @Param('version') version: string) {
     return this.formService.deleteVersion(id, parseInt(version))
+  }
+
+  @UseGuards(PermissionGuard)
+  @RequiredPermission('form:edit')
+  @Post('forms/:id/versions/:version/restore')
+  restoreVersion(@Param('id') id: string, @Param('version') version: string) {
+    return this.formService.restoreVersion(id, parseInt(version))
   }
 
   // ---- 公开接口（渲染器获取 Schema + 版本兼容性检查） ----

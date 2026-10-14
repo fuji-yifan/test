@@ -156,6 +156,7 @@ model FormVersion {
   changeLog String?  @map("change_log") @db.Text
   createdBy String?  @map("created_by") @db.VarChar(36)
   createdAt DateTime @default(now()) @map("created_at")
+  deletedAt DateTime? @map("deleted_at")
 
   form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
 

@@ -5,18 +5,9 @@ import { SessionService } from '../session/session.service'
 import { ToolResultCache } from '../cache/tool-cache.service'
 import { AuditStore } from '../audit/audit.store'
 import { withTimeout, isTimeoutError } from './timeout'
+import { WRITE_TOOLS } from './write-tools'
 
-/**
- * 写工具集合（阶段 6 / S3.3）：幂等门应作用于**所有有副作用的工具**，而不能只按
- * `risk !== 'low'` —— 写工具一旦被评成 low（历史遗留）就完全不幂等。
- */
-export const WRITE_TOOLS = new Set([
-  'form_save',
-  'form_rollback',
-  'flow_save',
-  'flow_bind_form',
-  'template_instantiate',
-])
+export { WRITE_TOOLS }
 
 export interface GatewayResult {
   ok: boolean

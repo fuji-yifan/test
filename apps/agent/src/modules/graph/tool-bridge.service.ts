@@ -29,6 +29,23 @@ import { wrapUntrusted } from './untrusted'
  */
 const SUMMARY_FIELD_CHARS = 800
 
+/**
+ * 接受 `formId` 注入的工具（阶段 6 / S4.2 有界推广）：这些都以「会话中那张**已落库**的表」
+ * 为目标。注入规则与 form_save 同源 —— 只有本次目标**命中已有表**（update，或按 target 解析到
+ * 已存在的表）才注入，`create` 一律不注入，杜绝「建新表时被灌旧 id → 静默覆盖 / 误删旧表」。
+ *
+ * - form_save / form_rollback：写库目标；
+ * - form_delete / form_version_delete：破坏性操作，拿不到明确 id 即报错（不靠模型猜）；
+ * - flow_bind_form：把流程绑到已存在的表（避免模型瞎填错 id）。
+ */
+const FORM_ID_TOOLS = new Set([
+  'form_save',
+  'form_rollback',
+  'form_delete',
+  'form_version_delete',
+  'flow_bind_form',
+])
+
 /** 单次图执行的会话上下文：token / 工作空间 / 草稿等由 act 节点按本次调用填进来 */
 export interface ToolCallContext {
   userToken?: string
@@ -178,7 +195,7 @@ export class LangChainToolBridge {
 
     // 没有工作台（非表单 agent / 单测直连）：单槽行为
     if (!ctx.formWorksheet) {
-      if (name === 'form_save' && !out.formId && ctx.savedFormId) out.formId = ctx.savedFormId
+      if (FORM_ID_TOOLS.has(name) && !out.formId && ctx.savedFormId) out.formId = ctx.savedFormId
       if (name === 'form_assemble_schema' && !out.existingSchema && ctx.currentSchema) {
         out.existingSchema = ctx.currentSchema
       }
@@ -197,10 +214,11 @@ export class LangChainToolBridge {
       // 模型在追问里常常只给新字段，工具据此按 key 合并，避免原有字段被整表覆盖
       out.existingSchema = target.schema
     }
-    if ((name === 'form_save' || name === 'form_rollback') && !out.formId && target?.formId) {
+    if (FORM_ID_TOOLS.has(name) && !out.formId && target?.formId) {
       // 只有解析到「已落库的那张表」才把 formId 带上 → 修掉「保存表 A 后再建表 B，
-      // B 静默覆盖 A」：B 是 create，永远拿不到 formId。form_rollback 同源：
-      // 没保存过的表没有 formId，工具据此报「没有可回滚的版本」（5.5）。
+      // B 静默覆盖 A」：B 是 create，永远拿不到 formId。form_rollback / form_delete /
+      // form_version_delete / flow_bind_form 同源：没保存过的表没有 formId，
+      // 工具据此报「没有可回滚的版本 / 没有确定要删除的表」，绝不误伤会话里的其它表。
       out.formId = target.formId
     }
     return out

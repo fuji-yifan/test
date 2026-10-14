@@ -37,4 +37,21 @@ describe('guardHallucination', () => {
   it('纠正文案含「尚未实际」提示', () => {
     expect(hallucinationCorrection('表单保存')).toContain('尚未实际')
   })
+
+  it('删除声明无对应结果 → 判为幻觉（S4.2）', () => {
+    const tools = ['form_save', 'form_rollback', 'form_delete', 'form_version_delete']
+    const del = guardHallucination('已经帮你删除这张表单了，可在回收站恢复。', tools, [])
+    expect(del.suspicious).toBe(true)
+    expect(del.expectedTool).toBe('form_delete')
+
+    // 有 form_delete 成功结果 → 不判
+    expect(guardHallucination('已删除该表单。', tools, ['form_delete']).suspicious).toBe(false)
+  })
+
+  it('版本删除的声明匹配到 form_version_delete（更具体者优先）', () => {
+    const tools = ['form_delete', 'form_version_delete']
+    const r = guardHallucination('已经帮你删除 v2 版本了。', tools, [])
+    expect(r.suspicious).toBe(true)
+    expect(r.expectedTool).toBe('form_version_delete')
+  })
 })

@@ -105,6 +105,15 @@ describe('ToolResultCache', () => {
     expect(cache.isWrite('form_save')).toBe(true)
   })
 
+  it('写工具名单与 harness 的 WRITE_TOOLS 同源（S4.2 对齐，含删除工具与 flow_bind_form）', async () => {
+    const cache = makeCache(new FakeRedis())
+    for (const t of ['form_save', 'form_rollback', 'form_delete', 'form_version_delete', 'flow_save', 'flow_bind_form', 'template_instantiate']) {
+      expect(cache.isWrite(t)).toBe(true)
+    }
+    expect(cache.isWrite('data_query')).toBe(false)
+    expect(cache.isWrite('form_preview')).toBe(false)
+  })
+
   it('无 Redis 客户端时全部 no-op', async () => {
     const cache = makeCache(null)
     await cache.set('data_query', 'ws1', { q: 'x' }, { summary: 'a', result: 1 })
