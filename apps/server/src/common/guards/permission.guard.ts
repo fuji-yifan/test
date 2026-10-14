@@ -1,9 +1,10 @@
 import {
   Injectable, CanActivate, ExecutionContext,
-  ForbiddenException, SetMetadata,
+  ForbiddenException, Logger, SetMetadata,
 } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import { PrismaClient } from '@prisma/client'
+import { AuditService } from '../../modules/audit/audit.service'
 
 export const REQUIRED_PERMISSION_KEY = 'requiredPermission'
 export const RequiredPermission = (permission: string) =>
@@ -44,9 +45,12 @@ const LABEL_MAP: Record<string, string> = {
 
 @Injectable()
 export class PermissionGuard implements CanActivate {
+  private readonly logger = new Logger(PermissionGuard.name)
+
   constructor(
     private reflector: Reflector,
     private prisma: PrismaClient,
+    private audit: AuditService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -84,6 +88,7 @@ export class PermissionGuard implements CanActivate {
       where: { workspaceId_userId: { workspaceId: wsId, userId: user.userId } },
     })
     if (!member) {
+      this.writeDeniedAudit(request, user.userId, wsId, required, 'not_member')
       throw new ForbiddenException('您不是该工作空间的成员')
     }
 
@@ -107,7 +112,30 @@ export class PermissionGuard implements CanActivate {
 
     if (perms.has(required)) return true
 
+    this.writeDeniedAudit(request, user.userId, wsId, required, 'insufficient_permission')
     throw new ForbiddenException(`权限不足：需要「${LABEL_MAP[required] || required}」权限`)
+  }
+
+  /** 权限拒绝审计（fire-and-forget，不影响拒绝语义；失败仅记日志） */
+  private writeDeniedAudit(
+    request: any,
+    userId: string,
+    workspaceId: string,
+    required: string,
+    reason: string,
+  ) {
+    const xff = request?.headers?.['x-forwarded-for']
+    const ip = typeof xff === 'string' && xff ? xff.split(',')[0].trim() : request?.ip || undefined
+    void this.audit
+      .log({
+        workspaceId,
+        userId,
+        action: 'auth.permission_denied',
+        resourceType: 'Permission',
+        details: { required, reason },
+        ip,
+      })
+      .catch((e) => this.logger.warn(`权限拒绝审计写入失败：${e?.message ?? e}`))
   }
 
   private async resolveWorkspaceId(request: any): Promise<string | undefined> {

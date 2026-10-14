@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Body, Query, UseGuards, BadRequestException } from '@nestjs/common'
+import { Controller, Post, Get, Patch, Body, Query, Req, UseGuards, BadRequestException } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger'
 import { AuthService } from './auth.service'
 import { LoginDto, RegisterDto } from './dto/login.dto'
@@ -13,14 +13,21 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto)
+  register(@Body() dto: RegisterDto, @Req() req: any) {
+    return this.authService.register(dto, this.clientIp(req))
   }
 
   @Public()
   @Post('login')
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto)
+  login(@Body() dto: LoginDto, @Req() req: any) {
+    return this.authService.login(dto, this.clientIp(req))
+  }
+
+  /** 取客户端 IP（优先 X-Forwarded-For 首个），用于审计 */
+  private clientIp(req: any): string | undefined {
+    const xff = req?.headers?.['x-forwarded-for']
+    if (typeof xff === 'string' && xff) return xff.split(',')[0].trim()
+    return req?.ip || undefined
   }
 
   @UseGuards(JwtAuthGuard)

@@ -1,17 +1,21 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common'
+import { Injectable, Logger, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { PrismaClient } from '@prisma/client'
 import * as bcrypt from 'bcryptjs'
 import { LoginDto, RegisterDto } from './dto/login.dto'
+import { AuditService } from '../audit/audit.service'
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name)
+
   constructor(
     private prisma: PrismaClient,
     private jwtService: JwtService,
+    private audit: AuditService,
   ) {}
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, ip?: string) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } })
     if (existing) throw new ConflictException('该邮箱已被注册')
 
@@ -24,17 +28,43 @@ export class AuthService {
       },
     })
 
-    await this.ensureWorkspace(user.id, dto.nickname)
+    const workspaceId = await this.ensureWorkspace(user.id, dto.nickname)
+    this.writeAudit({
+      workspaceId,
+      userId: user.id,
+      action: 'auth.register',
+      resourceType: 'User',
+      resourceId: user.id,
+      ip,
+    })
 
     return await this.generateToken(user.id, user.email)
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, ip?: string) {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } })
-    if (!user) throw new UnauthorizedException('邮箱或密码错误')
+    if (!user) {
+      // 用户不存在 → 无 workspaceId（audit_logs.workspace_id 为 NOT NULL+FK），仅记日志
+      this.logger.warn(`登录失败（用户不存在）：${dto.email}`)
+      throw new UnauthorizedException('邮箱或密码错误')
+    }
 
     const valid = await bcrypt.compare(dto.password, user.passwordHash)
-    if (!valid) throw new UnauthorizedException('邮箱或密码错误')
+    if (!valid) {
+      const wsId = await this.resolveWorkspaceId(user.id)
+      if (wsId) {
+        this.writeAudit({
+          workspaceId: wsId,
+          userId: user.id,
+          action: 'auth.login_failed',
+          resourceType: 'User',
+          resourceId: user.id,
+          ip,
+          details: { email: dto.email },
+        })
+      }
+      throw new UnauthorizedException('邮箱或密码错误')
+    }
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -42,15 +72,54 @@ export class AuthService {
     })
 
     // 兼容旧用户：如果没有工作空间，自动补建
-    await this.ensureWorkspace(user.id, user.nickname || user.email.split('@')[0])
+    const workspaceId = await this.ensureWorkspace(user.id, user.nickname || user.email.split('@')[0])
+    this.writeAudit({
+      workspaceId,
+      userId: user.id,
+      action: 'auth.login',
+      resourceType: 'User',
+      resourceId: user.id,
+      ip,
+    })
 
     return await this.generateToken(user.id, user.email)
   }
 
-  /** 确保用户至少有一个工作空间，没有则自动创建 */
-  private async ensureWorkspace(userId: string, nickname: string) {
-    const count = await this.prisma.workspaceMember.count({ where: { userId } })
-    if (count > 0) return
+  /** 取用户最早的工作空间 id（用于审计绑定）；无则 undefined */
+  private async resolveWorkspaceId(userId: string): Promise<string | undefined> {
+    const member = await this.prisma.workspaceMember.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'asc' },
+      select: { workspaceId: true },
+    })
+    return member?.workspaceId
+  }
+
+  /** 审计写入（fire-and-forget，不阻塞登录/注册主流程；失败仅记日志） */
+  private writeAudit(params: {
+    workspaceId?: string
+    userId?: string
+    action: string
+    resourceType?: string
+    resourceId?: string
+    details?: any
+    ip?: string
+  }) {
+    if (!params.workspaceId) return
+    const { workspaceId, ...rest } = params
+    void this.audit.log({ workspaceId, ...rest }).catch((e) =>
+      this.logger.warn(`审计写入失败（${params.action}）：${e?.message ?? e}`),
+    )
+  }
+
+  /** 确保用户至少有一个工作空间，没有则自动创建；返回工作空间 id */
+  private async ensureWorkspace(userId: string, nickname: string): Promise<string> {
+    const existing = await this.prisma.workspaceMember.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'asc' },
+      select: { workspaceId: true },
+    })
+    if (existing?.workspaceId) return existing.workspaceId
 
     const slug = `ws_${userId.substring(0, 8)}`
     const ws = await this.prisma.workspace.create({
@@ -76,6 +145,7 @@ export class AuthService {
         data: { userId, roleId: ownerRole.id },
       })
     }
+    return ws.id
   }
 
   async searchUsers(search: string) {

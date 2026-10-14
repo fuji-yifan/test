@@ -11,12 +11,32 @@ import { useContextMiddleware } from './common/request-context'
 import { AuditContextInterceptor } from './common/interceptors/audit-context.interceptor'
 import { CacheService } from './modules/cache/cache.service'
 
+/**
+ * JWT 密钥守卫（阶段 6 / S2.4）：
+ * - 生产环境：缺失或仍为默认 `dev-secret` → fail-fast，拒绝启动；
+ * - 开发环境：缺失或默认 → warn，提示尽快配置。
+ * 背景：`auth.module.ts` 的 `JWT_SECRET || 'dev-secret'` 兜底会让生产误用弱密钥签发可伪造令牌。
+ */
+function assertJwtSecret(logger: Logger) {
+  const secret = process.env.JWT_SECRET
+  const isDefault = !secret || secret === 'dev-secret'
+  if (!isDefault) return
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      '生产环境必须配置强 JWT_SECRET（当前缺失或为默认 dev-secret），已拒绝启动',
+    )
+  }
+  logger.warn('JWT_SECRET 未配置或为默认 dev-secret，仅限开发环境使用')
+}
+
 async function bootstrap() {
+  const logger = new Logger('Bootstrap')
+  assertJwtSecret(logger)
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule)
 
   // 调大 body parser 上限，省市区模板数据较大
   app.useBodyParser('json', { limit: '10mb' })
-  const logger = new Logger('Bootstrap')
 
   // 审计上下文中间件 — 提取 userId / workspaceId 绑定到异步上下文
   app.use((req: Request, _res: any, next: () => void) => {
