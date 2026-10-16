@@ -264,6 +264,20 @@ router.beforeEach(async (to, _from, next) => {
         })
         return
       }
+
+      // 地址栏里的 :wsId 必须是一个当前可用（未删除）的空间。否则（旧书签/历史记录
+      // 指向已删除空间）页面照常渲染，聊天面板会把每轮请求绑到墓碑空间上，
+      // 数据写进去用户却永远看不到。换到第一个可用空间，子路由原样保留。
+      const wsId = to.params.wsId as string | undefined
+      if (wsId && !wsStore.list.some((w) => w.id === wsId)) {
+        return next({
+          name: to.name as string,
+          params: { ...to.params, wsId: wsStore.list[0].id },
+          query: to.query,
+          hash: to.hash,
+          replace: true,
+        })
+      }
     }
   }
 

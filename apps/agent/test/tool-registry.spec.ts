@@ -81,3 +81,56 @@ describe('ToolRegistry.call — 工具输出 schema 校验（fail-closed）', ()
     expect(res.ok).toBe(true)
   })
 })
+
+// 工具主动回 ok:false 就是失败：注册表不能替它盖章成功，否则幻觉守卫失效、用户收到假报喜。
+describe('ToolRegistry.call — 尊重工具自报的 ok:false', () => {
+  const registry = new ToolRegistry({} as any)
+  const register = (tool: Record<string, unknown>) =>
+    (registry as any).tools.set((tool as any).name, tool)
+
+  it('工具回 ok:false → registry 也判失败，并带出 error', async () => {
+    register({
+      name: 'save_fails',
+      description: 'demo',
+      riskLevel: 'low',
+      parameters: {},
+      zodSchema: z.object({}).passthrough(),
+      instance: { execute: async () => ({ ok: false, summary: '保存失败', error: 'save_failed' }) },
+    })
+
+    const res = await registry.call('save_fails', {})
+    expect(res.ok).toBe(false)
+    expect(res.error).toBe('save_failed')
+    expect(res.summary).toBe('保存失败')
+  })
+
+  it('工具回 ok:false 但没带 error → 兜底 tool_reported_failure', async () => {
+    register({
+      name: 'save_fails_bare',
+      description: 'demo',
+      riskLevel: 'low',
+      parameters: {},
+      zodSchema: z.object({}).passthrough(),
+      instance: { execute: async () => ({ ok: false }) },
+    })
+
+    const res = await registry.call('save_fails_bare', {})
+    expect(res.ok).toBe(false)
+    expect(res.error).toBe('tool_reported_failure')
+  })
+
+  it('返回体没有 ok 字段 → 仍判成功（零回归）', async () => {
+    register({
+      name: 'no_ok_field',
+      description: 'demo',
+      riskLevel: 'low',
+      parameters: {},
+      zodSchema: z.object({}).passthrough(),
+      instance: { execute: async () => ({ summary: 'done' }) },
+    })
+
+    const res = await registry.call('no_ok_field', {})
+    expect(res.ok).toBe(true)
+    expect(res.summary).toBe('done')
+  })
+})

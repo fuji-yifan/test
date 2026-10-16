@@ -181,7 +181,16 @@ export class ToolRegistry implements OnModuleInit {
           return { ok: false, summary: `工具 ${name} 输出校验失败：${issues}`, error: 'output_validation_error' }
         }
       }
-      return { ok: true, summary: result.summary || 'OK', data: result }
+      // 工具自己回了 ok:false 就是失败——不能替它盖章成功，否则幻觉守卫（S7.2）失效，
+      // 用户会收到「已保存 ✅」这种假报喜。绝大多数工具返回体没有 ok 字段，
+      // undefined !== false → 仍判成功（零回归）。
+      const ok = (result as any)?.ok !== false
+      return {
+        ok,
+        summary: result.summary || (ok ? 'OK' : 'failed'),
+        data: result,
+        ...(ok ? {} : { error: (result as any)?.error ?? 'tool_reported_failure' }),
+      }
     } catch (err: any) {
       return { ok: false, summary: `Tool ${name} failed: ${err.message}`, error: 'execution_error' }
     }

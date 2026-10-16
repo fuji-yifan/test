@@ -74,9 +74,16 @@ export class FormSaveTool {
       args.workspaceId,
     )
 
+    // saveFormDraft 有两条静默失败路径（不抛异常，只返回差错对象）：
+    // 缺 workspaceId 时返回 { error }、建表返回体里没有 id。必须显式判失败，
+    // 否则会回「Form "X" saved」这种假成功，用户以为存上了、实际没存。
+    if (result?.error) return { ok: false, summary: String(result.error), error: 'save_failed' }
+    const formId = result?.id || args.formId
+    if (!formId) return { ok: false, summary: '保存失败：服务端未返回表单 id', error: 'save_failed' }
+
     return {
       summary: args.formId ? `Form "${args.name}" updated` : `Form "${args.name}" saved`,
-      formId: result?.id || args.formId,
+      formId,
       result,
     }
   }

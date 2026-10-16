@@ -5,6 +5,7 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger'
 import { WorkflowService } from './workflow.service'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { PermissionGuard, RequiredPermission } from '../../common/guards/permission.guard'
+import { WorkspaceGuard } from '../../common/guards/workspace.guard'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 
 @ApiTags('Workflows')
@@ -16,12 +17,13 @@ export class WorkflowController {
 
   // ==================== 流程定义 ====================
 
+  @UseGuards(WorkspaceGuard)
   @Get('workspaces/:wsId/workflow-bindings')
   getFormBindings(@Param('wsId') wsId: string) {
     return this.workflowService.getFormBindings(wsId)
   }
 
-  @UseGuards(PermissionGuard)
+  @UseGuards(WorkspaceGuard, PermissionGuard)
   @RequiredPermission('workflow:manage')
   @Get('workspaces/:wsId/workflows')
   listDefinitions(
@@ -31,7 +33,7 @@ export class WorkflowController {
     return this.workflowService.listDefinitions(wsId, query)
   }
 
-  @UseGuards(PermissionGuard)
+  @UseGuards(WorkspaceGuard, PermissionGuard)
   @RequiredPermission('workflow:manage')
   @Post('workspaces/:wsId/workflows')
   createDefinition(
