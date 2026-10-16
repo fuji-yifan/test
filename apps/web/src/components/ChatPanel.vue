@@ -601,7 +601,8 @@ watch(() => isLoading.value, (l, was) => {
   display: flex; align-items: center; justify-content: center; color: #fff;
 }
 .float-header-left { display: flex; align-items: center; gap: 10px; }
-.float-title { font-size: 15px; font-weight: 700; color: #1a1a2e; white-space: nowrap; }
+/* 与主页面右上角的 FlowX 入口同款文字（字号/字重/颜色；字体族见 DefaultLayout 的 .ai-btn） */
+.float-title { font-size: 15px; font-weight: 700; color: #2c3e50; white-space: nowrap; }
 .agent-badge {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 3px 10px; border-radius: 12px; min-height: 22px;

@@ -480,6 +480,9 @@ function handleLogout() {
   gap: 12px;
 }
 .ai-btn {
+  /* 原生 button 的字体来自浏览器 UA 样式表、默认不继承文档字体，会和别处的「FlowX」
+     （悬浮窗标题 .float-title）渲染成两种字体。这里显式继承，两边就完全一致。 */
+  font-family: inherit;
   font-weight: 700;
   font-size: 15px;
   padding: 6px 18px;
