@@ -601,8 +601,14 @@ watch(() => isLoading.value, (l, was) => {
   display: flex; align-items: center; justify-content: center; color: #fff;
 }
 .float-header-left { display: flex; align-items: center; gap: 10px; }
-/* 与主页面右上角的 FlowX 入口同款文字（字号/字重/颜色；字体族见 DefaultLayout 的 .ai-btn） */
-.float-title { font-size: 15px; font-weight: 700; color: #2c3e50; white-space: nowrap; }
+/*
+ * 与主页面右上角的 FlowX 入口同款文字。
+ *
+ * font-family 必须写 Arial：入口是 <el-button>（原生 button），字体取自浏览器 UA 样式表
+ * 而不是继承文档字体 —— Chromium/Edge 上实测就是 Arial，而 <span> 用的是文档默认字体
+ * （Noto Sans SC / 微软雅黑），两边本来不是一个字体。这里对齐入口那个。
+ */
+.float-title { font-family: Arial; font-size: 15px; font-weight: 700; color: #2c3e50; white-space: nowrap; }
 .agent-badge {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 3px 10px; border-radius: 12px; min-height: 22px;
