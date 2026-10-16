@@ -401,7 +401,17 @@ watch(() => isLoading.value, (l, was) => {
                           <span class="tool-chip-name">{{ tc.tool }}</span>
                           <span v-if="riskLabel(tc.risk)" class="confirm-risk">风险 {{ riskLabel(tc.risk) }}</span>
                           <!-- 待答复时文案已经在上面的检查点卡片里说过一遍，chip 只留工具与风险 -->
-                          <span v-if="tc.summary && tc.status !== 'confirming'" class="tool-summary">{{ tc.summary }}</span>
+                          <!-- 后缀解释会被 flex 压成省略号，悬停看全文。z-index 必须高于
+                               .float-window(3000)：tooltip teleport 到 body 后默认 2000，会被浮窗盖住 -->
+                          <el-tooltip
+                            v-if="tc.summary && tc.status !== 'confirming'"
+                            :content="tc.summary"
+                            placement="top"
+                            :show-after="200"
+                            :z-index="3100"
+                          >
+                            <span class="tool-summary">{{ tc.summary }}</span>
+                          </el-tooltip>
                         </div>
                       </div>
                     </div>
