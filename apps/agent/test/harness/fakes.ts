@@ -15,6 +15,7 @@ export const TOOL_RISK: Record<string, 'low' | 'medium' | 'high'> = {
   flow_preview: 'low',
   flow_save: 'medium',
   flow_bind_form: 'medium',
+  flow_publish: 'high',
   template_search: 'low',
   template_get_detail: 'low',
   template_validate: 'low',

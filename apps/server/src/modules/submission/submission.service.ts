@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common'
 import { PrismaClient } from '@prisma/client'
+import { coerceJsonDeep } from '@furmx/sdk'
 import { WorkflowService } from '../workflow/workflow.service'
 
 @Injectable()
@@ -50,7 +51,9 @@ export class SubmissionService {
     })
 
     for (const def of definitions) {
-      const nodes = (def.nodes as any[]) || []
+      // 深度归一后再取 config：历史脏数据里 config 可能是字符串，直接取属性会拿到
+      // undefined —— 那正是「表单绑了流程、提交后却不发起」的成因
+      const nodes = coerceJsonDeep((def.nodes as any[]) || [])
       const startNode = nodes.find((n: any) => n.type === 'start')
       // 开始节点绑定了此表单才触发
       if (startNode?.config?.formId === formId) {

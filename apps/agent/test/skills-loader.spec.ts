@@ -97,6 +97,7 @@ describe('SkillsLoader — D2 技能↔工具绑定校验', () => {
     'flow_bind_form',
     'flow_preview',
     'flow_save',
+    'flow_publish',
   ]
   const stubRegistry = (names: string[]): ToolRegistry =>
     ({ get: (n: string) => (names.includes(n) ? { name: n } : undefined) }) as unknown as ToolRegistry

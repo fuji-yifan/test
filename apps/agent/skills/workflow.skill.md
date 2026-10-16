@@ -8,6 +8,7 @@ tools:
   - flow_bind_form
   - flow_preview
   - flow_save
+  - flow_publish
 scenarios:
   - workflow-node
 enabled: true
@@ -52,3 +53,10 @@ enabled: true
 - 通知到外部系统 → 风险等级 high
 - 服务节点（调外部 API） → 风险等级 high
 - 审批节点 → 风险等级 medium
+
+## 绑定与发布
+
+- `flow_save` 只把流程存成**草稿**，草稿不触发流程、也不会在表单列表显示绑定徽章。
+- `flow_bind_form` 把一张表单关联到流程的**开始节点**（写入 `start.config.formId`）——这只是**设计意向**。
+- `flow_publish` 发布流程后，关联才真正绑定：该表单被提交时会自动发起本流程。
+- 一张表单同时只能被**一个已发布**流程绑定；发布时若冲突，server 会返回 409 并说明原因，需改绑或先撤销另一流程的发布。

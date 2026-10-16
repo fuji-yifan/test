@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException, ConflictException, Logger } from '@nestjs/common'
 import { PrismaClient } from '@prisma/client'
 import {
   WorkflowEngine,
   CountersignEvaluator,
   APPROVAL_NODE_TYPES,
+  coerceJsonDeep,
 } from '@furmx/sdk'
 import type {
   ProcessNode,
@@ -30,19 +31,19 @@ export class WorkflowService {
 
   /**
    * 获取工作空间内流程→表单的绑定关系（供表单列表页展示）
+   *
+   * 只认已发布的流程：开始节点上选了表单只是设计意向，发布后才是真绑定。
    */
   async getFormBindings(workspaceId: string) {
     const definitions = await this.prisma.processDefinition.findMany({
-      where: { workspaceId, status: { not: 'archived' } },
+      where: { workspaceId, status: 'published' },
       select: { id: true, name: true, status: true, nodes: true, updatedAt: true },
     })
 
     // 提取开始节点绑定的 formId → 流程列表映射
     const bindings: Record<string, { id: string; name: string; status: string; updatedAt: string }[]> = {}
     for (const def of definitions) {
-      const nodes = (def.nodes as any[]) || []
-      const startNode = nodes.find((n: any) => n.type === 'start')
-      const formId = startNode?.config?.formId
+      const formId = this.startFormId(def.nodes)
       if (formId) {
         if (!bindings[formId]) bindings[formId] = []
         bindings[formId].push({
@@ -87,9 +88,10 @@ export class WorkflowService {
     ]
     const defaultEdges = [{ id: 'e1', sourceNodeId: 'start', targetNodeId: 'end' }]
 
-    // 使用 Agent 传入的节点/边，否则使用默认值
-    const nodes = dto.nodes?.length ? dto.nodes : defaultNodes
-    const edges = dto.edges?.length ? dto.edges : defaultEdges
+    // 使用 Agent 传入的节点/边，否则使用默认值。落库前统一深度归一，
+    // 挡住「config 被序列化成字符串」（见 @furmx/sdk 的 coerceJsonDeep）
+    const nodes = coerceJsonDeep(dto.nodes?.length ? dto.nodes : defaultNodes)
+    const edges = coerceJsonDeep(dto.edges?.length ? dto.edges : defaultEdges)
 
     return this.prisma.processDefinition.create({
       data: {
@@ -111,50 +113,46 @@ export class WorkflowService {
   }
 
   async updateDefinition(id: string, dto: { name?: string; description?: string; nodes?: any; edges?: any; settings?: any }) {
-    // 检查开始节点是否绑定了表单，若是则独占：解绑其他流程中同一表单
-    const nodes = (dto.nodes as any[]) || []
-    const startNode = nodes.find((n: any) => n.type === 'start')
-    const newFormId = startNode?.config?.formId
+    const current = await this.prisma.processDefinition.findUnique({
+      where: { id },
+      select: { workspaceId: true, status: true },
+    })
+    if (!current) throw new NotFoundException('流程定义不存在')
 
-    if (newFormId) {
-      const def = await this.prisma.processDefinition.findUnique({ where: { id }, select: { workspaceId: true } })
-      if (def) {
-        // 找到同一工作空间内绑定了同一表单的其他流程
-        const others = await this.prisma.processDefinition.findMany({
-          where: { workspaceId: def.workspaceId, id: { not: id }, status: { not: 'archived' } },
-          select: { id: true, nodes: true },
-        })
-        for (const other of others) {
-          const otherNodes = (other.nodes as any[]) || []
-          const otherStart = otherNodes.find((n: any) => n.type === 'start')
-          if (otherStart?.config?.formId === newFormId) {
-            // 清除旧流程的表单绑定
-            otherStart.config.formId = ''
-            otherStart.config.formName = ''
-            otherStart.config.variables = []
-            await this.prisma.processDefinition.update({
-              where: { id: other.id },
-              data: { nodes: otherNodes as any },
-            })
-          }
-        }
-      }
+    // 与 createDefinition 同理：任何写入方（web 设计器 / agent）都可能在 config 里塞字符串化 JSON
+    const next = coerceJsonDeep(dto)
+
+    // 已发布流程的改动即时生效（没有版本快照），所以这里也要挡重复绑定；草稿只是意向，不来抢。
+    if (current.status === 'published' && next.nodes) {
+      await this.assertFormBindingFree(current.workspaceId, next.nodes, id)
     }
 
-    return this.prisma.processDefinition.update({ where: { id }, data: dto as any })
+    return this.prisma.processDefinition.update({ where: { id }, data: next as any })
   }
 
   async removeDefinition(id: string) {
     return this.prisma.processDefinition.delete({ where: { id } })
   }
 
+  /**
+   * 发布 = 让开始节点上关联的表单成为真绑定。同一张表单同时只能被一个已发布流程绑定。
+   */
   async publishDefinition(id: string) {
+    const def = await this.prisma.processDefinition.findUnique({
+      where: { id },
+      select: { workspaceId: true, nodes: true },
+    })
+    if (!def) throw new NotFoundException('流程定义不存在')
+
+    await this.assertFormBindingFree(def.workspaceId, def.nodes, id)
+
     return this.prisma.processDefinition.update({
       where: { id },
       data: { status: 'published', publishedAt: new Date() },
     })
   }
 
+  /** 撤销发布只改状态：关联的表单留在开始节点上作为设计意向，解绑是由 status 派生的 */
   async unpublishDefinition(id: string) {
     return this.prisma.processDefinition.update({
       where: { id },
@@ -753,6 +751,34 @@ export class WorkflowService {
       initiator: users[instance.initiatorId] || null,
       tasks: instance.tasks.map(t => ({ ...t, assignee: users[t.assigneeId] || null })),
     }
+  }
+
+  /**
+   * 开始节点关联的表单（设计期写入 config.formId；发布后才算真绑定）。
+   * 读时也做一次深度归一：历史脏数据里 config 可能是字符串 `"{\"formId\":…}"`，
+   * 若不还原，`start?.config?.formId` 会取到 undefined —— 表现为「绑了表单也不发起」。
+   */
+  private startFormId(nodes: unknown): string | null {
+    const start = (coerceJsonDeep((nodes as any[]) || [])).find((n: any) => n.type === 'start')
+    return start?.config?.formId || null
+  }
+
+  /** 同工作空间内除 exceptId 外，已有【已发布】流程绑定了同一个表单时抛 409 */
+  private async assertFormBindingFree(workspaceId: string, nodes: unknown, exceptId: string) {
+    const formId = this.startFormId(nodes)
+    if (!formId) return // 没关联表单的流程（手动发起）不受限
+
+    const others = await this.prisma.processDefinition.findMany({
+      where: { workspaceId, status: 'published', id: { not: exceptId } },
+      select: { id: true, name: true, nodes: true },
+    })
+    const conflict = others.find((d) => this.startFormId(d.nodes) === formId)
+    if (!conflict) return
+
+    const form = await this.prisma.form.findUnique({ where: { id: formId }, select: { name: true } })
+    throw new ConflictException(
+      `表单「${form?.name || formId}」已被流程「${conflict.name}」绑定，请先撤销发布或改为关联其他表单`,
+    )
   }
 
   private async resolveUsers(ids: string[]) {

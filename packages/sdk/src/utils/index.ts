@@ -3,3 +3,4 @@ export { evaluate, validateExpression, ExpressionEngine, expressionEngine } from
 export type { IExpressionEngine } from './expression-eval.js'
 export * from './linkage-engine.js'
 export * from './flow-layout.js'
+export * from './json-coerce.js'

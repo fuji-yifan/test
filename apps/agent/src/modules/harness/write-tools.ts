@@ -16,5 +16,6 @@ export const WRITE_TOOLS = new Set<string>([
   'form_version_delete',
   'flow_save',
   'flow_bind_form',
+  'flow_publish',
   'template_instantiate',
 ])

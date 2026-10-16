@@ -138,10 +138,10 @@
                 >
                   <span class="wf-name">{{ wf.name }}</span>
                   <el-tag
-                    :type="wf.status === 'published' ? 'success' : 'info'"
+                    type="success"
                     size="small"
                   >
-                    {{ wf.status === 'published' ? '已发布' : '草稿' }}
+                    已发布
                   </el-tag>
                 </div>
               </div>

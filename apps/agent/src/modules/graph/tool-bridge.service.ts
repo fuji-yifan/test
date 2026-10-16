@@ -46,6 +46,14 @@ const FORM_ID_TOOLS = new Set([
   'flow_bind_form',
 ])
 
+/**
+ * 接受 `flowId` 注入的流程工具：以「本轮刚保存的那条流程」为目标（`savedWorkflowId` 与
+ * `savedFormId` 同源）。模型不用自己背流程 id —— 保存流程后紧接着关联/发布即可。
+ * - flow_bind_form：把表单关联到该流程的开始节点；
+ * - flow_publish：发布该流程。
+ */
+const FLOW_ID_TOOLS = new Set(['flow_bind_form', 'flow_publish'])
+
 /** 单次图执行的会话上下文：token / 工作空间 / 草稿等由 act 节点按本次调用填进来 */
 export interface ToolCallContext {
   userToken?: string
@@ -54,6 +62,8 @@ export interface ToolCallContext {
   /** 归属会话 id（阶段 6 / S2）：审计落库按 sessionId 追溯，由 act 从图状态填进来 */
   sessionId?: string
   savedFormId?: string
+  /** 本会话最近一次 flow_save 落库的流程 id，供 flow_bind_form / flow_publish 注入 */
+  savedWorkflowId?: string
   /** 当前会话已有的表单结构（form-designer 草稿），供 form_assemble_schema 合并 */
   currentSchema?: Record<string, unknown>
   /**
@@ -192,6 +202,9 @@ export class LangChainToolBridge {
     // form_save 幂等键（阶段 3 切片 C）：把本次 tool_call id 作为 clientRequestId 透传到 server，
     // 由 server 的 idempotency_keys 唯一键去重（网关内存 Set 只对 risk!=='low' 生效，form_save 是 low）。
     if (name === 'form_save' && requestId) out.clientRequestId = requestId
+
+    // 流程工具按会话里最近保存的流程注入 flowId（与 savedFormId 同源，不靠模型背 id）
+    if (FLOW_ID_TOOLS.has(name) && !out.flowId && ctx.savedWorkflowId) out.flowId = ctx.savedWorkflowId
 
     // 没有工作台（非表单 agent / 单测直连）：单槽行为
     if (!ctx.formWorksheet) {

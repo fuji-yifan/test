@@ -350,9 +350,9 @@ export class AgentCatalogService implements OnApplicationBootstrap {
         key: 'workflow',
         label: 'Workflow Agent',
         scenario: 'workflow-node',
-        toolNames: ['flow_create', 'flow_validate', 'flow_bind_form', 'flow_preview', 'flow_save'],
-        serverTools: ['flow_bind_form', 'flow_save'],
-        produceTools: ['flow_save', 'flow_bind_form'],
+        toolNames: ['flow_create', 'flow_validate', 'flow_bind_form', 'flow_preview', 'flow_save', 'flow_publish'],
+        serverTools: ['flow_bind_form', 'flow_save', 'flow_publish'],
+        produceTools: ['flow_save', 'flow_bind_form', 'flow_publish'],
         maxIterations: 8,
         systemPrompt: (ctx) =>
           workflowPrompt({
@@ -375,10 +375,20 @@ export class AgentCatalogService implements OnApplicationBootstrap {
           {
             id: 'bind-form-approval',
             beforeTool: 'flow_bind_form',
-            prompt: '是否将表单绑定到这个流程节点',
+            prompt: '是否把表单关联到这个流程？（关联只是意向，发布后才真正生效）',
             options: [
-              { value: 'continue', label: '绑定', style: 'primary' },
+              { value: 'continue', label: '关联', style: 'primary' },
               { value: 'abort', label: '取消', style: 'danger' },
+            ],
+            coversRisk: true,
+          },
+          {
+            id: 'publish-approval',
+            beforeTool: 'flow_publish',
+            prompt: '是否发布这个流程？发布后，开始节点关联的表单被提交时会自动发起本流程。',
+            options: [
+              { value: 'continue', label: '发布', style: 'primary' },
+              { value: 'abort', label: '暂不发布', style: 'danger' },
             ],
             coversRisk: true,
           },
@@ -401,6 +411,13 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             return {
               metadata: { savedWorkflowId: id },
               facts: compactFacts({ savedWorkflowId: id }),
+            }
+          }
+          if (toolName === 'flow_publish') {
+            const id = (result as any)?.flowId
+            return {
+              metadata: { publishedWorkflowId: id },
+              facts: compactFacts({ publishedWorkflowId: id }),
             }
           }
           return null

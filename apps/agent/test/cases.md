@@ -329,6 +329,14 @@ flow_create           {"nodes": "oops"}    → 参数错误：name: Required; no
 
 **验证**：新增单测「上一轮的模板草稿不能替这一轮的落库步骤开路」（两轮同一会话：第一轮实例化出草稿并走到设计助手检查点，第二轮搜不到 → 断言 `gateway.calls` 里第二个 `template_search` 之后没有任何 form 工具）。修复前该用例失败（`interrupted.checkpointId === 'schema-review'`，toolCallId `c5`），修复后全量 **814 条绿**。**真机 2026-09-29 复测 ✅**：T2（同会话先聊模板再搜无结果关键词）与 R1 强版本（同会话留草稿后发「你好」）都只调一次 `template_search`、无检查点、无表单卡片。
 
+### 3.16 agent 建流程永远绑不上/不生效 —— 2026-10-16 修
+
+**背景**：绑定语义改为「流程发布后才真绑定」后，agent 这条链路露底：`flow_bind_form` 是**空壳**（只回一句 `Flow "X" bound to form "Y"`，不落库 → 谎报已绑定）；`flow_save` 只存草稿、**没有发布工具**；`flow_save` 返回 `processId` 而产物抽取读 `result.id` → `savedWorkflowId` 恒为 undefined；`getProcessDefinition` 打的是不存在的 `/api/v1/workflow/process-definitions/:id`。
+
+**改法**：`flow_bind_form` 真实现（GET 流程 → 合并 `start.config.formId/formName`（保留 variables）→ PATCH），新增高风险 `flow_publish`（`publish-approval` 检查点 coversRisk），`flow_save` 返回 `id`/`status` 且无 id 时 `ok:false`，`ContextService` 修端点 + 加 `updateProcessDraft`/`publishProcess`，并把 server 的中文 message 透出为 `Error.message`（附 `err.status` 供 409 判定）。
+
+**手测**（可走会话，也可直调工具）：做流程 → 关联刚建的表 → 发布 → 提交该表自动发起流程；再做一个绑同一张表的流程并发布 → 应提示 409 冲突（「表单「X」已被流程「Y」绑定…」）。文案里不再出现「已绑定」这种提前报喜，而是「已关联…发布后才会真正绑定」。
+
 ## 四、人工验证（2026-09-24 已全部走完）
 
 这一节原先列的是「自动测不了、只能人看」的项。截至 2026-09-24 全部有了结论，下面按验证方式归档 —— 以后新增 DOM 改动时，请把新项加回来。

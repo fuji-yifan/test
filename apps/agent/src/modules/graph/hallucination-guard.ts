@@ -10,7 +10,10 @@
 /** 各产工具的「完成态声明」特征（命中即认为模型在声称该动作已完成） */
 const CLAIM_PATTERNS: { tool: string; re: RegExp; note: string }[] = [
   { tool: 'form_save', re: /已(保存|发布|加入空间)|保存成功|表单已(建好|生成|创建)/, note: '表单保存' },
-  { tool: 'flow_save', re: /流程已(保存|发布|创建)|已保存流程/, note: '流程保存' },
+  // 保存与发布分成两个工具，正则必须互斥：flow_save 只在「保存/创建」时判（去掉「发布」），
+  // 否则只调了 flow_save 却说「流程已发布」（未真正发布）会被 flow_save 的正则兜住而漏判。
+  { tool: 'flow_save', re: /流程已(保存|创建)|已保存流程/, note: '流程保存' },
+  { tool: 'flow_publish', re: /流程已发布|发布成功|已上线/, note: '流程发布' },
   {
     tool: 'form_rollback',
     re: /已(经)?(帮你)?回滚|回滚(成功|完成)/,

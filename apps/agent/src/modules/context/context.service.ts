@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
-import { layoutFlow, normalizeFlowType } from '@furmx/sdk'
+import { coerceNodeConfig, layoutFlow, normalizeFlowType } from '@furmx/sdk'
 
 @Injectable()
 export class ContextService {
@@ -33,7 +33,21 @@ export class ContextService {
 
       if (!res.ok) {
         const body = await res.text().catch(() => '')
-        throw new Error(`Server API ${path} returned ${res.status}: ${body}`)
+        // server 的 HttpExceptionFilter 统一返回 { code, data, message, requestId }，
+        // 把中文 message 提出来当 Error.message（工具据此原样透传给用户，如 409 冲突原因）；
+        // 解析不出才退回原始文本。HTTP 状态挂到 err.status 上，供工具区分冲突等场景。
+        let message = body
+        try {
+          const parsed = JSON.parse(body)
+          if (parsed?.message) {
+            message = Array.isArray(parsed.message) ? parsed.message.join('；') : String(parsed.message)
+          }
+        } catch {
+          /* 非 JSON，用原始文本 */
+        }
+        const err: any = new Error(message || `Server API ${path} returned ${res.status}`)
+        err.status = res.status
+        throw err
       }
 
       const json = await res.json()
@@ -106,7 +120,8 @@ export class ContextService {
   }
 
   async getProcessDefinition(token: string, processId: string): Promise<any> {
-    return this.fetch(`/api/v1/workflow/process-definitions/${processId}`, token)
+    // 真实路由是 /api/v1/workflows/:id（旧代码打的是并不存在的 /workflow/process-definitions/:id）
+    return this.fetch(`/api/v1/workflows/${processId}`, token)
   }
 
   async getTemplates(token: string, query?: { category?: string; keyword?: string }): Promise<any> {
@@ -172,36 +187,68 @@ export class ContextService {
     })
   }
 
-  async saveProcessDraft(token: string, data: Record<string, unknown>): Promise<any> {
-    const wsId = data.workspaceId || 'default'
-    const rawNodes = (data.nodes as any[]) || []
-    const rawEdges = (data.edges as any[]) || []
-
+  /** 把模型给的原始节点/边规范化成 server 期望的形态（类型归一、label→name、真实坐标） */
+  private normalizeFlowPayload(rawNodes: any[], rawEdges: any[]): { nodes: any[]; edges: any[] } {
     // 用 SDK 的共享布局纯函数算真实坐标：轴对齐后各节点在同一条竖直中线上，
     // 与预览卡片（FlowPreviewGraph）和设计器看到的效果一致。
     const layout = layoutFlow(rawNodes, rawEdges)
     const posById = new Map(layout.nodes.map((n) => [n.id, { x: Math.round(n.x), y: Math.round(n.y) }]))
 
     // 规范化节点：类型归一（notify→cc / service→auto-task）、label→name、真实 position
-    const normalizedNodes = rawNodes.map((n) => ({
+    const nodes = rawNodes.map((n) => ({
       id: n.id,
       type: normalizeFlowType(n.type),
       name: n.label || n.name || n.id,
       position: posById.get(n.id) || { x: 0, y: 0 },
-      config: n.config || {},
+      config: coerceNodeConfig(n.config),
     }))
     // 规范化边：source→sourceNodeId, target→targetNodeId，保留 label 与 condition（原先会丢）
-    const normalizedEdges = rawEdges.map((e) => ({
+    const edges = rawEdges.map((e) => ({
       id: e.id,
       sourceNodeId: e.source || e.sourceNodeId,
       targetNodeId: e.target || e.targetNodeId,
       label: e.label || e.condition || '',
       condition: e.condition || '',
     }))
+    return { nodes, edges }
+  }
+
+  async saveProcessDraft(token: string, data: Record<string, unknown>): Promise<any> {
+    const wsId = data.workspaceId || 'default'
+    const { nodes, edges } = this.normalizeFlowPayload(
+      (data.nodes as any[]) || [],
+      (data.edges as any[]) || [],
+    )
     return this.fetch(`/api/v1/workspaces/${wsId}/workflows`, token, {
       method: 'POST',
-      body: JSON.stringify({ ...data, nodes: normalizedNodes, edges: normalizedEdges }),
+      body: JSON.stringify({ ...data, nodes, edges }),
     })
+  }
+
+  /**
+   * 更新已有流程（PATCH /workflows/:id）。**不再跑布局**：库里的坐标已是上次
+   * `saveProcessDraft` 规范化后的结果，重算会挪位（只改 start.config 时尤其明显）。
+   * 传入的 nodes/edges 应是**已规范化**的形态（如从 getProcessDefinition 取回后再合并）。
+   */
+  async updateProcessDraft(
+    token: string,
+    data: { id: string; nodes?: any[]; edges?: any[]; name?: string; description?: string },
+  ): Promise<any> {
+    const body: Record<string, unknown> = {}
+    // 只归一 config（含嵌套的字符串化 JSON），坐标保持库里的原样
+    if (data.nodes) body.nodes = data.nodes.map((n) => ({ ...n, config: coerceNodeConfig(n?.config) }))
+    if (data.edges) body.edges = data.edges
+    if (data.name !== undefined) body.name = data.name
+    if (data.description !== undefined) body.description = data.description
+    return this.fetch(`/api/v1/workflows/${data.id}`, token, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    })
+  }
+
+  /** 发布流程（POST /workflows/:id/publish）：发布后开始节点关联的表单才真正绑定生效 */
+  async publishProcess(token: string, id: string): Promise<any> {
+    return this.fetch(`/api/v1/workflows/${id}/publish`, token, { method: 'POST' })
   }
 
   async recordDecision(token: string, taskId: string, data: {
@@ -214,3 +261,4 @@ export class ContextService {
     })
   }
 }
+

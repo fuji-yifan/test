@@ -282,7 +282,7 @@
               <el-input
                 v-model="definition.description"
                 type="textarea"
-                :rows="2"
+                :autosize="{ minRows: 2 }"
                 @input="markDirty"
               />
             </el-form-item>
@@ -306,6 +306,71 @@
                 @change="markDirty"
               />
             </el-form-item>
+
+            <!-- 表单绑定挂在流程的**开始节点**上（start.config），属流程级配置，故放在画布设置里 -->
+            <template v-if="startNode">
+              <h5 class="section-title">
+                关联表单
+              </h5>
+              <p
+                v-if="startNode.config.formId"
+                class="form-tip"
+              >
+                {{ definition?.status === 'published'
+                  ? '表单提交后会自动发起本流程'
+                  : '流程发布后表单关联生效' }}
+              </p>
+              <el-form-item>
+                <el-select
+                  v-model="startNode.config.formId"
+                  filterable
+                  clearable
+                  placeholder="选择表单"
+                  @change="onFormBind"
+                >
+                  <el-option
+                    v-for="f in workspaceForms"
+                    :key="f.id"
+                    :label="f.name"
+                    :value="f.id"
+                  />
+                </el-select>
+              </el-form-item>
+              <template v-if="startNode.config.formId && formFields.length > 0">
+                <h5 class="section-title">
+                  流程变量
+                </h5>
+                <p class="form-tip">
+                  勾选字段将作为流程的条件变量使用
+                </p>
+                <el-form-item>
+                  <el-checkbox-group
+                    v-model="startNode.config.variables"
+                    @change="markDirty"
+                  >
+                    <div
+                      v-for="field in formFields"
+                      :key="field.key"
+                      style="margin-bottom: 4px"
+                    >
+                      <el-checkbox
+                        :value="field.key"
+                        :label="field.key"
+                      >
+                        <span class="field-label">{{ field.name || field.key }}</span>
+                      </el-checkbox>
+                    </div>
+                  </el-checkbox-group>
+                </el-form-item>
+              </template>
+              <div
+                v-else-if="startNode.config.formId && formFields.length === 0"
+                class="form-tip"
+                style="color:#909399"
+              >
+                该表单暂无字段
+              </div>
+            </template>
 
             <h5 class="section-title">
               画布
@@ -404,63 +469,6 @@
                 @input="markDirty"
               />
             </el-form-item>
-
-            <!-- ====== 开始节点：表单绑定 & 流程变量 ====== -->
-            <template v-if="selectedNode.type === 'start'">
-              <h5 class="section-title">
-                表单绑定
-              </h5>
-              <el-form-item label="关联表单">
-                <el-select
-                  v-model="selectedNode.config.formId"
-                  filterable
-                  clearable
-                  placeholder="选择表单"
-                  @change="onFormBind"
-                >
-                  <el-option
-                    v-for="f in workspaceForms"
-                    :key="f.id"
-                    :label="f.name"
-                    :value="f.id"
-                  />
-                </el-select>
-              </el-form-item>
-              <template v-if="selectedNode.config.formId && formFields.length > 0">
-                <h5 class="section-title">
-                  流程变量
-                </h5>
-                <p class="form-tip">
-                  勾选字段将作为流程的条件变量使用
-                </p>
-                <el-form-item>
-                  <el-checkbox-group
-                    v-model="selectedNode.config.variables"
-                    @change="markDirty"
-                  >
-                    <div
-                      v-for="field in formFields"
-                      :key="field.key"
-                      style="margin-bottom: 4px"
-                    >
-                      <el-checkbox
-                        :value="field.key"
-                        :label="field.key"
-                      >
-                        <span class="field-label">{{ field.name || field.key }}</span>
-                      </el-checkbox>
-                    </div>
-                  </el-checkbox-group>
-                </el-form-item>
-              </template>
-              <div
-                v-else-if="selectedNode.config.formId && formFields.length === 0"
-                class="form-tip"
-                style="color:#909399"
-              >
-                该表单暂无字段
-              </div>
-            </template>
 
             <!-- ====== 审批节点属性 ====== -->
             <template v-if="isApprovalType(selectedNode.type)">
@@ -1138,7 +1146,7 @@ import http from '@/api/client'
 import { useAppStore } from '@/stores/app'
 import ProcessNodePalette from './ProcessNodePalette.vue'
 import type { ProcessDefinition, ProcessNode, ProcessEdge, ProcessSettings, NodeType } from '@furmx/sdk'
-import { FLOW_LAYOUT_GRID } from '@furmx/sdk'
+import { coerceNodeConfig, FLOW_LAYOUT_GRID } from '@furmx/sdk'
 
 interface WorkspaceMember { id: string; userId: string; user: { id: string; email: string; nickname?: string }; role: string }
 interface WorkspaceRole { id: string; name: string; isSystem: boolean }
@@ -1285,9 +1293,12 @@ const COND_OPERATORS = [
   { value: 'isNotEmpty', label: '非空' },
 ]
 
+/** 流程的开始节点（有且仅有一个）。表单绑定（关联表单 + 流程变量）挂在它的 config 上，
+ *  在「画布设置」里编辑（属流程级配置，不放在节点属性里） */
+const startNode = computed(() => nodes.value.find((n: ProcessNode) => n.type === 'start'))
+
 const processVariables = computed(() => {
-  const startNode = nodes.value.find((n: ProcessNode) => n.type === 'start')
-  const varKeys: string[] = startNode?.config?.variables || []
+  const varKeys: string[] = startNode.value?.config?.variables || []
   return varKeys.map((key: string) => {
     const ff = formFields.value.find((f: FormField) => f.key === key)
     return { key, name: ff?.name || key }
@@ -1524,12 +1535,13 @@ async function loadFormFields(formId: string) {
 }
 
 async function onFormBind(formId: string) {
-  if (!selectedNode.value) return
-  selectedNode.value.config.variables = []
+  const node = startNode.value
+  if (!node) return
+  node.config.variables = []
   formFields.value = []
   if (!formId) { markDirty(); return }
   const form = workspaceForms.value.find((f) => f.id === formId)
-  selectedNode.value.config.formName = form?.name || ''
+  node.config.formName = form?.name || ''
   try {
     const res = await http.get(`/forms/${formId}`) as any
     const data = res.data || res
@@ -1540,14 +1552,29 @@ async function onFormBind(formId: string) {
       const dup = formFields.value.find((f: FormField) => f.duplicate)
       if (dup) {
         ElMessage.warning('表单中存在同名字段，不可绑定流程')
-        selectedNode.value.config.formId = ''
-        selectedNode.value.config.formName = ''
-        selectedNode.value.config.variables = []
+        node.config.formId = ''
+        node.config.formName = ''
+        node.config.variables = []
         formFields.value = []
       }
     }
   } catch { /* ignore */ }
   markDirty()
+}
+
+/** 初始化开始节点的表单绑定字段，并按需加载所绑表单的字段列表（供画布设置与流程变量使用） */
+function syncStartFormFields() {
+  const node = startNode.value
+  if (!node) return
+  if (!node.config.formId) node.config.formId = ''
+  if (!node.config.formName) node.config.formName = ''
+  if (!node.config.variables) node.config.variables = []
+  if (node.config.formId && node.config.formId !== loadedFormId.value) {
+    loadFormFields(node.config.formId)
+  } else if (!node.config.formId) {
+    formFields.value = []
+    loadedFormId.value = ''
+  }
 }
 
 /** 递归提取表单字段（排除布局容器、提示文字等无值字段），标注重名 */
@@ -1568,6 +1595,16 @@ function extractFormFields(fields: RawFormField[]): FormField[] {
   return result
 }
 
+/**
+ * 归一节点：历史数据/agent 写入可能把 config（或 config 内部的嵌套字段，如
+ * branches）存成 JSON 字符串，设计器是按对象读写 config 的（`node.config.xxx = …`），
+ * 对字符串赋值会抛 TypeError → 整个「设计」页加载失败。加载时递归转成对象。
+ */
+function normalizeNode(n: ProcessNode): ProcessNode {
+  n.config = coerceNodeConfig(n.config) as ProcessNode['config']
+  return n
+}
+
 async function loadDefinition() {
   try {
     const res = await http.get(`/workflows/${workflowId.value}`) as any
@@ -1576,9 +1613,11 @@ async function loadDefinition() {
     definition.value = def
     // settings 可能缺失，接口返回的是未类型化 JSON
     if (!def.settings) def.settings = {} as ProcessSettings
-    nodes.value = [...(def.nodes || [])]
+    nodes.value = (def.nodes || []).map(normalizeNode)
     edges.value = [...(def.edges || [])]
     updateCanvasSize()
+    // 表单绑定在画布设置里（默认面板），进入即需回显字段 → 这里就初始化
+    syncStartFormFields()
   } catch {
     ElMessage.error('加载失败')
     goBack()
@@ -1617,18 +1656,6 @@ function selectNode(node: ProcessNode) {
     if (node.config.assignees?.length === 1) {
       const member = workspaceMembers.value.find((m: WorkspaceMember) => m.user.id === node.config.assignees[0])
       if (member) node.config.role = member.role
-    }
-  }
-  if (node.type === 'start') {
-    if (!node.config.formId) node.config.formId = ''
-    if (!node.config.formName) node.config.formName = ''
-    if (!node.config.variables) node.config.variables = []
-    // 仅当绑定的表单变化时才重新加载字段列表，保留用户已勾选的变量
-    if (node.config.formId && node.config.formId !== loadedFormId.value) {
-      loadFormFields(node.config.formId)
-    } else if (!node.config.formId) {
-      formFields.value = []
-      loadedFormId.value = ''
     }
   }
   if (node.type === 'condition') {
@@ -1978,7 +2005,7 @@ async function saveDefinition() {
     })
     dirty.value = false
     ElMessage.success('已保存')
-  } catch (e: unknown) { if (e instanceof Error && (e as { __handled?: boolean }).__handled) return; ElMessage.error('保存失败') } finally { saving.value = false }
+  } catch (e: unknown) { if (handled(e)) return; ElMessage.error(errMessage(e, '保存失败')) } finally { saving.value = false }
 }
 
 async function publishDef() {
@@ -1990,7 +2017,18 @@ async function publishDef() {
     await http.post(`/workflows/${workflowId.value}/publish`)
     def.status = 'published'
     ElMessage.success('已发布')
-  } catch (e: unknown) { if (e instanceof Error && (e as { __handled?: boolean }).__handled) return; ElMessage.error('发布失败') } finally { saving.value = false }
+  } catch (e: unknown) { if (handled(e)) return; ElMessage.error(errMessage(e, '发布失败')) } finally { saving.value = false }
+}
+
+/** api/client 已对 401/403 做过全局处理，这些错误不用再弹一次 */
+function handled(e: unknown) {
+  return e instanceof Error && (e as { __handled?: boolean }).__handled === true
+}
+
+/** 冲突（409，如同一张表单已被其他已发布流程绑定）的原因在响应体里，别被兜底文案盖掉 */
+function errMessage(e: unknown, fallback: string) {
+  const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+  return msg || fallback
 }
 
 function goBack() { router.push(`/workspace/${wsId.value}/workflows`) }
