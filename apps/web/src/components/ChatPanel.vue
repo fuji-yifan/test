@@ -38,10 +38,14 @@ const activeAgentLabel = computed(() => {
 
 // 会话累计用量（阶段 4）：徽标数值 + tooltip 明细；无用量时不显示
 const usageTotal = computed(() => (usage.value?.inputTokens || 0) + (usage.value?.outputTokens || 0))
+/** 千分位：写死 zh-CN，别跟浏览器 locale 漂（德语环境会变成 1.234） */
+function fmtTokens(n: number): string {
+  return n.toLocaleString('zh-CN')
+}
 const usageLabel = computed(() => {
   const u = usage.value
   if (!u || (!u.inputTokens && !u.outputTokens)) return null
-  return `会话累计 ≈ ${usageTotal.value.toLocaleString()} tokens（输入 ${u.inputTokens.toLocaleString()} / 输出 ${u.outputTokens.toLocaleString()}）`
+  return `会话累计 ≈ ${fmtTokens(usageTotal.value)} tokens（输入 ${fmtTokens(u.inputTokens)} / 输出 ${fmtTokens(u.outputTokens)}）`
 })
 /** 单条回答的 token 数（消息行小字用） */
 function msgTokens(u?: { inputTokens: number; outputTokens: number }): number {
@@ -240,7 +244,7 @@ watch(() => isLoading.value, (l, was) => {
             <el-tooltip v-if="usageLabel" :content="usageLabel" placement="bottom" :z-index="3100">
               <div class="usage-badge" :class="{ 'usage-badge--alert': usage?.alert }">
                 <el-icon class="usage-badge-icon" :size="11"><Coin /></el-icon>
-                <span>{{ usageTotal.toLocaleString() }}</span>
+                <span>{{ fmtTokens(usageTotal) }}</span>
               </div>
             </el-tooltip>
           </div>
@@ -496,7 +500,7 @@ watch(() => isLoading.value, (l, was) => {
                       {{ fmtTime(msg.timestamp) }}
                       <!-- 本条回答的 token（阶段 4）：内容为空又没产物的轮次不挂，免得空气泡上飘个数字 -->
                       <span v-if="msg.usage && (msg.content || msg.result)" class="msg-tokens">
-                        · {{ msgTokens(msg.usage).toLocaleString() }} tokens
+                        · {{ fmtTokens(msgTokens(msg.usage)) }} tokens
                       </span>
                     </div>
                 </div>
