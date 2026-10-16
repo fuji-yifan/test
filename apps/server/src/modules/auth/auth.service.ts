@@ -88,7 +88,7 @@ export class AuthService {
   /** 取用户最早的工作空间 id（用于审计绑定）；无则 undefined */
   private async resolveWorkspaceId(userId: string): Promise<string | undefined> {
     const member = await this.prisma.workspaceMember.findFirst({
-      where: { userId },
+      where: { userId, workspace: { deletedAt: null } },
       orderBy: { createdAt: 'asc' },
       select: { workspaceId: true },
     })
@@ -112,10 +112,12 @@ export class AuthService {
     )
   }
 
-  /** 确保用户至少有一个工作空间，没有则自动创建；返回工作空间 id */
+  /** 确保用户至少有一个**可用**工作空间，没有则自动创建；返回工作空间 id */
   private async ensureWorkspace(userId: string, nickname: string): Promise<string> {
+    // deletedAt: null —— 只认存活的空间。否则用户唯一的空间被删后，这里会把墓碑 id
+    // 当成「他的工作空间」返回，既写坏审计，又让下面的 generateToken 无路可走。
     const existing = await this.prisma.workspaceMember.findFirst({
-      where: { userId },
+      where: { userId, workspace: { deletedAt: null } },
       orderBy: { createdAt: 'asc' },
       select: { workspaceId: true },
     })
@@ -188,19 +190,43 @@ export class AuthService {
     await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } })
   }
 
-  private async generateToken(userId: string, email: string) {
+  /**
+   * 换发 access token，把工作空间身份切到 `workspaceId`。
+   *
+   * 登录时签进 JWT 的是「最早的工作空间」，之后在 UI 里切空间只改了路由 —— token 里的
+   * 声明纹丝不动。而 agent 端取 id 的写法是 `user.workspaceId || context.workspaceId`，
+   * JWT 优先，于是切空间对 agent 完全无效：它照旧往旧空间里写（数据写进去用户却看不到）。
+   * 调用方需先确认「空间存在、未删除、且用户是成员」（见 WorkspaceGuard）。
+   */
+  async issueTokenFor(userId: string, workspaceId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    })
+    if (!user) throw new UnauthorizedException('用户不存在')
+    return this.generateToken(userId, user.email, workspaceId)
+  }
+
+  private async generateToken(userId: string, email: string, workspaceId?: string) {
     // 身份贯通（阶段 6 / S1.1）：把 workspaceId 签进 JWT，作为**可信**的工作空间身份来源。
     // 此前 JWT 只有 sub/email，工作空间只能靠前端 context/query 补 —— 那是可伪造的。
-    // 取用户最早的成员关系作为「当前工作空间」；多空间切换属后续（前端可显式传且服务端校验成员）。
-    const member = await this.prisma.workspaceMember.findFirst({
-      where: { userId },
-      orderBy: { createdAt: 'asc' },
-      select: { workspaceId: true },
-    })
+    //
+    // 默认取用户最早的**存活**成员关系作为「当前工作空间」：墓碑空间（已软删）绝不能
+    // 被签进来，否则 agent 每轮都往一个用户永远看不见的空间里写。显式传 workspaceId 时
+    // 以此为准（换发路径，已由调用方校验成员关系）。
+    const target =
+      workspaceId ??
+      (
+        await this.prisma.workspaceMember.findFirst({
+          where: { userId, workspace: { deletedAt: null } },
+          orderBy: { createdAt: 'asc' },
+          select: { workspaceId: true },
+        })
+      )?.workspaceId
     const payload = {
       sub: userId,
       email,
-      ...(member?.workspaceId ? { workspaceId: member.workspaceId } : {}),
+      ...(target ? { workspaceId: target } : {}),
     }
     return {
       accessToken: this.jwtService.sign(payload),

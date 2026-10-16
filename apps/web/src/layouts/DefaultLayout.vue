@@ -175,12 +175,19 @@
 
         <div class="topbar-right">
           <NotificationBell />
-          <el-button
+          <!-- 平时只留 agent 图标（与悬浮窗头部同一枚），悬停展开成矩形露出品牌字 -->
+          <button
+            type="button"
             class="ai-btn"
+            title="FlowX 智能助手"
+            aria-label="打开 FlowX 智能助手"
             @click="chatVisible = true"
           >
-            FlowX
-          </el-button>
+            <el-icon :size="18">
+              <ChromeFilled />
+            </el-icon>
+            <span class="ai-btn-text">FlowX</span>
+          </button>
           <!-- 用户 -->
           <el-dropdown trigger="click">
             <span class="user-info">
@@ -245,6 +252,7 @@ import {
   ArrowDown,
   Sunny,
   Moon,
+  ChromeFilled,
 } from '@element-plus/icons-vue'
 import NotificationBell from '@/components/global/NotificationBell.vue'
 import ChatPanel from '@/components/ChatPanel.vue'
@@ -277,6 +285,21 @@ const wsId = computed(() => {
   if (typeof fromRoute === 'string' && fromRoute) return fromRoute
   return typeof wsStore.currentId === 'string' ? wsStore.currentId : ''
 })
+
+/**
+ * 让 token 里的 workspaceId 始终跟着界面选中的空间走。
+ *
+ * 登录时后端把「最早的工作空间」签进了 JWT，之后切空间只改路由、不换 token；而 agent
+ * 端取 id 的写法是 `user.workspaceId || context.workspaceId`，JWT 优先 —— 不换发 token
+ * 的话，切了空间 agent 照样往旧空间里写（数据落库了，用户却永远看不到）。
+ * 挂在 wsId 上可覆盖全部入口：侧边栏切换、首页卡片进入、直接改地址栏。
+ */
+watch(wsId, (id) => {
+  if (!id || !auth.isAuthenticated || auth.tokenWorkspaceId === id) return
+  auth.switchWorkspace(id).catch(() => {
+    // 换发失败不阻断导航；下一轮 wsId 变化时会再试
+  })
+}, { immediate: true })
 
 /** 始终返回一个有效的 workspace ID，侧边栏所有菜单依赖此值 */
 const defaultWsId = computed(() => {
@@ -479,18 +502,50 @@ function handleLogout() {
   align-items: center;
   gap: 12px;
 }
+/*
+ * FlowX 入口：收起时是个只含 agent 图标的方形，悬停横向展开成矩形并露出品牌字。
+ *
+ * 这里不能用 el-button：它的内部结构是 <button><span>…</span></button>，宽度被内层
+ * span 撑住，`width` 过渡会被内容顶回去，展开是硬跳而非"延长"。
+ * 元素仍是原生 <button>，字体依旧走 UA 样式表的 Arial —— 与悬浮窗标题的 brand-flowx 一致。
+ */
 .ai-btn {
-  font-weight: 700;
-  font-size: 15px;
-  padding: 6px 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid #d0e3f7;
   border-radius: 8px;
   background: #e8f2fc;
-  border-color: #d0e3f7;
   color: #2c3e50;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: width 0.22s ease, background-color 0.2s ease, border-color 0.2s ease;
 }
-.ai-btn:hover {
+/* 收起态用 max-width 把品牌字压成 0 宽，展开时再把位置让出来并淡入 */
+.ai-btn-text {
+  max-width: 0;
+  margin-left: 0;
+  opacity: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: max-width 0.22s ease, margin-left 0.22s ease, opacity 0.18s ease;
+}
+.ai-btn:hover,
+.ai-btn:focus-visible {
+  width: 104px;
   background: #d4e8fa;
   border-color: #b3d8ff;
+}
+.ai-btn:hover .ai-btn-text,
+.ai-btn:focus-visible .ai-btn-text {
+  max-width: 64px;
+  margin-left: 6px;
+  opacity: 1;
 }
 .ai-btn:active {
   background: #c0dcf7;

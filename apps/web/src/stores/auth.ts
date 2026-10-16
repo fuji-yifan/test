@@ -29,6 +29,25 @@ interface AuthApiResponse {
   user: UserInfo
 }
 
+/**
+ * 读 token 载荷里的 workspaceId 声明（后端 S1.1 签入，agent 端以它为准）。
+ * 只做 base64 解码、不校验签名 —— 用途是让前端判断「选中的空间」和「token 绑定的空间」
+ * 是否已经脱节，脱节就用 /workspaces/:wsId/token 换发，不承担任何鉴权职责。
+ */
+function readClaimWorkspaceId(jwt: string | null): string | null {
+  if (!jwt) return null
+  const part = jwt.split('.')[1]
+  if (!part) return null
+  try {
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
+    const payload = JSON.parse(atob(padded))
+    return typeof payload.workspaceId === 'string' ? payload.workspaceId : null
+  } catch {
+    return null
+  }
+}
+
 export const useAuthStore = defineStore('auth', () => {
   // ---- state ----
   const user = ref<UserInfo | null>(null)
@@ -38,6 +57,8 @@ export const useAuthStore = defineStore('auth', () => {
   // ---- getters ----
   const isAuthenticated = computed(() => !!token.value)
   const currentUser = computed(() => user.value)
+  /** token 里绑定的工作空间（agent/审计都以它为准），与 UI 选中的空间必须一致 */
+  const tokenWorkspaceId = computed(() => readClaimWorkspaceId(token.value))
 
   // ---- actions ----
 
@@ -97,6 +118,20 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /**
+   * 换发 token，把工作空间身份切到 workspaceId。
+   *
+   * 服务端会校验「空间存在、未软删、且你是成员」，不通过就抛错（调用方自便）。
+   */
+  async function switchWorkspace(workspaceId: string) {
+    const res = await http.post(`/workspaces/${workspaceId}/token`)
+    const data = (res.data || res) as { accessToken?: string }
+    if (!data?.accessToken) return false
+    token.value = data.accessToken
+    localStorage.setItem('access_token', data.accessToken)
+    return true
+  }
+
   /** 登出 */
   function logout(redirect = true) {
     token.value = null
@@ -119,7 +154,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   return {
     user, token, loading,
-    isAuthenticated, currentUser,
-    login, register, fetchProfile, logout, tryAutoLogin,
+    isAuthenticated, currentUser, tokenWorkspaceId,
+    login, register, fetchProfile, switchWorkspace, logout, tryAutoLogin,
   }
 })
