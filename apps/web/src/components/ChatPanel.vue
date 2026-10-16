@@ -242,7 +242,7 @@ watch(() => isLoading.value, (l, was) => {
             <div class="header-avatar">
               <el-icon :size="20"><ChromeFilled /></el-icon>
             </div>
-            <span class="float-title">FlowX</span>
+            <span class="float-title brand-flowx">FlowX</span>
             <div class="agent-badge" :class="{ active: activeAgentLabel }">
               <template v-if="activeAgentLabel">
                 <span class="agent-badge-dot" />
@@ -293,7 +293,7 @@ watch(() => isLoading.value, (l, was) => {
             <div ref="messagesEl" class="messages-container">
               <!-- 空状态 -->
               <div v-if="messages.length === 0" class="empty-state">
-                <p class="empty-greeting">你好，我是 FlowX 智能助手</p>
+                <p class="empty-greeting">你好，我是 <span class="brand-flowx">FlowX</span> 智能助手</p>
                 <p class="empty-hint">我可以根据当前页面帮你：</p>
                 <ul v-if="scenario === 'form-builder'">
                   <li>用自然语言描述需求，自动生成表单结构</li>
@@ -613,13 +613,15 @@ watch(() => isLoading.value, (l, was) => {
 }
 .float-header-left { display: flex; align-items: center; gap: 10px; }
 /*
- * 与主页面右上角的 FlowX 入口同款文字。
+ * FlowX 品牌字：凡是出现 "FlowX" 这三个字母的地方（悬浮窗标题、空状态问候语）都挂这类，
+ * 与主页面右上角入口一致。
  *
  * font-family 必须写 Arial：入口是 <el-button>（原生 button），字体取自浏览器 UA 样式表
- * 而不是继承文档字体 —— Chromium/Edge 上实测就是 Arial，而 <span> 用的是文档默认字体
- * （Noto Sans SC / 微软雅黑），两边本来不是一个字体。这里对齐入口那个。
+ * 而不是继承文档字体 —— Chromium/Edge 上实测就是 Arial，而普通 <span> 用的是文档默认
+ * 字体（Noto Sans SC / 微软雅黑），两边本来不是一个字体。这里对齐入口那个。
  */
-.float-title { font-family: Arial; font-size: 15px; font-weight: 700; color: #2c3e50; white-space: nowrap; }
+.brand-flowx { font-family: Arial; }
+.float-title { font-size: 15px; font-weight: 700; color: #2c3e50; white-space: nowrap; }
 .agent-badge {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 3px 10px; border-radius: 12px; min-height: 22px;
