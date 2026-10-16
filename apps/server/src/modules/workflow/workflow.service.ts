@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException, Logger } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException, Logger } from '@nestjs/common'
 import { PrismaClient } from '@prisma/client'
 import {
   WorkflowEngine,
@@ -136,6 +136,10 @@ export class WorkflowService {
 
   /**
    * 发布 = 让开始节点上关联的表单成为真绑定。同一张表单同时只能被一个已发布流程绑定。
+   *
+   * 开始节点没有关联表单的流程**不允许发布**：发起入口只有「表单提交」一条（没有手动
+   * 发起界面），发出去也永远不会被触发，只会让人误以为流程在跑。挡在发布这一步，
+   * 比发完再让人困惑为什么没反应好。
    */
   async publishDefinition(id: string) {
     const def = await this.prisma.processDefinition.findUnique({
@@ -143,6 +147,10 @@ export class WorkflowService {
       select: { workspaceId: true, nodes: true },
     })
     if (!def) throw new NotFoundException('流程定义不存在')
+
+    if (!this.startFormId(def.nodes)) {
+      throw new BadRequestException('请先为该流程关联表单后再发布')
+    }
 
     await this.assertFormBindingFree(def.workspaceId, def.nodes, id)
 

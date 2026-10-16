@@ -171,6 +171,15 @@ describe('flow_publish', () => {
     expect(res.error).toBe('publish_conflict')
     expect(res.summary).toBe(msg)
   })
+
+  it('未关联表单（400）→ ok:false + no_form_bound，用 server 文案', async () => {
+    const msg = '请先为该流程关联表单后再发布'
+    const { tool } = makePublish({ throws: httpError(400, msg) })
+    const res = await tool.execute({ token: 't', flowId: 'wf1' })
+    expect(res.ok).toBe(false)
+    expect(res.error).toBe('no_form_bound')
+    expect(res.summary).toBe(msg)
+  })
 })
 
 describe('flow_save', () => {

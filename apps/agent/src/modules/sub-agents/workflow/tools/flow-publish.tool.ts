@@ -43,6 +43,11 @@ export class FlowPublishTool {
       if (e?.status === 409) {
         return { ok: false, summary: String(e.message || '发布失败：该表单已被其他流程绑定'), error: 'publish_conflict' }
       }
+      // 400：开始节点还没关联表单。这是可补救的前置条件，单独给个 error code，
+      // 便于编排层/用户看出「该先 flow_bind_form」而不是把它当成未知失败。
+      if (e?.status === 400) {
+        return { ok: false, summary: String(e.message || '请先为该流程关联表单后再发布'), error: 'no_form_bound' }
+      }
       return { ok: false, summary: `发布失败：${e?.message || '未知错误'}`, error: 'publish_failed' }
     }
 

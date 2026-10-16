@@ -2011,6 +2011,12 @@ async function saveDefinition() {
 async function publishDef() {
   const def = definition.value
   if (!def) return
+  // 没关联表单的流程发布出去也不会被触发（发起入口只有「表单提交」一条），
+  // 先在本地挡一道，省一次注定失败的往返；服务端也有同样的校验兜底。
+  if (!startNode.value?.config?.formId) {
+    ElMessage.warning('请先为该流程关联表单后再发布')
+    return
+  }
   saving.value = true
   try {
     if (dirty.value) await saveDefinition()
