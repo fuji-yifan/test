@@ -86,7 +86,14 @@ export class SessionService implements OnModuleDestroy {
 
   async addMessage(
     sessionId: string,
-    message: { role: 'user' | 'assistant' | 'tool'; content: string | null; toolCalls?: any[]; toolResults?: any[] },
+    message: {
+      role: 'user' | 'assistant' | 'tool'
+      content: string | null
+      toolCalls?: any[]
+      toolResults?: any[]
+      /** 本条回答的 token（阶段 4 补充）：仅 assistant 用，刷新/翻历史后前端据此显示 */
+      usage?: { inputTokens: number; outputTokens: number }
+    },
   ): Promise<AgentSession | null> {
     const session = await this.store.get(sessionId)
     if (!session) return null
@@ -96,6 +103,7 @@ export class SessionService implements OnModuleDestroy {
       content: message.content,
       toolCalls: message.toolCalls || [],
       toolResults: message.toolResults || [],
+      ...(message.usage ? { usage: message.usage } : {}),
       timestamp: Date.now(),
     })
 

@@ -33,7 +33,10 @@ export interface RunGraphParams {
 export interface RunGraphResult {
   interrupted?: InterruptPayload & { id?: string }
   finalContent: string
+  /** **会话累计**用量（跨轮不清零的累加器） */
   usage: { inputTokens: number; outputTokens: number }
+  /** **本轮**用量 = usage − usageAtTurnStart（单条回答的 token 数） */
+  turnUsage: { inputTokens: number; outputTokens: number }
   /** 用户主动中断（检查点上点了「中断」/ 拒绝风险确认） */
   halted: boolean
   /** 系统放弃本轮（工具反复失败超限 / 轮次用尽），与 halted 区分开以便排障 */
@@ -151,11 +154,14 @@ export class GraphRunnerService {
           // 中断时也要落一次会话状态：前端拿到 plan/产物才能渲染状态栏
           await this.persist(params.sessionId, values, true)
           const payload = itr.value as InterruptPayload
+          const usage = payload.usage ?? values.usage ?? { inputTokens: 0, outputTokens: 0 }
           return {
             interrupted: { ...payload, id: itr.id },
             finalContent: values.finalContent ?? '',
             // 挂起的子图不会把补丁冒泡到父图，所以优先用载荷里带出来的用量
-            usage: payload.usage ?? values.usage ?? { inputTokens: 0, outputTokens: 0 },
+            usage,
+            // 两者都出自载荷（同源），相减即本轮已花费（未续跑前只是「已跑部分」）
+            turnUsage: subUsage(usage, payload.usageAtTurnStart),
             halted: !!values.halted,
             gaveUp: !!values.gaveUp,
           }
@@ -163,9 +169,11 @@ export class GraphRunnerService {
       }
     }
 
+    const usage = values.usage ?? { inputTokens: 0, outputTokens: 0 }
     const result: RunGraphResult = {
       finalContent: values.finalContent ?? '',
-      usage: values.usage ?? { inputTokens: 0, outputTokens: 0 },
+      usage,
+      turnUsage: subUsage(usage, values.usageAtTurnStart),
       halted: !!values.halted,
       gaveUp: !!values.gaveUp,
     }
@@ -232,8 +240,24 @@ export class GraphRunnerService {
     // 中断时不要把中间话术当成最终回复写进历史
     if (!waiting && values?.finalContent) {
       await this.sessions
-        .addMessage(sessionId, { role: 'assistant', content: values.finalContent })
+        .addMessage(sessionId, {
+          role: 'assistant',
+          content: values.finalContent,
+          // 单条回答的用量随消息落库，刷新/翻历史后前端仍能显示
+          usage: subUsage(usage, values?.usageAtTurnStart),
+        })
         .catch(() => {})
     }
+  }
+}
+
+/** 两个用量相减（缺基线当 0）—— 得出「本轮 / 本条回答」的 token 数。 */
+function subUsage(
+  total?: { inputTokens: number; outputTokens: number },
+  base?: { inputTokens: number; outputTokens: number },
+): { inputTokens: number; outputTokens: number } {
+  return {
+    inputTokens: Math.max(0, (total?.inputTokens ?? 0) - (base?.inputTokens ?? 0)),
+    outputTokens: Math.max(0, (total?.outputTokens ?? 0) - (base?.outputTokens ?? 0)),
   }
 }

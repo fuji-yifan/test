@@ -124,6 +124,7 @@ function lastOf(events: Recorded[], type: string): Recorded | undefined {
 const OK_RESULT: RunGraphResult = {
   finalContent: '表单已经建好了',
   usage: { inputTokens: 12, outputTokens: 34 },
+  turnUsage: { inputTokens: 2, outputTokens: 10 },
   halted: false,
   gaveUp: false,
 }
@@ -211,6 +212,8 @@ describe('LangGraphTurnService — 事件映射', () => {
       sessionId: 'sess_test01',
       stopReason: 'completed',
       usage: { inputTokens: 12, outputTokens: 34 },
+      // 本条回答的用量（前端拿它挂小字）
+      turnUsage: { inputTokens: 2, outputTokens: 10 },
     })
   })
 
@@ -249,6 +252,7 @@ describe('LangGraphTurnService — interrupt 与回执', () => {
     interrupted: { ...INTERRUPT_PAYLOAD, id: 'itr_1' },
     finalContent: '',
     usage: { inputTokens: 5, outputTokens: 6 },
+    turnUsage: { inputTokens: 3, outputTokens: 4 },
     halted: false,
     gaveUp: false,
   }
@@ -285,7 +289,11 @@ describe('LangGraphTurnService — interrupt 与回执', () => {
 
     // 中断不算最终回答，不发补发的 message；done 要标明中断
     expect(typesOf(events)).not.toContain('message')
-    expect(lastOf(events, 'done')?.payload).toMatchObject({ stopReason: 'interrupted' })
+    expect(lastOf(events, 'done')?.payload).toMatchObject({
+      stopReason: 'interrupted',
+      // 中断轮也把「已跑部分」的用量透出去：续跑完成后会被整轮值覆盖
+      turnUsage: { inputTokens: 3, outputTokens: 4 },
+    })
   })
 
   it('检查点带上待审产物作为披露依据（原样透传中断载荷里的 artifact）', async () => {
@@ -523,7 +531,9 @@ describe('LangGraphTurnService — 轮末长期记忆提取（阶段 8 / 8.2）'
 
 describe('LangGraphTurnService — 用量软上限告警（阶段 4 / 4.4）', () => {
   function makeWithLimit(limit: number, usage: { inputTokens: number; outputTokens: number }) {
-    const { runner } = makeRunner({ result: { finalContent: '', usage, halted: false, gaveUp: false } })
+    const { runner } = makeRunner({
+      result: { finalContent: '', usage, turnUsage: usage, halted: false, gaveUp: false },
+    })
     const session = newSession()
     const { sessions } = makeSessions(session)
     const { sse, events } = makeSse()

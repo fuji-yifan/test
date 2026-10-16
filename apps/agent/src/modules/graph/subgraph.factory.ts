@@ -80,6 +80,13 @@ export interface InterruptPayload {
    * 所以中断轮必须靠载荷把用量带出去，否则 `done.usage` 恒为 0/0。
    */
   usage?: { inputTokens: number; outputTokens: number }
+  /**
+   * 本轮开始前的累计用量（基线的基线，见 agent-state 的 `usageAtTurnStart`）。
+   *
+   * 与 usage 一起带出去，上层才能算出「这条回答」的用量 = `usage − usageAtTurnStart`，
+   * 且父子两个值同源，不依赖子图补丁是否冒泡。
+   */
+  usageAtTurnStart?: { inputTokens: number; outputTokens: number }
 }
 
 /** gate 算出的"要不要问、问什么" */
@@ -410,7 +417,11 @@ export class AgentSubgraphFactory {
       return { gateOutcome: outcome }
     }
 
-    const answer = interrupt({ ...ask.payload, usage: state.usage }) as any
+    const answer = interrupt({
+      ...ask.payload,
+      usage: state.usage,
+      usageAtTurnStart: state.usageAtTurnStart,
+    }) as any
     const action = answer?.action
     // 续跑时以本次请求的身份为准（见 identityPatch 的说明）
     const identity = identityPatch(answer?.identity)

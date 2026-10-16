@@ -41,6 +41,8 @@ interface AgentMessage {
   content: string
   result?: unknown
   toolCalls?: AgentToolCall[]
+  /** 本条回答消耗的 token（阶段 4 补充）：来自 done.turnUsage，或 loadSession 映射的服务端落库值 */
+  usage?: { inputTokens: number; outputTokens: number }
   timestamp: number
 }
 
@@ -342,6 +344,12 @@ export function useAgentChat(options: UseAgentChatOptions) {
             alert: !!data.usageAlert,
           }
         }
+        // 本条回答的 token（阶段 4）：中断轮先给「已跑部分」，续跑轮再覆盖成整轮值。
+        // 错误分支没有 turnUsage → 保持 undefined，前端不显示。
+        if (data.turnUsage) {
+          const msg = target()
+          if (msg) msg.usage = { ...data.turnUsage }
+        }
         status.value = null
         persistToLocal()
         break
@@ -473,6 +481,8 @@ export function useAgentChat(options: UseAgentChatOptions) {
         summary: '',
       })),
       result: m.content?.includes('"schema"') ? tryParseResult(m.content) : undefined,
+      // 单条回答的 token 由后端随消息落库；刷新/翻历史后小字仍能显示
+      usage: m.usage || undefined,
       timestamp: m.timestamp || Date.now(),
     }))
   }

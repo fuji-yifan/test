@@ -317,6 +317,17 @@ export const AgentState = Annotation.Root({
     }),
     default: () => ({ inputTokens: 0, outputTokens: 0 }),
   }),
+  /**
+   * 本轮开始前的 `usage` 快照（**覆盖**语义，不是累加器）—— 单条回答的用量靠它相减得出：
+   * `turnUsage = usage − usageAtTurnStart`。
+   *
+   * 由 routerNode 在每轮开头写入；resume 走 Command 不过 routerNode，所以同一轮内的
+   * 续跑仍以整轮起点为准（算出来的是一条回答的整轮用量）。
+   */
+  usageAtTurnStart: Annotation<{ inputTokens: number; outputTokens: number }>({
+    reducer: (_p, n) => n,
+    default: () => ({ inputTokens: 0, outputTokens: 0 }),
+  }),
 })
 
 export type AgentStateType = typeof AgentState.State

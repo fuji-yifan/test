@@ -90,7 +90,10 @@ export interface ErrorPayload {
 export interface DonePayload {
   sessionId: string
   stopReason: string
+  /** **会话累计**用量（跨轮累加，与 session metadata 的 usageTotals 同口径） */
   usage: { inputTokens: number; outputTokens: number }
+  /** **本轮/本条回答**用量（= usage − 本轮起点）；错误分支不提供，前端据此不显示 */
+  turnUsage?: { inputTokens: number; outputTokens: number }
   /** 会话累计用量超过软上限（阶段 4）：前端据此把用量徽标置为告警样式 */
   usageAlert?: boolean
 }

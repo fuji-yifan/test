@@ -270,6 +270,8 @@ export class LangGraphTurnService {
             ? 'giveup'
             : 'completed',
       usage: result.usage,
+      // 本轮用量（= usage − 本轮起点）：前端挂在「这一条回答」上显示
+      turnUsage: result.turnUsage,
       // 会话累计用量超软上限（阶段 4 / 4.4）：前端据此把用量徽标置为告警样式
       ...(this.usageAlert(result.usage) ? { usageAlert: true } : {}),
     })

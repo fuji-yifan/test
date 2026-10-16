@@ -19,6 +19,8 @@ export interface ChatMessage {
   content: string | null
   toolCalls?: ToolCallRecord[]
   toolResults?: ToolResultRecord[]
+  /** 本条回答消耗的 token（仅 assistant 消息；老数据无此字段 = 前端不显示） */
+  usage?: { inputTokens: number; outputTokens: number }
   timestamp: number
 }
 

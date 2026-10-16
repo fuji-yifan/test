@@ -5,7 +5,7 @@ import { marked } from 'marked'
 import PreviewPanel from '@/components/PreviewPanel.vue'
 import FlowPreviewGraph from '@/components/flow/FlowPreviewGraph.vue'
 import {
-  DocumentCopy, ScaleToOriginal, Files, PieChart, Close,
+  DocumentCopy, ScaleToOriginal, Files, PieChart, Close, Coin,
   ArrowDown, ArrowUp, ArrowLeft, Link, ChatSquare, ChatLineSquare, Postcard, ChromeFilled, Top,
 } from '@element-plus/icons-vue'
 
@@ -41,8 +41,12 @@ const usageTotal = computed(() => (usage.value?.inputTokens || 0) + (usage.value
 const usageLabel = computed(() => {
   const u = usage.value
   if (!u || (!u.inputTokens && !u.outputTokens)) return null
-  return `会话用量 ≈ ${usageTotal.value.toLocaleString()} tokens（输入 ${u.inputTokens.toLocaleString()} / 输出 ${u.outputTokens.toLocaleString()}）`
+  return `会话累计 ≈ ${usageTotal.value.toLocaleString()} tokens（输入 ${u.inputTokens.toLocaleString()} / 输出 ${u.outputTokens.toLocaleString()}）`
 })
+/** 单条回答的 token 数（消息行小字用） */
+function msgTokens(u?: { inputTokens: number; outputTokens: number }): number {
+  return (u?.inputTokens || 0) + (u?.outputTokens || 0)
+}
 
 const inputText = ref('')
 const messagesEl = ref<HTMLDivElement>()
@@ -232,9 +236,10 @@ watch(() => isLoading.value, (l, was) => {
                 <span class="agent-badge-idle">空闲中</span>
               </template>
             </div>
-            <el-tooltip v-if="usageLabel" :content="usageLabel" placement="bottom">
+            <!-- z-index 必须高于 .float-window(3000)：tooltip teleport 到 body 后默认 2000，会被浮窗整个盖住 -->
+            <el-tooltip v-if="usageLabel" :content="usageLabel" placement="bottom" :z-index="3100">
               <div class="usage-badge" :class="{ 'usage-badge--alert': usage?.alert }">
-                <span class="usage-badge-dot" />
+                <el-icon class="usage-badge-icon" :size="11"><Coin /></el-icon>
                 <span>{{ usageTotal.toLocaleString() }}</span>
               </div>
             </el-tooltip>
@@ -487,7 +492,13 @@ watch(() => isLoading.value, (l, was) => {
                       </div>
                     </div>
 
-                    <div class="msg-time">{{ fmtTime(msg.timestamp) }}</div>
+                    <div class="msg-time">
+                      {{ fmtTime(msg.timestamp) }}
+                      <!-- 本条回答的 token（阶段 4）：内容为空又没产物的轮次不挂，免得空气泡上飘个数字 -->
+                      <span v-if="msg.usage && (msg.content || msg.result)" class="msg-tokens">
+                        · {{ msgTokens(msg.usage).toLocaleString() }} tokens
+                      </span>
+                    </div>
                 </div>
               </div>
 
@@ -613,9 +624,9 @@ watch(() => isLoading.value, (l, was) => {
   background: #f5f7fa; font-size: 11px; color: #909399; font-weight: 500;
   cursor: default;
 }
-.usage-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: #c0c4cc; flex-shrink: 0; }
+.usage-badge-icon { color: #b1b3b8; flex-shrink: 0; }
 .usage-badge--alert { background: #fdf6ec; color: #e6a23c; }
-.usage-badge--alert .usage-badge-dot { background: #e6a23c; }
+.usage-badge--alert .usage-badge-icon { color: #e6a23c; }
 .float-header-right { display: flex; align-items: center; gap: 2px; }
 .float-header-right .el-button { color: #6b8299; }
 
@@ -675,9 +686,10 @@ watch(() => isLoading.value, (l, was) => {
   border: 1px solid #eaecf0; margin-bottom: 16px;
 }
 
-/* 时间戳 */
+/* 时间戳 + 本条回答用量小字（同一行） */
 .msg-time { font-size: 10px; color: #c0c4cc; margin-top: 6px; }
 .user-msg .msg-time { color: rgba(255,255,255,0.6); text-align: right; }
+.msg-tokens { margin-left: 2px; }
 
 /* ===== 打字动画 ===== */
 .typing-row {

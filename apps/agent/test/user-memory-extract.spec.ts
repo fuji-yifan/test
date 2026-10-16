@@ -27,6 +27,7 @@ function makeSession(over: Partial<AgentSession> = {}): AgentSession {
 const OK: RunGraphResult = {
   finalContent: '好的，以后都用中文。',
   usage: { inputTokens: 1, outputTokens: 1 },
+  turnUsage: { inputTokens: 1, outputTokens: 1 },
   halted: false,
   gaveUp: false,
 }

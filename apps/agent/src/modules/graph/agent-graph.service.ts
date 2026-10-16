@@ -224,6 +224,9 @@ export class AgentGraphService {
       toolErrors: {},
       degradeCount: 0,
       finalContent: '',
+      // 单条回答的用量基线（本轮开始前的累计值）：轮末相减得本轮用量。
+      // 与 toolErrors 同理只能放这里 —— 放子图 prepare 会被多步计划的每一步覆盖掉。
+      usageAtTurnStart: { ...state.usage },
       pendingCalls: [],
       lastTool: null,
       needThink: false,
