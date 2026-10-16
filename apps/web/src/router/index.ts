@@ -270,9 +270,9 @@ router.beforeEach(async (to, _from, next) => {
       // 数据写进去用户却永远看不到。换到第一个可用空间，子路由原样保留。
       const wsId = to.params.wsId as string | undefined
       if (wsId && !wsStore.list.some((w) => w.id === wsId)) {
+        // 换掉 path 里的 wsId 段，子路由原样保留（不依赖子路由有 name）
         return next({
-          name: to.name as string,
-          params: { ...to.params, wsId: wsStore.list[0].id },
+          path: to.path.replace(`/workspace/${wsId}`, `/workspace/${wsStore.list[0].id}`),
           query: to.query,
           hash: to.hash,
           replace: true,

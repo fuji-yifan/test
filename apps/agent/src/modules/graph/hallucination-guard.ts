@@ -36,6 +36,27 @@ const CLAIM_PATTERNS: { tool: string; re: RegExp; note: string }[] = [
   },
 ]
 
+/**
+ * 失败叙述的标记词：同一句里出现这些词，说明模型在**转述失败**而非声称完成。
+ *
+ * 背景（2026-10-16 实测）：form_save 因工作空间被删而 404 后，模型把 server 的文案
+ * 「工作空间不存在或已删除（404）」原样回给用户 —— 其中的「已删除」被 form_delete 的
+ * 完成态正则命中，于是守卫误报「未经工具确认的完成声明（已删除）」并追加一通驴唇
+ * 不对马嘴的「尚未实际表单删除并落库」。转述错误 ≠ 幻觉，必须排除。
+ *
+ * 用「失败/无法/不存在/返回错误」等**实指失败**的词，而不是泛化的「错误」，否则
+ * 「已保存成功，没有任何错误」这类正常收尾会被误排除（漏报）。
+ */
+const FAILURE_MARKERS = /失败|无法|不能|不存在|超时|拒绝|异常|报错|出错|错误[:：]|返回错误|未成功/
+
+/** 只扫描「非失败叙述」的句子（按句切开，丢掉带失败标记的整句） */
+function scannable(content: string): string {
+  return content
+    .split(/[。！？!?\n]/)
+    .filter((s) => !FAILURE_MARKERS.test(s))
+    .join('。')
+}
+
 export interface HallucinationCheck {
   suspicious: boolean
   /** 命中的完成态声明原文（便于日志/展示） */
@@ -59,10 +80,12 @@ export function guardHallucination(
   // 该 Agent 无写能力：不判（如 submission 只读）
   if (produceTools.length === 0) return { suspicious: false }
   const ok = new Set(turnToolOk)
+  // 先剔除「失败叙述」的句子，避免把转述的错误文案当成完成态声明
+  const text = scannable(content)
 
   for (const { tool, re, note } of CLAIM_PATTERNS) {
     if (!produceTools.includes(tool)) continue
-    const m = content.match(re)
+    const m = text.match(re)
     if (!m) continue
     if (ok.has(tool)) continue // 有对应工具结果 → 不是幻觉
     return { suspicious: true, claim: m[0], expectedTool: tool, note }

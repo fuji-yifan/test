@@ -70,4 +70,28 @@ describe('guardHallucination', () => {
       false,
     )
   })
+
+  // 2026-10-16：form_save 因工作空间已删而 404，模型原样转述 server 文案
+  // 「工作空间不存在或已删除（404）」→「已删除」曾误命中 form_delete 完成态。
+  it('转述失败文案（含「已删除」）→ 不判幻觉', () => {
+    const tools = ['form_save', 'form_delete']
+    const reply =
+      '表单结构已生成并通过校验，但保存时平台返回错误：工作空间不存在或已删除（404），所以暂时无法写入数据库。'
+    const r = guardHallucination(reply, tools, [])
+    expect(r.suspicious).toBe(false)
+  })
+
+  it('同一句里的「不存在」不影响另一句的真实完成声明', () => {
+    const tools = ['form_delete']
+    // 第二句是干净的完成态声明，且本轮无 form_delete 结果 → 仍判
+    const r = guardHallucination('刚才那次失败了。已经帮你删除这张表单了。', tools, [])
+    expect(r.suspicious).toBe(true)
+    expect(r.expectedTool).toBe('form_delete')
+  })
+
+  it('「没有任何错误」的收尾不被当作失败叙述（不漏报）', () => {
+    const tools = ['form_save']
+    const r = guardHallucination('表单已保存成功，没有任何错误。', tools, [])
+    expect(r.suspicious).toBe(true)
+  })
 })
