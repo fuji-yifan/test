@@ -30,6 +30,7 @@ import { CheckpointModule } from './modules/graph/checkpoint.module'
 import { AgentGraphModule } from './modules/graph/graph.module'
 import { AgentCacheModule } from './modules/cache/cache.module'
 import { InfraModule } from './modules/infra/infra.module'
+import { MemoryModule } from './modules/memory/memory.module'
 
 import { HubController } from './modules/hub/hub.controller'
 import { HealthController } from './modules/health/health.controller'
@@ -74,6 +75,9 @@ import { HealthController } from './modules/health/health.controller'
     AgentGraphModule,
     AgentCacheModule,
     InfraModule,
+    // HubController 注册在本模块却直接注入 UserMemoryService（index 4）→ 必须由 AppModule 直接导入，
+    // 少了它启动即 「Nest can't resolve dependencies of the HubController」（graph/hub 各自的 import 只覆盖它们自己）
+    MemoryModule,
   ],
   controllers: [HubController, HealthController],
   providers: [
