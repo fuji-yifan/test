@@ -18,7 +18,7 @@
 | F4 | 表单-tip-text | 创建表单包含提示文字"请如实填写" | form-builder | form-designer | props.text 不为空 | ✅ | `form_assemble_schema` 入参 text="请如实填写" |
 | T1 | 模板-有结果 | 搜索请假模板 | template-creator | template→form-designer | template_search 返回结果，并接着由表单设计助手落库 | ✅ | 搜索段返回 `请假申请单`（人事类）。**09-29 起不再停在模板侧**：模板 Agent 没有 form_save，路由把请求扩成两步（见 3.14）—— 09-29 真机复测 ✅：一路点确认后表单真的出现在「表单管理」 |
 | T2 | 模板-无结果 | 搜索 xyzabc123 模板 | template-creator | template | 回复"暂无"且不调 form 工具 | ✅ | 只调 template_search，回复"模板市场暂无相关模板"。**09-29 真机首测 ❌ → 当天修完复测 ✅**：首测时同一会话先聊过模板，再问搜不到的关键词，第二步照样跑 `form_assemble_schema`、照着**上一轮的模板**建了张「客户信息登记表」（见 3.15）；修复后复测只调一次 `template_search`，无检查点、无表单卡片 |
-| T4 | **模板-独立落库**（新增） | 寻找客户相关表单 | template-creator | template→form-designer | 两步计划，`form_save` 真的把表写进当前空间 | ✅ | 09-29 修 3.14 前：模板助手回「已为你找到并创建好表单 ✅」但表单管理里什么都没有。修后共 **3 个检查点**（instantiate-approval → schema-review → space-approval）；**09-29 真机复测 ✅**：最后一步选「保存到当前空间」后表单管理里真的多了这张表 |
+| T4 | **模板-独立落库**（新增） | 寻找客户相关表单 | template-creator | template→form-designer | 两步计划，`form_save` 真的把表写进当前空间 | ✅ | 09-29 修 3.14 前：模板助手回「已为你找到并创建好表单 ✅」但表单管理里什么都没有。修后共 **3 个检查点**（instantiate-approval → schema-review → space-approval）；**09-29 真机复测 ✅**：最后一步选「保存」后表单管理里真的多了这张表 |
 | T3 | 模板-强信号让位 | 在模板页说"帮我设计一个表单" | template-creator | form-designer | 切到 form-designer，且不擅自调 form_assemble_schema | ✅ | 09-20：**切到了 form-designer**（未调工具，只反问），与当时期望冲突（见 3.4）。**09-21 拍板改用例期望**：承认「设计…表单」是强信号，切走是对的；复测 `agent=form-designer`、工具=[]（只反问，未擅自建表） |
 | W1 | 流程-创建 | 创建三级审批流(组长→经理→总监) | workflow-node | workflow | flow_create + flow_validate 被调用 | ✅ | `['flow_create','flow_validate']` |
 | W2 | 流程-DAG校验 | 创建有环的流程 | workflow-node | workflow | flow_validate 返回 hasCycle | ✅ | **用例改法**：模型会直接凭描述拒绝建环流程、根本不调工具；改为把有环定义显式给它校验 → `Flow validation FAILED: 1 errors` |
@@ -33,12 +33,12 @@
 | D1 | SSE-流式 | 会产出文字的提示词（如"你能做什么？"） | form-builder | form-designer | delta 事件逐 token 到达，且只包含模型输出 | ✅ | 09-20：**langgraph 下 0 条 delta**（纯文字回复也一样；legacy 同场景 72 条）（见 3.2）。**09-21 复测通过**：168 条 delta / 290 字符，无提示词泄漏。原输入的"创建留言表"模型直接调工具、没有文字可流，已换成纯文字提示词（见 3.2） |
 | D2 | SSE-打字动画 | 创建表单 | form-builder | form-designer | 加载中显示圆点，回答完毕消失 | ✅ | 依赖 D1（D1 已通）；09-24 浏览器确认通过（见第四节） |
 | D3 | SSE-工具调用 | 创建表单 | form-builder | form-designer | tool_start/tool_result 事件正确显示 | ✅ | `form_assemble_schema` 1 组 start/result；C1 场景下 3 组 |
-| H1 | **HITL 检查点链路**（原表缺失） | 创建表单 → 确认结构 → 确认保存 | form-builder | form-designer | 生成结构→过目预览→确认保存 | ✅ | 链路成立：`assemble →检查点1(带产物)→ 确认结构 → validate →检查点2"表单已就绪，保存到当前空间？" → 确认保存 → form_save`。**偏离**：第二段实际是 validate 不是预览（见 3.3） |
+| H1 | **HITL 检查点链路**（原表缺失） | 创建表单 → 确认结构 → 确认保存 | form-builder | form-designer | 生成结构→过目预览→确认保存 | ✅ | 链路成立：`assemble →检查点1(带产物)→ 确认结构 → validate →检查点2"表单已就绪，是否保存到当前空间？" → 确认保存 → form_save`。**偏离**：第二段实际是 validate 不是预览（见 3.3） |
 | S1 | **只读数据分析**（新增） | 数据分析页说"把那条客户反馈记录删掉" | data-analysis | submission | 拒绝写操作、不调任何工具 | ✅ | 0 次工具调用，回复"我是只读的分析 Agent…请到对应的表单页面手动操作" |
 | S2 | **任务页默认身份**（新增） | chat/sync 传 scenario=workflow-node | /tasks | workflow | 任务页默认给流程助手 | ✅ | targetAgent=workflow |
 | S3 | **未知场景回落**（新增） | chat/sync 传 scenario=brand-new-page | - | form-designer | 回落 form-designer 并告警 | ✅ | targetAgent=form-designer（告警只在服务端日志，外部不可见） |
 | F5 | **同会话第二张新表**（新增） | 建客户登记表 → "再帮我做一个员工登记表" | form-builder | form-designer | 工作台两条 entry，第一张不被合并 | ✅ | 09-22：`f1 客户登记表(3) + f2 员工登记表(3)`；第二次 tool_result 是"已生成…包含 3 个字段"（新建分支，没吃旧表字段）。旧版这里是 9→19 混表 |
-| F6 | **一轮内建两张表**（新增） | "同时创建客户登记表和员工登记表：客户表含客户名称、联系人；员工表含姓名、工号" | form-builder | form-designer | 一轮内两次 assemble、两条 entry | ✅ | 09-22：2 次 assemble（target=`客户登记表`/`员工登记表`），两次 summary 都是"已生成…"，最终 `f1(2)+f2(2)` 字段各自成套。**共 3 个检查点**：两张表的 schema-review 各点一次"结构没问题"，之后还会撞上"表单已就绪，保存到当前空间？" |
+| F6 | **一轮内建两张表**（新增） | "同时创建客户登记表和员工登记表：客户表含客户名称、联系人；员工表含姓名、工号" | form-builder | form-designer | 一轮内两次 assemble、两条 entry | ✅ | 09-22：2 次 assemble（target=`客户登记表`/`员工登记表`），两次 summary 都是"已生成…"，最终 `f1(2)+f2(2)` 字段各自成套。**共 3 个检查点**：两张表的 schema-review 各点一次"没问题"，之后还会撞上"表单已就绪，是否保存到当前空间？" |
 | F7 | **保存 A 后再保存 B 不覆盖**（新增） | 建客户登记表并保存 → 建员工登记表并保存 | form-builder | form-designer | 库中新增 2 行，A 内容不被 B 覆盖 | ✅ | 09-22 查库：2 行、字段各自完整（客户 6 / 员工 8），两次 summary 都是 `saved`（B 没拿到 A 的 formId）。旧版这里 B 会静默覆盖 A |
 | F8 | **改字段后再保存 = 更新同一行**（新增） | 建报名统计表并保存 → "再加入一个家庭住址字段"并保存 | form-builder | form-designer | 第二次 `form_save` 带 formId，更新同一行 | ✅ | 09-22：第一次 summary `saved`；第二次 `updated` 且产物 formId 不变；查库该行 `versions=2`、`fields=3`，**没有新增行** |
 | F9 | **会话-新消息抢占**（新增） | 上一条没答检查点就直接发下一条（连发三条） | form-builder | form-designer | 不再回 SESSION_BUSY，执行权自动交给新消息 | ✅ | 09-22：旧版第三条必回 `SESSION_BUSY` + `stopReason:'locked'`（前端「会话正在执行中，请等待完成」，见 3.7）。改抢占后由 `probe_preempt.py`（并发两条）+ `probe_takeover.py`（第 3 条卡住时发第 4 条）验证：不再出现 error 事件，新消息照常跑到检查点。09-22 复测：3.8 修掉后「上一轮卡住」已不复现，抢占后同一会话的第三条消息也正常（不再留下卡死的会话） |
@@ -142,7 +142,7 @@ CI（阶段 2 起）：`.github/workflows/agent.yml` 起 MySQL service 后 `pnpm
 
 **第一次修（09-21）**：只删括号里那句，改成"表单结构已生成，这个结构是否可行？"（`agent-catalog.ts` 的 `schema-review.prompt`）。当时没去接 `form_preview` —— 拍板的是「不要承诺预览」，不是「真的加预览」。
 
-**第二次改（10-16，用户重新拍板「10 处全改陈述式 + 顺手改清楚按钮」）**：所有业务检查点文案统一成**陈述式**——先说"现在是什么状态"，再说"下方有什么可用"，不再用「是否…？」反问句；按钮也从「继续/中断」这种机器词换成能读懂动作的人话。`schema-review` 定为"**表单结构已生成，下方可点击预览**"。这里的"下方可点击预览"是真的：中断载荷带 `artifact`，前端在检查点待答复（`confirming`）期间已把产物卡片默认展开（写「可点击」是给收起后的操作留话术）。改写明细见 `agent-catalog.ts` 各 `CheckpointDef.prompt/options`。
+**第二次改（10-16，用户重新拍板）**：文案统一成**「先说状态、再问一句」的两行式**，按钮换成能读懂动作的词；同时**检查点卡片不再点即将执行的工具名** —— 工具身份改由「检查点出现时默认展开工具调用列表」披露（工具名 + 风险等级落在那颗 chip 上，卡片只讲状态与问句）。`schema-review` 定为"**表单结构已生成，下方可查看预览 / 这个结构是否可行？**"（第二行用 `\n` 断行，前端 `.confirm-prompt` 是 `white-space: pre-line`）。"下方可查看预览"是真的：中断载荷带 `artifact`，前端在检查点待答复（`confirming`）期间已把产物卡片默认展开。改写明细见 `agent-catalog.ts` 各 `CheckpointDef.prompt/options` 与 `subgraph.factory.ts` 的 `tool_confirm`。
 
 ### 3.4 T3：模板页的"设计一个表单"会切身份 —— 2026-09-21 拍板：改期望，不改路由
 路由设计是"提示词强信号覆盖页面身份"，而「设计…表单」正是 form-designer 的强信号（`router.service.ts:23`），所以模板页说这句话会切到 form-designer。行为与设计自洽，与当时的用例期望冲突。
@@ -305,14 +305,14 @@ flow_create           {"nodes": "oops"}    → 参数错误：name: Required; no
 
 **改法（两条）**：
 
-1. **模板请求一律补一步表单设计助手**。`router.service.ts` 新增 `withFormHandoff`：确定性路由里凡是落到 `template` 且还没有计划的结论（强信号覆盖、页面身份兜底），以及 `decide()` 里 LLM 兜底给出的单步 `template`，都补上 `templateFormPlan` → `[template, form-designer]`，落库交给拥有 `form_save` 的设计助手（它自带「表单已就绪，保存到当前空间？」检查点）。已有计划（跨领域模板/流程）不重复编排。
+1. **模板请求一律补一步表单设计助手**。`router.service.ts` 新增 `withFormHandoff`：确定性路由里凡是落到 `template` 且还没有计划的结论（强信号覆盖、页面身份兜底），以及 `decide()` 里 LLM 兜底给出的单步 `template`，都补上 `templateFormPlan` → `[template, form-designer]`，落库交给拥有 `form_save` 的设计助手（它自带「表单已就绪，是否保存到当前空间？」检查点）。已有计划（跨领域模板/流程）不重复编排。
 2. **上游产物缺失就跳过整步**。`PlanService.hasUnresolvedRefs(step, artifacts)`：这一步的 input 里有 `$N...` 引用、且**全部**解析为空，说明产物链断了；`planDriver` 用 while 循环推进 `stepIndex` 跳过这类步骤（写 warn 日志，并把跳过的 id 记进 `completedSteps`，免得收敛报告显示成「漏做了一步」）。没有这条的话，模板没搜到结果时第二步的 `$1.schema` 是 null，设计助手会拿着空引用照常执行，**凭空造一张跟请求无关的表**。
    - 判「全部为空」而不是「有一个为空」：input 里常混着 `description` 这种常量，只有引用整体落空才说明断链。
    - 这条只对「全空」生效，所以 T2（无结果）、R1（模板页说"你好"）都自然退化成原来的单步行为。
 
 **话术同步**（`template.prompt.ts`）：加了「边界（重要）」段 —— 明说 `template_instantiate` 不写进表单管理、落库由后续设计助手完成，且**不许说「已创建好表单」**，只能说「已按模板准备好表单结构」。光改路由不改这句话，用户在落库完成前仍会读到「已创建」。
 
-**UX 代价**：一次模板建表要走 **3 个检查点** —— `instantiate-approval`（用这个模板）→ `schema-review`（表单结构已生成）→ `space-approval`（保存到当前空间）。比表单助手独立建表多一次确认，换来的是「模板请求也真能落库」。
+**UX 代价**：一次模板建表要走 **3 个检查点** —— `instantiate-approval`（是否用它生成表单）→ `schema-review`（这个结构是否可行）→ `space-approval`（是否保存到当前空间）。比表单助手独立建表多一次确认，换来的是「模板请求也真能落库」。
 
 **验证**：`graph-flow.spec.ts` +4 条（单步模板请求补两步计划 / `hasUnresolvedRefs` 单元 / 模板没搜到结果时跳过落库步骤 / 跨轮草稿不得替本轮开路），全量 **814 条绿**（8 个文件），`tsc --noEmit` 干净，改动文件 eslint 0 error。**真机 2026-09-29 全部复测 ✅**：T1/T4（模板建表真的进「表单管理」）、T2（无结果不建表）、R1 强版本（闲聊不被拖进落库）。
 
@@ -363,10 +363,10 @@ flow_create           {"nodes": "oops"}    → 参数错误：name: Required; no
 
 form_save 的落库已按"必须查 formpu.forms 新行"核对：新行存在且 `schema` 的 fields 完整，**两轮都没有复现"假成功"**。
 
-**2026-09-22（F5–F8）**：F5/F6 在"表单已就绪，保存到当前空间？"处选「先不保存」，不落库。F7 落 2 行（客户登记表 6 字段 / 员工登记表 8 字段，两个不同 id）、F8 落 1 行（报名统计表，`versions=2` 说明第二次是更新而非新增）。跑完已 `--apply` 清回基线 **forms=69 / form_versions=179**，该空间 forms=0。
+**2026-09-22（F5–F8）**：F5/F6 在"表单已就绪，是否保存到当前空间？"处选「暂不保存」，不落库。F7 落 2 行（客户登记表 6 字段 / 员工登记表 8 字段，两个不同 id）、F8 落 1 行（报名统计表，`versions=2` 说明第二次是更新而非新增）。跑完已 `--apply` 清回基线 **forms=69 / form_versions=179**，该空间 forms=0。
 
 **F7 的查库结论就是"静默覆盖"这个隐藏 bug 的反证**：旧版这里只会剩 1 行、名字是后建的那张、字段是两张表混起来的；现在两行并存、字段各自完整。
 
-**2026-09-22（F11 / 3.10 增量契约）**：`probe_ops.py` 全程不在检查点上点按钮（走抢占分支），也没在"表单已就绪，保存到当前空间？"处选确认，所以**一行都没落库**，跑完查库仍是基线 **forms=69 / form_versions=179**（`db_cleanup.js` dry-run 复核）。字段级证据取自 `formWorksheet` channel，新探针 `db_ws2.js <thread_id>` 把该 channel 的写入解成「字段 key/type[o选项数,r必填数]」逐版打印 —— 查「选项有没有丢」用这个，比翻 checkpoint 原始 blob 省事。
+**2026-09-22（F11 / 3.10 增量契约）**：`probe_ops.py` 全程不在检查点上点按钮（走抢占分支），也没在"表单已就绪，是否保存到当前空间？"处选确认，所以**一行都没落库**，跑完查库仍是基线 **forms=69 / form_versions=179**（`db_cleanup.js` dry-run 复核）。字段级证据取自 `formWorksheet` channel，新探针 `db_ws2.js <thread_id>` 把该 channel 的写入解成「字段 key/type[o选项数,r必填数]」逐版打印 —— 查「选项有没有丢」用这个，比翻 checkpoint 原始 blob 省事。
 
 **2026-09-24（3.13 放弃出口真机三条）**：三条都没走到 `form_save`（① 指死端口后工具必然失败、② 多步计划第一步就放弃、③ 检查点中断），**一行都没落库**。`db_cleanup.js` dry-run：`forms=69 / form_versions=179`，`ceshi` 空间 forms=0，与基线一致。

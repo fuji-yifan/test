@@ -52,7 +52,7 @@ const buildHarness = createBuildHarness(() => saver)
 
 describe('LangGraph 编排', () => {
   // 注意：这里第二段用 form_preview 是桩模型随便挑的，真实链路是 assemble → validate → save。
-  // 检查点文案「下方可点击预览」指的是卡片下方那张产物预览，不是"点了继续就进预览"。用例只验检查点机制本身。
+  // 检查点文案「下方可查看预览」指的是卡片下方那张产物预览，不是"点了继续就进预览"。用例只验检查点机制本身。
   it('表单：生成结构 → 停下来让人过目 → 继续后接着执行下一批调用', async () => {
     const h = buildHarness([
       { calls: [{ id: 'c1', name: 'form_assemble_schema', args: { fields: [{ key: 'name' }] } }] },
@@ -89,7 +89,7 @@ describe('LangGraph 编排', () => {
     expect(h.gateway.calls.map((c) => c.name)).toEqual(['form_assemble_schema', 'form_preview'])
   })
 
-  it('表单：保存前问「保存到当前空间？」，确认后走 executeConfirmed', async () => {
+  it('表单：保存前问「是否保存到当前空间？」，确认后走 executeConfirmed', async () => {
     const h = buildHarness([
       { calls: [{ id: 'c1', name: 'form_assemble_schema', args: {} }] },
       { calls: [{ id: 'c2', name: 'form_save', args: { name: '客户登记表' } }] },
@@ -102,7 +102,7 @@ describe('LangGraph 编排', () => {
     const second = await resumeTurn(h, { action: 'continue' })
     expect(second.interrupted?.checkpointId).toBe('space-approval')
     expect(second.interrupted?.tool).toBe('form_save')
-    expect(second.interrupted?.options?.map((o) => o.label)).toEqual(['保存到当前空间', '先不保存'])
+    expect(second.interrupted?.options?.map((o) => o.label)).toEqual(['保存', '暂不保存'])
     // 「是否加入空间」问的是这个表单，所以要把表单本身带出来（草稿跨 resume 还在）
     const art = second.interrupted?.artifact as any
     expect(art.schema.fields[0]).toMatchObject({ key: 'name', type: 'string' })

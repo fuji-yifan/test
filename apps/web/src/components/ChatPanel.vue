@@ -142,7 +142,7 @@ const { messages, isLoading, status, error, usage, sendMessage, cancel, clearMes
 })
 
 /**
- * 人机协作检查点的选项。正常由后端下发 options（含「加入当前空间」这类自定义文案）；
+ * 人机协作检查点的选项。正常由后端下发 options（含「保存」这类自定义文案）；
  * 后端没带时回退成确认/取消。
  */
 function confirmOptions(tc: any): ConfirmOption[] {
@@ -185,7 +185,20 @@ function newChat() {
   showHistory.value = false
 }
 function handleClose() { emit('update:visible', false) }
-function toggleTools(id: string) { expandedTools.value[id] = !expandedTools.value[id] }
+
+/**
+ * 工具调用列表的开合：默认跟随「有没有待答复的检查点」——待答复时摊开，让用户直接
+ * 看到即将执行的是哪个工具、什么风险；做出选择后自动收起。手动点过就完全交给用户。
+ *
+ * 检查点卡片本身只讲「现在是什么状态、下方有什么」（不点工具名），工具身份就落在
+ * 这里这颗 chip 上，所以它必须默认展开。
+ */
+function isToolsOpen(msg: any): boolean {
+  const manual = expandedTools.value[msg.id]
+  if (manual !== undefined) return manual
+  return (msg.toolCalls || []).some((t: any) => t.status === 'confirming')
+}
+function toggleTools(msg: any) { expandedTools.value[msg.id] = !isToolsOpen(msg) }
 
 /**
  * 预览卡片的开合：默认跟随「有没有待答复的检查点」——待答复时摊开给你看依据，
@@ -334,10 +347,6 @@ watch(() => isLoading.value, (l, was) => {
                       class="confirm-card"
                     >
                       <div class="confirm-prompt">{{ tc.prompt || tc.summary || '需要你的确认' }}</div>
-                      <div v-if="tc.tool" class="confirm-meta">
-                        即将执行 <code>{{ tc.tool }}</code>
-                        <span v-if="riskLabel(tc.risk)" class="confirm-risk">风险 {{ riskLabel(tc.risk) }}</span>
-                      </div>
                       <!-- 保存前的字段级变更（阶段 5 / 5.4）：写库前让用户看清改了什么 -->
                       <div v-if="hasDiff(tc.diff)" class="confirm-diff">
                         <div v-if="tc.diff.added.length" class="diff-row diff-added">
@@ -377,20 +386,22 @@ watch(() => isLoading.value, (l, was) => {
                       </div>
                     </div>
 
-                    <!-- 工具调用（可折叠） -->
+                    <!-- 工具调用（可折叠）：有待答复检查点时默认展开，工具名与风险就在这里披露 -->
                     <div v-if="msg.toolCalls?.length" class="collapsible-wrap">
-                      <div class="collapse-toggle" @click="toggleTools(msg.id)">
+                      <div class="collapse-toggle" @click="toggleTools(msg)">
                         <span class="collapse-toggle-text">
                           <el-icon :size="14"><Link /></el-icon>
                           工具调用 ({{ msg.toolCalls.filter((t: any) => t.status === 'done').length }}/{{ msg.toolCalls.length }})
                         </span>
-                        <el-icon :size="12"><component :is="expandedTools[msg.id] ? ArrowUp : ArrowDown" /></el-icon>
+                        <el-icon :size="12"><component :is="isToolsOpen(msg) ? ArrowUp : ArrowDown" /></el-icon>
                       </div>
-                      <div v-if="expandedTools[msg.id]" class="collapse-body">
+                      <div v-if="isToolsOpen(msg)" class="collapse-body">
                         <div v-for="tc in msg.toolCalls" :key="tc.callId" :class="['tool-chip', tc.status]">
                           <span class="tool-chip-dot" />
                           <span class="tool-chip-name">{{ tc.tool }}</span>
-                          <span v-if="tc.summary" class="tool-summary">{{ tc.summary }}</span>
+                          <span v-if="riskLabel(tc.risk)" class="confirm-risk">风险 {{ riskLabel(tc.risk) }}</span>
+                          <!-- 待答复时文案已经在上面的检查点卡片里说过一遍，chip 只留工具与风险 -->
+                          <span v-if="tc.summary && tc.status !== 'confirming'" class="tool-summary">{{ tc.summary }}</span>
                         </div>
                       </div>
                     </div>
@@ -731,10 +742,9 @@ watch(() => isLoading.value, (l, was) => {
 
 /* ===== 人机协作检查点（常显，不折叠） ===== */
 .confirm-card { margin-top: 8px; padding: 10px 12px; border-radius: 8px; background: #fdf6ec; border: 1px solid #f5dab1; }
-.confirm-prompt { font-size: 13px; color: #303133; line-height: 1.5; }
-.confirm-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: #909399; }
-.confirm-meta code { font-size: 11px; background: #f4e3c8; color: #8a6d3b; padding: 1px 5px; border-radius: 4px; }
-.confirm-risk { color: #b88230; }
+/* pre-line：后端 prompt 用 \n 断行（"现状一句 + 问句一句"），这里得把换行渲染出来 */
+.confirm-prompt { font-size: 13px; color: #303133; line-height: 1.5; white-space: pre-line; }
+.confirm-risk { color: #b88230; font-size: 11px; flex-shrink: 0; }
 .confirm-diff { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 .diff-row { display: flex; gap: 6px; font-size: 12px; line-height: 1.5; }
 .diff-tag { flex: none; padding: 0 6px; border-radius: 4px; font-size: 11px; }

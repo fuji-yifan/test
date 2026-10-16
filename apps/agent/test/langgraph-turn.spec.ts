@@ -134,10 +134,10 @@ const INTERRUPT_PAYLOAD = {
   checkpointId: 'space-approval',
   toolCallId: 'call_1',
   tool: 'form_save',
-  prompt: '表单已就绪，保存到当前空间？',
+  prompt: '表单已就绪，是否保存到当前空间？',
   options: [
-    { value: 'continue', label: '保存到当前空间', style: 'primary' },
-    { value: 'abort', label: '先不保存', style: 'danger' },
+    { value: 'continue', label: '保存', style: 'primary' },
+    { value: 'abort', label: '暂不保存', style: 'danger' },
   ],
 }
 
@@ -266,12 +266,12 @@ describe('LangGraphTurnService — interrupt 与回执', () => {
     const confirm = lastOf(events, 'confirm_required')
     expect(confirm?.payload).toMatchObject({
       tool: 'form_save',
-      summary: '表单已就绪，保存到当前空间？',
-      prompt: '表单已就绪，保存到当前空间？',
+      summary: '表单已就绪，是否保存到当前空间？',
+      prompt: '表单已就绪，是否保存到当前空间？',
       kind: 'checkpoint',
       options: [
-        { value: 'continue', label: '保存到当前空间', style: 'primary' },
-        { value: 'abort', label: '先不保存', style: 'danger' },
+        { value: 'continue', label: '保存', style: 'primary' },
+        { value: 'abort', label: '暂不保存', style: 'danger' },
       ],
     })
     expect(confirm?.payload.callId).toMatch(/^graph_/)

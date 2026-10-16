@@ -237,25 +237,26 @@ export class AgentCatalogService implements OnApplicationBootstrap {
           }),
         checkpoints: [
           {
-            // 生成表单结构后先让用户过目。「下方可点击预览」指的是卡片下方那张产物预览
+            // 生成表单结构后先让用户过目。「下方可查看预览」指的是卡片下方那张产物预览
             // （artifact 随中断载荷下发、前端在 confirming 期间默认展开），**不是**承诺
             // 「点了继续就进预览」—— 继续走的是 form_validate_schema，不是 form_preview。
+            // 第二行用 \n 断行，前端 .confirm-prompt 是 white-space: pre-line。
             id: 'schema-review',
             afterTool: 'form_assemble_schema',
-            prompt: '表单结构已生成，下方可点击预览',
+            prompt: '表单结构已生成，下方可查看预览\n这个结构是否可行？',
             options: [
-              { value: 'continue', label: '结构没问题', style: 'primary' },
-              { value: 'abort', label: '我要改一版', style: 'danger' },
+              { value: 'continue', label: '没问题', style: 'primary' },
+              { value: 'abort', label: '再改一版', style: 'danger' },
             ],
           },
           {
             // 用户要求：保存前问一次
             id: 'space-approval',
             beforeTool: 'form_save',
-            prompt: '表单已就绪，保存到当前空间？',
+            prompt: '表单已就绪，是否保存到当前空间？',
             options: [
-              { value: 'continue', label: '保存到当前空间', style: 'primary' },
-              { value: 'abort', label: '先不保存', style: 'danger' },
+              { value: 'continue', label: '保存', style: 'primary' },
+              { value: 'abort', label: '暂不保存', style: 'danger' },
             ],
             coversRisk: true,
           },
@@ -263,9 +264,9 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             // 回滚同样写库（追加新版本），执行前征求同意（阶段 5 / 5.5）
             id: 'rollback-approval',
             beforeTool: 'form_rollback',
-            prompt: '将把这张表单回滚到上一版（追加为新版本）',
+            prompt: '是否将这张表单回滚到上一版本\n（追加为新版本）',
             options: [
-              { value: 'continue', label: '确认回滚', style: 'primary' },
+              { value: 'continue', label: '确认', style: 'primary' },
               { value: 'abort', label: '取消', style: 'danger' },
             ],
             coversRisk: true,
@@ -274,9 +275,9 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             // 删除表单是破坏性操作（阶段 6 / S4.2），执行前必须人工确认
             id: 'delete-approval',
             beforeTool: 'form_delete',
-            prompt: '将删除这张表单（移入回收站，可由管理员恢复）',
+            prompt: '是否删除这张表单\n（移入回收站，可由管理员恢复）',
             options: [
-              { value: 'continue', label: '确认删除', style: 'danger' },
+              { value: 'continue', label: '确认', style: 'danger' },
               { value: 'abort', label: '取消', style: 'primary' },
             ],
             coversRisk: true,
@@ -285,9 +286,9 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             // 删除历史版本同属破坏性操作（阶段 6 / S4.2）
             id: 'version-delete-approval',
             beforeTool: 'form_version_delete',
-            prompt: '将删除这个历史版本（移入回收站，可由管理员恢复）',
+            prompt: '是否删除这个历史版本\n（移入回收站，可由管理员恢复）',
             options: [
-              { value: 'continue', label: '确认删除', style: 'danger' },
+              { value: 'continue', label: '确认', style: 'danger' },
               { value: 'abort', label: '取消', style: 'primary' },
             ],
             coversRisk: true,
@@ -365,19 +366,19 @@ export class AgentCatalogService implements OnApplicationBootstrap {
           {
             id: 'save-approval',
             beforeTool: 'flow_save',
-            prompt: '流程定义已就绪，下方可预览，确认保存？',
+            prompt: '流程定义已就绪，下方可查看预览\n是否确认保存？',
             options: [
-              { value: 'continue', label: '保存到当前空间', style: 'primary' },
-              { value: 'abort', label: '先不保存', style: 'danger' },
+              { value: 'continue', label: '保存', style: 'primary' },
+              { value: 'abort', label: '暂不保存', style: 'danger' },
             ],
             coversRisk: true,
           },
           {
             id: 'bind-form-approval',
             beforeTool: 'flow_bind_form',
-            prompt: '将把表单绑定到这个流程节点',
+            prompt: '是否将表单绑定到这个流程节点',
             options: [
-              { value: 'continue', label: '绑定到该节点', style: 'primary' },
+              { value: 'continue', label: '绑定', style: 'primary' },
               { value: 'abort', label: '取消', style: 'danger' },
             ],
             coversRisk: true,
@@ -420,10 +421,10 @@ export class AgentCatalogService implements OnApplicationBootstrap {
           {
             id: 'instantiate-approval',
             beforeTool: 'template_instantiate',
-            prompt: '已选中该模板，下方可预览，用它生成新表单？',
+            prompt: '已选中该模板，下方可查看预览\n是否用它生成表单？',
             options: [
-              { value: 'continue', label: '用这个模板', style: 'primary' },
-              { value: 'abort', label: '再看看别的', style: 'danger' },
+              { value: 'continue', label: '生成', style: 'primary' },
+              { value: 'abort', label: '暂不生成', style: 'danger' },
             ],
             coversRisk: true,
           },

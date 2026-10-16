@@ -576,8 +576,9 @@ export class AgentSubgraphFactory {
         toolCallId: next.id,
         tool: next.name,
         args: next.args,
-        // 这个检查点站在「即将执行的工具」前面，所以要说清放行的是什么工具、
-        // 它有多大风险。coversRisk 的检查点更是顶替了风险门，不报风险就是漏披露。
+        // 检查点文案不点工具名：前端在检查点期间把工具调用列表默认展开，工具名与
+        // 风险等级都在那颗 chip 上。这里仍要把风险报出去 —— coversRisk 的检查点顶替了
+        // 风险门，不报风险就是漏披露。
         risk: this.registry.getRisk(next.name),
         prompt: cp.prompt,
         options: cp.options,
@@ -595,10 +596,9 @@ export class AgentSubgraphFactory {
       }
     }
 
-    // 4) 兜底：工具网关的风险确认（与 ToolGateway 的判定规则一致）
+    // 4) 兜底：工具网关的风险确认（与 ToolGateway 的判定规则一致）。
+    // 同样不点工具名，工具与风险由默认展开的工具调用列表披露。
     if (this.bridge.needsConfirmation(next.name)) {
-      const risk = this.registry.getRisk(next.name)
-      const summary = `即将执行 ${next.name}（风险：${risk}）`
       return {
         kind: 'tool_confirm',
         call: next,
@@ -607,9 +607,8 @@ export class AgentSubgraphFactory {
           toolCallId: next.id,
           tool: next.name,
           args: next.args,
-          risk,
-          summary,
-          prompt: summary,
+          risk: this.registry.getRisk(next.name),
+          prompt: '该操作需要你确认后才会执行',
           options: [
             { value: 'confirm', label: '确认执行', style: 'primary' },
             { value: 'abort', label: '取消', style: 'danger' },
