@@ -58,11 +58,10 @@ CI（阶段 2 起）：`.github/workflows/agent.yml` 起 MySQL service 后 `pnpm
 | `test/checkpoint-saver.spec.ts` | 718 | 自研 MySQL checkpointer 的序列化与回填 |
 | `test/graph-flow.spec.ts` | 42 | 编排主链路：路由 / 多步计划 / 检查点 / 错误恢复级联 / 上游产物缺失跳步 / 跨轮草稿隔离 / 会话记忆（3.6、3.13、3.14、3.15 的单测侧证据）；重名消歧端到端（阶段 5 / 5.2）；幻觉守卫端到端（阶段 6 / S7.2） |
 | `test/conversation-state.spec.ts` | 36 | 状态栏 `buildStateBar` / `detectClarification` / `projectMemory` 预算投影 / 台账与事实（阶段 1、1b/§2.12） |
-| `test/worksheet.spec.ts` | 26 | 会话级工作台：多表寻址与增量契约（3.9、3.10）；formId 稳定寻址 + `savedSchema` + `markRestored`（阶段 5 / 5.1、5.4、5.5） |
+| `test/worksheet.spec.ts` | 25 | 会话级工作台：多表寻址与增量契约（3.9、3.10）；formId 稳定寻址 + `markRestored`（阶段 5 / 5.1、5.5） |
 | `test/langgraph-turn.spec.ts` | 18 | SSE 方言、`stopReason`、error code 过滤（3.5、3.13）；用量软上限 `usageAlert`（阶段 4 / 4.4） |
 | `test/form-assemble-schema.spec.ts` | 17 | 按 key 合并字段（3.1）；按字段 id 合并 / 改 key / 按 id 删（阶段 5 / 5.3） |
 | `test/tool-bridge.spec.ts` | 13 | 工具桥接（3.11）；`form_save` 注入 `clientRequestId` 幂等键（阶段 3 切片 C）；token 预算摘要化 / 头尾硬截（阶段 4 / 4.3）；`form_rollback` 注入 formId（阶段 5 / 5.5）；不可信工具结果封装（阶段 6 / S5.1） |
-| `test/form-diff.spec.ts` | 7 | 字段级 diff：新增 / 修改（属性标签）/ 删除 / 无基线全新增 / 空 key 按 id 比对（阶段 5 / 5.4） |
 | `test/form-rollback.spec.ts` | 6 | `form_rollback`：默认上一版（`versions[1]`）/ 单版本无可回滚 / 显式 version / 版本不存在 / 未保存 / 未登录（阶段 5 / 5.5） |
 | `test/tool-cache.spec.ts` | 7 | 只读工具 Redis 缓存：键含 workspaceId / 去 token / TTL / invalidateWorkspace / no-op（阶段 4 / 4.5） |
 | `test/tool-gateway.spec.ts` | 7 | 网关缓存插桩：只读命中短路 / 未命中写缓存 / 写工具失效 / 高风险走确认门（阶段 4 / 4.5）；工具超时返回可恢复失败（阶段 6 / S7.1） |

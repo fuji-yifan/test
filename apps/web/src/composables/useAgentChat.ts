@@ -12,13 +12,6 @@ export interface ConfirmOption {
   style?: 'primary' | 'default' | 'danger'
 }
 
-/** 保存前的字段级变更（阶段 5 / 5.4），与后端 FormFieldDiff 同构 */
-export interface AgentFieldDiff {
-  added: { key: string; name: string; type: string }[]
-  modified: { key: string; name: string; changes: string[] }[]
-  removed: { key: string; name: string }[]
-}
-
 export interface AgentToolCall {
   callId: string
   tool: string
@@ -31,8 +24,6 @@ export interface AgentToolCall {
   risk?: string
   /** 检查点的可选项；没带时前端回退成确认/取消 */
   options?: ConfirmOption[]
-  /** 保存前的字段级 diff（仅 form_save 检查点带） */
-  diff?: AgentFieldDiff
 }
 
 interface AgentMessage {
@@ -308,7 +299,6 @@ export function useAgentChat(options: UseAgentChatOptions) {
               prompt: data.prompt,
               risk: data.risk,
               options: data.options,
-              diff: data.diff,
             })
             // 检查点的依据：待审产物复用预览卡片渲染（只有 langgraph 下发）
             if (data.artifact) msg.result = data.artifact

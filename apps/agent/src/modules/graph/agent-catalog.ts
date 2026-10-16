@@ -253,7 +253,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             // 用户要求：保存前问一次
             id: 'space-approval',
             beforeTool: 'form_save',
-            prompt: '表单已就绪，是否保存到当前空间？',
+            prompt: '是否将表单保存到当前空间',
             options: [
               { value: 'continue', label: '保存', style: 'primary' },
               { value: 'abort', label: '暂不保存', style: 'danger' },
@@ -328,8 +328,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             }
           }
           if (toolName === 'form_rollback') {
-            // 回滚成功：把工作台里该表的 schema 换成回滚后的快照（savedSchema 同步换，
-            // 否则下一次 form_save 的 diff 会把整场回滚当成大改动）。
+            // 回滚成功：把工作台里该表的 schema 换成回滚后的快照。
             const schema = (result as any)?.schema
             if (!schema) return null
             const worksheet = resolved

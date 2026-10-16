@@ -21,13 +21,6 @@ export interface WorksheetEntry {
   schema: Record<string, unknown>
   /** 已落库的表单 id */
   formId?: string
-  /**
-   * 上一次落库时的 schema 快照（阶段 5 / 5.4）。
-   *
-   * `form_save` 前算字段 diff 的**基线**：当前 schema 与它比，得出新增/修改/删除。
-   * 老会话 / 从未保存过的表没有这个字段 → 基线视为空（全部计「新增」）。
-   */
-  savedSchema?: Record<string, unknown>
 }
 
 /** 一份会话工作台 */
@@ -175,11 +168,7 @@ export function applyAssemble(
   }
 }
 
-/**
- * 登记一次保存：把 formId 记到对应表上，并把当前 schema 存成 diff 基线（阶段 5 / 5.4）。
- *
- * savedSchema 就是「上次落库长什么样」，`form_save` 的确认卡片据此算字段级 diff。
- */
+/** 登记一次保存：把 formId 记到对应表上 */
 export function markSaved(
   ws: FormWorksheet,
   resolved: TargetResolution,
@@ -187,18 +176,13 @@ export function markSaved(
 ): FormWorksheet {
   const key = targetKeyOf(resolved)
   return {
-    forms: ws.forms.map((f) =>
-      f.key === key ? { ...f, formId, savedSchema: f.schema } : f,
-    ),
+    forms: ws.forms.map((f) => (f.key === key ? { ...f, formId } : f)),
     focusKey: key,
   }
 }
 
 /**
  * 登记一次回滚（阶段 5 / 5.5）：把 entry 的 schema 换成回滚后的快照。
- *
- * 回滚后该表在服务端等于「刚保存过这个 schema」，所以 savedSchema 同步设为它 ——
- * 否则下一次 form_save 的 diff 会把回滚当成一场大改动。
  */
 export function markRestored(
   ws: FormWorksheet,
@@ -209,7 +193,7 @@ export function markRestored(
   return {
     forms: ws.forms.map((f) =>
       f.key === key
-        ? { ...f, schema, savedSchema: schema, title: schemaTitle(schema) || f.title }
+        ? { ...f, schema, title: schemaTitle(schema) || f.title }
         : f,
     ),
     focusKey: key,

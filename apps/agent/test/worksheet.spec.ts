@@ -153,21 +153,14 @@ describe('markSaved 记录 formId', () => {
     expect(next.forms[1].formId).toBeUndefined()
     expect(next.focusKey).toBe('f1')
   })
-
-  it('同时把当前 schema 存成 diff 基线（savedSchema）', () => {
-    const ws = wsWith({ key: 'f1', title: '客户登记表', keys: ['name'] })
-    const next = markSaved(ws, resolveFormTarget('客户登记表', ws), 'form-123')
-    expect(next.forms[0].savedSchema).toEqual(ws.forms[0].schema)
-  })
 })
 
 describe('markRestored 回滚登记（阶段 5 / 5.5）', () => {
-  it('把 schema 换成回滚后的快照，savedSchema 同步换', () => {
+  it('把 schema 换成回滚后的快照', () => {
     const ws = wsWith({ key: 'f1', title: '客户登记表', keys: ['name'], formId: 'u1' })
     const restored = schema('客户登记表', ['name', 'phone'])
     const next = markRestored(ws, resolveFormTarget('u1', ws), restored)
     expect(next.forms[0].schema).toEqual(restored)
-    expect(next.forms[0].savedSchema).toEqual(restored)
     expect(next.forms[0].formId).toBe('u1')
     expect(next.focusKey).toBe('f1')
   })

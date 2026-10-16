@@ -33,12 +33,10 @@ import {
   entryOf,
   resolveFormTarget,
   seedFromDraft,
-  targetKeyOf,
   toFormArtifact,
   type TargetResolution,
   type WorksheetEntry,
 } from './worksheet'
-import { diffFields, isDiffEmpty, type FormFieldDiff } from './form-diff'
 import { guardHallucination, hallucinationCorrection } from './hallucination-guard'
 import { degradeReply } from './degrade'
 
@@ -60,11 +58,6 @@ export interface InterruptPayload {
   args?: Record<string, unknown>
   risk?: string
   summary?: string
-  /**
-   * 待审的字段级变更（阶段 5 / 5.4，仅 form_save 前的 space-approval 检查点带）。
-   * 用户据此看清这次保存改了什么，再决定是否写入。
-   */
-  diff?: FormFieldDiff
   /**
    * 本次检查点要审的产物（与前端 message.result 同构）。
    * 检查点不能只给按钮，用户得看到自己在批准什么。
@@ -136,22 +129,6 @@ function draftArtifact(state: AgentStateType, spec: AgentSpec): Record<string, u
   }
   const data = state.drafts?.[spec.key]?.data
   return data && Object.keys(data).length > 0 ? data : null
-}
-
-/**
- * form_save 前的字段级 diff（阶段 5 / 5.4）。
- *
- * 基线取工作台里该表的 `savedSchema`（上次落库快照）；新建 / 老会话没有基线 → 全部计「新增」。
- * target 解析不到唯一已有表（create/ambiguous）→ 没有可比对象，返回 null（不显示 diff）。
- */
-function formSaveDiff(state: AgentStateType, spec: AgentSpec, next: PendingCall): FormFieldDiff | null {
-  if (spec.key !== 'form-designer' || next.name !== 'form_save') return null
-  const resolved = resolveFormTarget(next.args?.target as string | undefined, state.formWorksheet)
-  if (resolved.kind !== 'update' && resolved.kind !== 'focus') return null
-  const entry = entryOf(state.formWorksheet, targetKeyOf(resolved))
-  if (!entry) return null
-  const diff = diffFields(entry.savedSchema, entry.schema)
-  return isDiffEmpty(diff) ? null : diff
 }
 
 /** 允许随回执带进来的身份字段 */
@@ -531,7 +508,7 @@ export class AgentSubgraphFactory {
     if (!next) return null
 
     // 2) 重名消歧（阶段 5 / 5.2）：head 是表单工具、target 命中多张同名表。
-    //    放在 beforeTool 检查点**之前**：目标没定下来，后面的保存确认（带 diff）其实无从谈起；
+    //    放在 beforeTool 检查点**之前**：目标没定下来，后面的保存确认其实无从谈起；
     //    选中目标那一步**同时**充当该工具的 beforeTool 放行（在 gate 里合并记 checkpointDone +
     //    approved），所以不存在「没批准就写库」。form_assemble_schema 无 beforeTool 检查点，
     //    消歧即唯一提问。
@@ -584,9 +561,6 @@ export class AgentSubgraphFactory {
         options: cp.options,
         ...(artifact ? { artifact } : {}),
       }
-      // 表单保存前的字段级 diff（阶段 5 / 5.4）：用户得看清这次要改什么再放行。
-      const diff = formSaveDiff(state, spec, next)
-      if (diff) payload.diff = diff
       return {
         kind: 'checkpoint',
         checkpoint: cp,

@@ -787,12 +787,12 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 - [x] 5.1 `resolveFormTarget` 优先稳定 id
 - [x] 5.2 重名消歧 UX（候选列表 + 选择）
 - [x] 5.3 `mergeField` 按字段 id 合并（key 回退）
-- [x] 5.4 保存前字段 diff 预览
+- [x] 5.4 保存前字段 diff 预览 → **2026-10-16 移除**（保存确认只留提问，工具身份靠默认展开的工具列表披露）
 - [x] 5.5 回滚到上一版（基于 `form_versions`）
 
-**验收**：重名表可精确寻址；改 key 不丢字段；保存前可见 diff；可回滚到上一版。
+**验收**：重名表可精确寻址；改 key 不丢字段；可回滚到上一版。
 
-**风险与取舍**：老 worksheet 无 id ⇒ 必须回退兼容（缺字段走旧路径）；diff 会多一轮确认 ⇒ 可配
+**风险与取舍**：老 worksheet 无 id ⇒ 必须回退兼容（缺字段走旧路径）；保存/回滚前多一轮确认 ⇒ 可配
 （低风险保存免确认）。
 
 **阶段 5 落地（2026-10-13，分支 `feat/agent-stage5-business`，叠于阶段 4）**
@@ -814,19 +814,20 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
   `byId`+`byKey` 两张索引，每条补丁**先按 id 命中、再按 key 回退**；字段身份 `f.key || f.id`（布局控件
   `key===''`，只能靠 id）；`mergeField` 允许改 key（按 id 命中新 key 时生效）；`removeFields` 支持 key 与 id。
   这样「改字段 key」不再变成新增残留重复。
-- **5.4 保存前字段 diff 预览**：`WorksheetEntry` 加 `savedSchema`，`markSaved` 同时写（channel 替换语义，随 checkpoint 存活）。
-  新纯函数 `graph/form-diff.ts`：`diffFields(base, next)` → `{added,modified,removed}`（`changes` 报 标签/类型/必填/选项/提示文字）。
-  `firstPendingAsk` 处理 `beforeTool:'form_save'` 检查点时定位 entry、算 diff 挂到 payload；`askConfirm` 显式转发
-  `diff` 到 `ConfirmRequiredPayload`；前端确认卡片渲染 diff 分组（新增/修改/删除 chips）。
+- **5.4 保存前字段 diff 预览（2026-10-16 移除）**：曾实现 `WorksheetEntry.savedSchema` + `graph/form-diff.ts`
+  （`diffFields` → `{added,modified,removed}`）+ 确认卡片渲染 diff 分组。用户实测后要求去掉这张卡：
+  保存确认只保留一句提问，工具身份交给**默认展开的工具调用列表**披露。已删除 `form-diff.ts` 及其单测、
+  `savedSchema` 字段、`InterruptPayload.diff` / `ConfirmRequiredPayload.diff` 与前端 `AgentFieldDiff` 全链路。
 - **5.5 回滚到上一版**：`ContextService.getFormVersions`（`GET /forms/:id/versions`，按 version desc）。新工具
   `form_rollback`（`riskLevel:'low'`，args `{target?,formId?,version?}`）读 `versions[1]`（或显式 `version`），
   用现有 `saveFormDraft`（PATCH，**追加新版本**、非破坏）恢复；`versions.length<2` → 明确报「没有上一版」。
   `FORM_TOOLS` 加 `form_rollback`，formId 注入含它；`agent-catalog` 的 `extractArtifact` 用 `markRestored` 覆盖
-  entry 的 `schema`/`savedSchema` 并回写 `draft*`；新增 `rollback-approval`（`beforeTool:'form_rollback'`）检查点。
+  entry 的 `schema` 并回写 `draft*`；新增 `rollback-approval`（`beforeTool:'form_rollback'`）检查点。
   平台后台既有版本历史/恢复 UI 不动，只补 agent 侧回滚入口。
-- **验证**：agent `tsc --noEmit` 干净；agent `vitest` **931 全绿**（新增 `form-diff` 7 / `form-rollback` 6 /
-  `form-assemble-schema` +3 / `worksheet` +4 / `tool-bridge` +1 / `graph-flow` +1 重名消歧端到端）；web `vue-tsc --noEmit`
-  干净。真机项（重名弹候选、改 key 不重复、保存卡片见 diff、对话里「回滚到上一版」）留用户手测。
+- **验证**：agent `tsc --noEmit` 干净；agent `vitest` **931 全绿**（新增 `form-rollback` 6 /
+  `form-assemble-schema` +3 / `worksheet` +4 / `tool-bridge` +1 / `graph-flow` +1 重名消歧端到端；`form-diff` 7 条
+  已于 2026-10-16 随 5.4 移除一并删除）；web `vue-tsc --noEmit`
+  干净。真机项（重名弹候选、改 key 不重复、对话里「回滚到上一版」）留用户手测。
 
 ### 3.5 阶段 6：安全与隔离（落地方案）
 
@@ -1416,7 +1417,7 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 | 6 S2.4 | server 登录/注册/失败 + 权限拒绝审计（`AuthService`/`PermissionGuard` 写 `audit_logs`，`AuditModule @Global`）+ 生产禁 `dev-secret` 守卫 | revert 本次提交（审计是新增写入，删代码即停；`audit_logs` 无需改表）；生产守卫随代码回退（不建议） |
 | 6 S4 | `FormVersion` 软删（加可空列 `deleted_at`）+ 回收站/恢复端点 + `form_delete`/`form_version_delete` 工具（HITL 检查点）+ 防覆盖推广 + `WRITE_TOOLS` 单一权威 | revert 本次提交；`form_versions.deleted_at` 列可留（可空，不回退也不影响）；回收站/恢复为**新增端点**，删代码即失效 |
 | 7 D1/D2 | 技能 YAML frontmatter + 技能↔工具绑定校验（坏技能**隔离**不拖垮启动） | revert `e62aaa5` |
-| 5 | formId 寻址 + 重名消歧 + 字段 id 合并 + diff 预览 + form_rollback | revert `e7c35c0` |
+| 5 | formId 寻址 + 重名消歧 + 字段 id 合并 + form_rollback（diff 预览已于 2026-10-16 移除） | revert `e7c35c0` |
 | 3 C | form_save 幂等下沉（server `idempotency_keys` 唯一键） | revert `94ccd1e` 或 `DROP TABLE idempotency_keys` |
 | 8 | 用户长期记忆 | `USER_MEMORY_ENABLED=false`；彻底 `DROP TABLE user_memory` |
 
@@ -1442,7 +1443,7 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 **阶段 5（业务落地）**
 - [ ] 建两张**同名**表 → `form_save` 弹**候选**（每项带 key）→ 选中项被正确写入
 - [ ] 改某字段的 `key` → **不产生重复字段**（按字段 id 合并）
-- [ ] 保存前确认卡片显示 **diff**（新增/修改/删除 分组）
+- [ ] 保存前确认卡片只显示一句提问（**不再有 diff 分组**，2026-10-16 移除）；工具身份靠默认展开的工具调用列表
 - [ ] 对话「回滚到上一版」→ 恢复上一版并**追加新版本**（非破坏）
 
 **阶段 6（安全 / 兜底）**

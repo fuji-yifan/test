@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, computed, markRaw } from 'vue'
-import { useAgentChat, type ConfirmOption, type AgentFieldDiff } from '@/composables/useAgentChat'
+import { useAgentChat, type ConfirmOption } from '@/composables/useAgentChat'
 import { marked } from 'marked'
 import PreviewPanel from '@/components/PreviewPanel.vue'
 import FlowPreviewGraph from '@/components/flow/FlowPreviewGraph.vue'
@@ -158,11 +158,6 @@ function answerConfirm(tc: any, option: ConfirmOption) {
   sendMessage(option.label, tc.callId, undefined, option.value)
 }
 
-/** 保存前 diff 是否有内容（阶段 5 / 5.4）；三组都空就不渲染 */
-function hasDiff(diff?: AgentFieldDiff): boolean {
-  return !!diff && (diff.added.length > 0 || diff.modified.length > 0 || diff.removed.length > 0)
-}
-
 const RISK_LABEL: Record<string, string> = { low: '低', medium: '中', high: '高', critical: '极高' }
 function riskLabel(risk?: string): string {
   return risk ? RISK_LABEL[risk] || risk : ''
@@ -187,6 +182,22 @@ function newChat() {
 function handleClose() { emit('update:visible', false) }
 
 /**
+ * 手动开合的覆盖键：把「这条消息」细到「这条消息 + 待答复的检查点」。
+ *
+ * 一轮里可能出多个检查点，若覆盖只按 msg.id 记，用户对第一个检查点做过一次开合后，
+ * 覆盖会一直留着，后面新冒出的检查点就不再走「待答复即默认展开」，表现为「检查点
+ * 来了列表还是收起的」。按待答复的 callId 组合做键，新检查点就是新键 → 重新按默认
+ * 走；答完（confirming 消失）键又变回空集 → 回到默认收起。
+ */
+function expandedKey(msg: any): string {
+  const confirming = (msg.toolCalls || [])
+    .filter((t: any) => t.status === 'confirming')
+    .map((t: any) => t.callId)
+    .join(',')
+  return `${msg.id}|${confirming}`
+}
+
+/**
  * 工具调用列表的开合：默认跟随「有没有待答复的检查点」——待答复时摊开，让用户直接
  * 看到即将执行的是哪个工具、什么风险；做出选择后自动收起。手动点过就完全交给用户。
  *
@@ -194,22 +205,22 @@ function handleClose() { emit('update:visible', false) }
  * 这里这颗 chip 上，所以它必须默认展开。
  */
 function isToolsOpen(msg: any): boolean {
-  const manual = expandedTools.value[msg.id]
+  const manual = expandedTools.value[expandedKey(msg)]
   if (manual !== undefined) return manual
   return (msg.toolCalls || []).some((t: any) => t.status === 'confirming')
 }
-function toggleTools(msg: any) { expandedTools.value[msg.id] = !isToolsOpen(msg) }
+function toggleTools(msg: any) { expandedTools.value[expandedKey(msg)] = !isToolsOpen(msg) }
 
 /**
  * 预览卡片的开合：默认跟随「有没有待答复的检查点」——待答复时摊开给你看依据，
  * 做出选择后自动收起。用户手动点过就完全交给用户（undefined 表示还没碰过）。
  */
 function isPreviewOpen(msg: any): boolean {
-  const manual = expandedPreview.value[msg.id]
+  const manual = expandedPreview.value[expandedKey(msg)]
   if (manual !== undefined) return manual
   return (msg.toolCalls || []).some((t: any) => t.status === 'confirming')
 }
-function togglePreview(msg: any) { expandedPreview.value[msg.id] = !isPreviewOpen(msg) }
+function togglePreview(msg: any) { expandedPreview.value[expandedKey(msg)] = !isPreviewOpen(msg) }
 
 function fmtTime(ts: number): string {
   const d = new Date(ts), now = Date.now(), diff = now - ts
@@ -347,21 +358,6 @@ watch(() => isLoading.value, (l, was) => {
                       class="confirm-card"
                     >
                       <div class="confirm-prompt">{{ tc.prompt || tc.summary || '需要你的确认' }}</div>
-                      <!-- 保存前的字段级变更（阶段 5 / 5.4）：写库前让用户看清改了什么 -->
-                      <div v-if="hasDiff(tc.diff)" class="confirm-diff">
-                        <div v-if="tc.diff.added.length" class="diff-row diff-added">
-                          <span class="diff-tag">新增</span>
-                          <span class="diff-items">{{ tc.diff.added.map((f: any) => f.name).join('、') }}</span>
-                        </div>
-                        <div v-if="tc.diff.modified.length" class="diff-row diff-modified">
-                          <span class="diff-tag">修改</span>
-                          <span class="diff-items">{{ tc.diff.modified.map((f: any) => `${f.name}（${f.changes.join('/')}）`).join('、') }}</span>
-                        </div>
-                        <div v-if="tc.diff.removed.length" class="diff-row diff-removed">
-                          <span class="diff-tag">删除</span>
-                          <span class="diff-items">{{ tc.diff.removed.map((f: any) => f.name).join('、') }}</span>
-                        </div>
-                      </div>
                       <div class="confirm-actions">
                         <el-button
                           v-for="opt in confirmOptions(tc)"
@@ -757,13 +753,6 @@ watch(() => isLoading.value, (l, was) => {
 /* pre-line：后端 prompt 用 \n 断行（"现状一句 + 问句一句"），这里得把换行渲染出来 */
 .confirm-prompt { font-size: 13px; color: #303133; line-height: 1.5; white-space: pre-line; }
 .confirm-risk { color: #b88230; font-size: 11px; flex-shrink: 0; }
-.confirm-diff { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
-.diff-row { display: flex; gap: 6px; font-size: 12px; line-height: 1.5; }
-.diff-tag { flex: none; padding: 0 6px; border-radius: 4px; font-size: 11px; }
-.diff-items { color: #606266; word-break: break-all; }
-.diff-added .diff-tag { background: #e7f5e9; color: #3a9d5d; }
-.diff-modified .diff-tag { background: #fdf6ec; color: #b88230; }
-.diff-removed .diff-tag { background: #fdecec; color: #c45656; }
 .confirm-actions { display: flex; gap: 8px; margin-top: 8px; }
 
 /* 被抢占后自动中断的检查点：灰化留痕，不可交互 */

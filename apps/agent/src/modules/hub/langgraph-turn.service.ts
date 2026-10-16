@@ -322,8 +322,6 @@ export class LangGraphTurnService {
       kind: payload.kind,
       options,
       ...(artifact ? { artifact } : {}),
-      // 保存前的字段级 diff（阶段 5 / 5.4）：必须显式转发，否则载荷在网关这一层被丢掉
-      ...(payload.diff ? { diff: payload.diff } : {}),
     })
   }
 
