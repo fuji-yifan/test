@@ -158,7 +158,14 @@ function answerConfirm(tc: any, option: ConfirmOption) {
   sendMessage(option.label, tc.callId, undefined, option.value)
 }
 
-const RISK_LABEL: Record<string, string> = { low: '低', medium: '中', high: '高', critical: '极高' }
+// 工具等级只有 low/medium/high 三档在用（critical 在类型里保留、暂无工具取到）。
+// 文案用「较低/中等/较高」：说「低/中/高」容易被读成「这个调用有问题」，这里是系数不是结论。
+const RISK_LABEL: Record<string, string> = {
+  low: '较低',
+  medium: '中等',
+  high: '较高',
+  critical: '极高',
+}
 function riskLabel(risk?: string): string {
   return risk ? RISK_LABEL[risk] || risk : ''
 }
@@ -395,7 +402,7 @@ watch(() => isLoading.value, (l, was) => {
                         <div v-for="tc in msg.toolCalls" :key="tc.callId" :class="['tool-chip', tc.status]">
                           <span class="tool-chip-dot" />
                           <span class="tool-chip-name">{{ tc.tool }}</span>
-                          <span v-if="riskLabel(tc.risk)" class="confirm-risk">风险 {{ riskLabel(tc.risk) }}</span>
+                          <span v-if="riskLabel(tc.risk)" class="confirm-risk">风险系数：{{ riskLabel(tc.risk) }}</span>
                           <!-- 待答复时文案已经在上面的检查点卡片里说过一遍，chip 只留工具与风险 -->
                           <!-- 后缀解释会被 flex 压成省略号，悬停看全文。z-index 必须高于
                                .float-window(3000)：tooltip teleport 到 body 后默认 2000，会被浮窗盖住 -->
@@ -622,9 +629,9 @@ watch(() => isLoading.value, (l, was) => {
  * FlowX 品牌字：凡是出现 "FlowX" 这三个字母的地方（悬浮窗标题、空状态问候语）都挂这类，
  * 与主页面右上角入口一致。
  *
- * font-family 必须写 Arial：入口是 <el-button>（原生 button），字体取自浏览器 UA 样式表
- * 而不是继承文档字体 —— Chromium/Edge 上实测就是 Arial，而普通 <span> 用的是文档默认
- * 字体（Noto Sans SC / 微软雅黑），两边本来不是一个字体。这里对齐入口那个。
+ * font-family 必须写 Arial：入口是原生 <button>，字体取自浏览器 UA 样式表而不是继承
+ * 文档字体 —— Chromium/Edge 上实测就是 Arial，而普通 <span> 用的是文档默认字体
+ * （Noto Sans SC / 微软雅黑），两边本来不是一个字体。这里对齐入口那个。
  */
 .brand-flowx { font-family: Arial; }
 .float-title { font-size: 15px; font-weight: 700; color: #2c3e50; white-space: nowrap; }

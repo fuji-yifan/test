@@ -139,13 +139,16 @@ function formatDate(d: string) { return d ? new Date(d).toLocaleString('zh-CN') 
 }
 .page-header h2 { margin: 0; }
 
-.loading-area { max-width: 800px; width: 100%; min-height: 400px; }
+/* .content 是 flex column：定宽/带 max-width 的子项在 stretch 到上限后会退化成 flex-start（贴左），
+   所以下面三块要显式 align-self: center。.page-header 不设，返回与标题保持贴左。 */
+.loading-area { max-width: 800px; width: 100%; min-height: 400px; align-self: center; }
 
 /* 提交信息表格 */
 .info-table {
   width: 100%;
   max-width: 800px;
   margin-bottom: 24px;
+  align-self: center;
 }
 
 /* ---- 表单卡片 ---- */
@@ -155,6 +158,7 @@ function formatDate(d: string) { return d ? new Date(d).toLocaleString('zh-CN') 
   padding: 24px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   pointer-events: none;
+  align-self: center;
 }
 .form-title {
   text-align: center;
