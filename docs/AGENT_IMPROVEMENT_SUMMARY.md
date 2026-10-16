@@ -41,14 +41,15 @@
 | | |
 |---|---|
 | **要起什么基建** | 其一即可：**OTLP Collector**（`otel/opentelemetry-collector`）或 **Langfuse**（自托管/云） |
-| **env**（`apps/agent/.env`） | `OTEL_EXPORTER_OTLP_ENDPOINT`（如 `http://localhost:4318`）、或 `LANGFUSE_HOST`（如 `http://localhost:3001`）；`OTEL_SERVICE_NAME=furmx-agent`；`TRACING_ENABLED=true`；`TRACING_TIMEOUT_MS=2000` |
+| **env**（`apps/agent/.env`） | `OTEL_EXPORTER_OTLP_ENDPOINT`（如 `http://localhost:4318`）、或 `LANGFUSE_HOST`（如 `http://localhost:3001`）；直连**需鉴权的** Langfuse 再配 `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY`；`OTEL_SERVICE_NAME=furmx-agent`；`TRACING_ENABLED=true`；`TRACING_TIMEOUT_MS=2000` |
 | **默认** | 端点**空** → 只贯通 traceId、**不导出**（零外呼） |
 | **不配时行为** | 与今天一致：工具/LLM 调用**不产生任何出站请求**；traceId 仍写进审计 `trace_id` 列 |
-| **配上后行为** | 每次工具调用 / 每次 LLM 调用结束后，**fire-and-forget** 一次 OTLP/HTTP **JSON** `POST` 到 `<端点>/v1/traces`（Langfuse 走 `<host>/api/public/otel/v1/traces`）。失败只 `warnOnce`，**永不阻塞或影响主流程** |
+| **配上后行为** | 每次工具调用 / 每次 LLM 调用结束后，**fire-and-forget** 一次 OTLP/HTTP **JSON** `POST` 到 `<端点>/v1/traces`（Langfuse 走 `<host>/api/public/otel/v1/traces`）。配了 public/secret key 则随请求带 `Authorization: Basic`。失败只 `warnOnce`，**永不阻塞或影响主流程** |
 
-- `traceId` **恒贯通**且与工具审计**同源**：有 `requestId` 则复用它，否则 `tr_<hex>`。span 的 `traceId` 与 `audit_logs.trace_id` **一致**（便于旁路比对）。
-- **刻意不做完整 OTel SDK**（零依赖代价）：无批量、无采样、无 gRPC、无自动埋点；**每 span 一次 POST**；**不带鉴权头**。
-- ⚠️ 两点须知：① 若后端要求鉴权（Langfuse 常需公钥/私钥），请在前面放一个 OTLP Collector 转发行，或改用其允许匿名写入的端点；② 本实现把 `traceId` **原样透传**（非 32 位十六进制），个别严格校验的后端可能拒绝 —— 对这类后端建议经 Collector 规范化。
+- `traceId` **恒贯通**且与工具审计**同源**：由 `requestId` **确定性派生为 32 位 hex**（`sha256` 前 32 位；无 requestId 则随机 32-hex）。span 的 `traceId` 与 `audit_logs.trace_id` **逐字一致**（便于旁路比对），且满足 OTLP 对 traceId 的格式要求。
+- **一轮 = 一棵 trace 树**：`POST /agent/chat` 每轮由 `LangGraphTurnService` 包一个 root span `agent.turn`，轮内的 `llm.*` / `tool.*` 都挂在它下面（带 `parentSpanId`）；同时给每个 span 补 `langfuse.user.id` / `langfuse.session.id`，Langfuse 的 User / Session 列可直接按用户与会话筛选。SSE 前端可见的一个会话里会有多条 `agent.turn`（每次发消息 + 每次确认续跑各一轮）——属正常。
+- **刻意不做完整 OTel SDK**（零依赖代价）：无批量、无采样、无 gRPC、无自动埋点；**每 span 一次 POST**。
+- ⚠️ 须知：直连 Langfuse **已内建 Basic 鉴权**（配 `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY`，缺一即不带该头）→ **无需 Collector 转发**。**旧审计行的 `trace_id` 保持原样（`tr_xxx`/uuid），仅新写入的才是 32-hex。**
 
 ### 1.2 S3.2 内置策略规则（agent，**恒开、零基建**）+ S3.1 外部策略引擎（agent）
 

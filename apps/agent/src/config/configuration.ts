@@ -94,6 +94,9 @@ export const infraConfig = registerAs('infra', () => ({
   // S2.3 追踪 / Langfuse
   otlpEndpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || '',
   langfuseHost: process.env.LANGFUSE_HOST || '',
+  // Langfuse 直连鉴权（Basic Auth）：两者均非空时随 span 一起发送
+  langfusePublicKey: process.env.LANGFUSE_PUBLIC_KEY || '',
+  langfuseSecretKey: process.env.LANGFUSE_SECRET_KEY || '',
   serviceName: process.env.OTEL_SERVICE_NAME || 'furmx-agent',
   tracingEnabled: (process.env.TRACING_ENABLED || 'true') === 'true',
   tracingTimeoutMs: parseInt(process.env.TRACING_TIMEOUT_MS || '2000', 10),

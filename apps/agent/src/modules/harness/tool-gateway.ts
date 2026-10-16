@@ -8,7 +8,7 @@ import { withTimeout, isTimeoutError } from './timeout'
 import { WRITE_TOOLS } from './write-tools'
 import { combineDecisions, evaluateBuiltinPolicy, type PolicyDecision } from './policy-rules'
 import { PolicyEngineService } from '../infra/policy-engine.service'
-import { TracingService } from '../infra/tracing.service'
+import { TracingService, normalizeTraceId } from '../infra/tracing.service'
 
 export { WRITE_TOOLS }
 
@@ -34,7 +34,7 @@ interface AuditEntry {
   requestId?: string
   /** 归属会话（阶段 6 / S2）：用于凭 traceId/sessionId 追溯 */
   sessionId?: string
-  /** 关联 id：优先复用 requestId，否则新生成 `tr_<nanoid>` */
+  /** 关联 id：整轮统一 traceId 的 32-hex（与 span 同源）；无轮上下文时由 requestId 派生，见 normalizeTraceId */
   traceId: string
   /** 是否经过人工确认门（execute 路径 false，executeConfirmed 路径 true） */
   confirmed: boolean
@@ -202,10 +202,8 @@ export class ToolGateway {
       return { ok: true, summary: cached.summary, result: cached.result }
     }
 
-    // S2.3：traceId 与审计同源（有 requestId 复用之，否则 `tr_<hex>`）；span 包住真正的工具执行
-    const traceId = this.tracing
-      ? this.tracing.currentTraceId(opts?.requestId)
-      : opts?.requestId || `tr_${this.nanoid(12)}`
+    // S2.3：traceId 与审计同源；span 包住真正的工具执行
+    const traceId = this.resolveTraceId(opts?.requestId)
     const span = this.tracing?.startSpan(`tool.${toolName}`, traceId, {
       risk,
       workspaceId: opts?.workspaceId,
@@ -309,9 +307,7 @@ export class ToolGateway {
     const policyNote = policyDecision.decision === 'warn' ? policyDecision.auditNote : undefined
 
     // S2.3：traceId 与审计同源；span 包住确认后的真正执行
-    const traceId = this.tracing
-      ? this.tracing.currentTraceId(opts?.requestId)
-      : opts?.requestId || `tr_${this.nanoid(12)}`
+    const traceId = this.resolveTraceId(opts?.requestId)
     const span = this.tracing?.startSpan(`tool.${toolName}.confirmed`, traceId, {
       risk,
       workspaceId: opts?.workspaceId,
@@ -418,8 +414,17 @@ export class ToolGateway {
     return combineDecisions(builtin, external)
   }
 
+  /**
+   * S2.3：span 与审计共用的 traceId。处于整轮上下文时取该轮统一值（归一化由 TracingService 负责）；
+   * 未注入 tracing（可选依赖）时退回纯函数归一 —— 两条路径都恒为 32-hex。
+   */
+  private resolveTraceId(requestId?: string): string {
+    return this.tracing ? this.tracing.currentTraceId(requestId) : normalizeTraceId(requestId)
+  }
+
   private async writeAudit(entry: AuditInput): Promise<void> {
-    const traceId = entry.traceId || entry.requestId || `tr_${this.nanoid(12)}`
+    // 显式传入的 traceId 优先（可能来自已收口的 span），其次 requestId，最后随机
+    const traceId = normalizeTraceId(entry.traceId || entry.requestId)
     const record: AuditEntry = {
       ...entry,
       traceId,

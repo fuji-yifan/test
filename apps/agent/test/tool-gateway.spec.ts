@@ -9,9 +9,12 @@
  * - 高风险工具走确认门（不进缓存）；executeConfirmed 成功后失效。
  */
 import { describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
 import type { ConfigService } from '@nestjs/config'
 import { ToolGateway } from '../src/modules/harness/tool-gateway'
 import { ToolResultCache } from '../src/modules/cache/tool-cache.service'
+
+const hex32 = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 32)
 
 const RISK: Record<string, 'low' | 'medium' | 'high' | 'critical'> = {
   data_query: 'low',
@@ -178,7 +181,7 @@ describe('ToolGateway × ToolResultCache', () => {
       expect(audit.records).toHaveLength(1)
       const rec = audit.records[0]
       expect(rec).toMatchObject({
-        traceId: 'call_abc',
+        traceId: hex32('call_abc'),
         sessionId: 'sess1',
         userId: 'u1',
         workspaceId: 'ws1',
@@ -193,12 +196,12 @@ describe('ToolGateway × ToolResultCache', () => {
       expect(rec.args).toMatchObject({ token: 'tk', q: 'x' })
     })
 
-    it('无 requestId 时生成 tr_ 追溯 id', async () => {
+    it('无 requestId 时生成 32-hex 追溯 id', async () => {
       const { gateway, audit } = makeGateway()
 
       await gateway.execute('data_query', {}, { workspaceId: 'ws1' })
 
-      expect(audit.records[0].traceId).toMatch(/^tr_/)
+      expect(audit.records[0].traceId).toMatch(/^[0-9a-f]{32}$/)
     })
 
     it('高风险进确认门 → 落库 ok=false、summary=AWAITING_CONFIRMATION、confirmed=false', async () => {

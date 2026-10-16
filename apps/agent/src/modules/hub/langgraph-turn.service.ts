@@ -13,8 +13,9 @@
  * 前端回执契约（不新增端点）：再发一次 POST /agent/chat，带上 `confirmCallId`
  * （本层下发的 id）与 `confirmAction`（选中的 option.value）。
  */
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, Optional } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { TracingService, TURN_SPAN_NAME } from '../infra/tracing.service'
 import { SseEventType, SseWriter, type ConfirmOption } from '../../common/sse/sse.writer'
 import { GraphRunnerService, type GraphEvent, type RunGraphResult } from '../graph/graph-runner.service'
 import type { InterruptPayload } from '../graph/subgraph.factory'
@@ -91,6 +92,8 @@ export class LangGraphTurnService {
     private readonly sessions: SessionService,
     private readonly config: ConfigService,
     private readonly memory: UserMemoryService,
+    /** 链路追踪（S2.3，可选注入）：整轮 span 共享 traceId 并挂同一 root（InfraModule @Global） */
+    @Optional() private readonly tracing?: TracingService,
   ) {}
 
   /**
@@ -103,6 +106,21 @@ export class LangGraphTurnService {
    * HubController.chat 的 finally 统一负责。
    */
   async runTurn(params: LangGraphTurnParams): Promise<void> {
+    // 整轮追踪：把本轮 traceId/user/session 铺成上下文，轮内所有 span 归一为一棵 trace 树。
+    // 未注入 tracing（理论不发生）→ 直跑，行为与旧版一致。
+    if (!this.tracing) return this.runTurnInner(params)
+    return this.tracing.runInTurn(
+      {
+        requestId: params.requestId,
+        userId: params.session.userId,
+        sessionId: params.session.id,
+        name: TURN_SPAN_NAME,
+      },
+      () => this.runTurnInner(params),
+    )
+  }
+
+  private async runTurnInner(params: LangGraphTurnParams): Promise<void> {
     const { sse, session, body } = params
     const scope: TurnScope = {
       requestId: params.requestId,
