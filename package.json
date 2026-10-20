@@ -5,6 +5,7 @@
   "description": "轻量化低代码表单平台 — Vue 3 + NestJS Monorepo",
   "scripts": {
     "dev": "turbo run dev --filter=@furmx/server --filter=@furmx/web --filter=@furmx/agent",
+    "dev:all": "concurrently -k -n opa,openbao,guardrails,app -c cyan,yellow,magenta,green \"pnpm dev:opa\" \"pnpm dev:openbao\" \"pnpm dev:guardrails\" \"pnpm dev\"",
     "dev:server": "turbo run dev --filter=@furmx/server",
     "dev:web": "turbo run dev --filter=@furmx/web",
     "build": "turbo run build",
@@ -19,12 +20,19 @@
     "db:seed": "turbo run db:seed --filter=@furmx/server",
     "db:studio": "turbo run db:studio --filter=@furmx/server",
     "dev:agent": "turbo run dev --filter=@furmx/agent",
+    "dev:opa": "opa run --server --addr 127.0.0.1:8181 -w apps/agent/opa/policy.rego",
+    "dev:guardrails": "tools\\guardrails-sidecar\\run.cmd",
+    "dev:openbao": "D:\\EdgeDownloads\\openbao\\bao.exe server -dev -dev-root-token-id=root",
+    "seed:openbao": "node tools/seed-openbao.mjs",
+    "demo": "node tools/demo.mjs",
+    "demo:check": "node tools/demo.mjs --check",
     "build:agent": "turbo run build --filter=@furmx/agent",
     "start:agent": "cd apps/agent && node dist/main"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "concurrently": "^10.0.6",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-vue": "^9.26.0",
@@ -39,6 +47,5 @@
   ],
   "engines": {
     "node": ">=18"
-  },
-  "dependencies": {}
+  }
 }

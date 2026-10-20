@@ -1,5 +1,8 @@
 # HITL 检查点文案总表
 
+> **状态：✅ 现行有效**（2026-10-19 核对：9 个声明式 + 2 个动态检查点均在代码中存在，
+> 见 `agent-catalog.ts` 的 `spec.checkpoints` 与 `subgraph.factory.ts` 的 `disambiguate` / `tool_confirm`）。
+
 对话过程中所有「停下来问用户」的人机交互点。**改文案只改 `label`，不要动 `value`** ——
 `value`（`continue` / `abort` / `confirm` / 表 key）是前端回传 `confirmAction` 后走哪条分支的依据，
 改了会直接断掉确认链路。
@@ -11,7 +14,7 @@
 | # | Agent | id | 触发时机 | 文案（prompt） | 按钮 label | 备注 |
 |---|---|---|---|---|---|---|
 | 1 | form-designer | `schema-review` | `form_assemble_schema` 成功后 | 表单结构已生成，下方可查看预览<br />这个结构是否可行？ | 没问题 / 再改一版 | 随中断载荷带 `artifact`，前端在待答复期间把它渲染成产物卡片并**默认展开**（所以「可点击」只在收起后才有意义） |
-| 2 | form-designer | `space-approval` | `form_save` 执行前 | 表单已就绪，是否保存到当前空间？ | 保存 / 暂不保存 | `coversRisk`；带 `artifact` 与字段级 `diff` |
+| 2 | form-designer | `space-approval` | `form_save` 执行前 | 表单已就绪，是否保存到当前空间？ | 保存 / 暂不保存 | `coversRisk`；带 `artifact`（字段级 `diff` 已于 2026-10-16 移除） |
 | 3 | form-designer | `rollback-approval` | `form_rollback` 执行前 | 是否将这张表单回滚到上一版本<br />（追加为新版本） | 确认 / 取消 | `coversRisk`（回滚也是写库，追加新版本） |
 | 4 | form-designer | `delete-approval` | `form_delete` 执行前 | 是否删除这张表单<br />（移入回收站，可由管理员恢复） | 确认 / 取消 | `coversRisk`；破坏性操作 |
 | 5 | form-designer | `version-delete-approval` | `form_version_delete` 执行前 | 是否删除这个历史版本<br />（移入回收站，可由管理员恢复） | 确认 / 取消 | `coversRisk`；破坏性操作 |
@@ -37,4 +40,4 @@ submission（数据分析）是只读 Agent，没有检查点。
 - **`beforeTool` / `afterTool`**：检查点在某个工具执行前 / 成功后触发。
 - **`coversRisk`**：`continue` 同时充当该工具的风险放行，避免对同一次调用连问两遍。
 - **`artifact`**：随中断载荷下发的待审产物，前端据此渲染预览卡片（第 1、2、6、9 处有）。
-- **`diff`**：表单保存前的字段级改动清单（仅第 2 处）。
+- **`diff`**：表单保存前的字段级改动清单（仅第 2 处）——**已于 2026-10-16 移除**，保留此条仅为历史追溯。

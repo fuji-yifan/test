@@ -50,3 +50,11 @@ lint_result.txt
 # Misc
 *.tsbuildinfo
 .cache/
+
+# Runtime uploads (approval attachments, local disk)
+uploads/
+
+# Python (guardrails sidecar)
+.venv/
+__pycache__/
+*.pyc
