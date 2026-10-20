@@ -27,7 +27,7 @@ describe('PolicyEngineService', () => {
   })
 
   it('配了 URL → 转发 PDP，采纳其 decision', async () => {
-    const fetchSpy = vi.fn(async () => ({
+    const fetchSpy = vi.fn(async (_url: string, _init?: RequestInit) => ({
       status: 200,
       json: async () => ({ decision: 'deny', reason: 'blocked-by-policy' }),
     }))
@@ -39,6 +39,44 @@ describe('PolicyEngineService', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     expect(fetchSpy.mock.calls[0][0]).toBe('http://pdp.local/check')
     expect(d).toMatchObject({ decision: 'deny', reason: 'blocked-by-policy', source: 'external' })
+  })
+
+  it('请求体按 OPA Data API 约定包成 {input: ...}', async () => {
+    const fetchSpy = vi.fn(async (_url: string, _init?: RequestInit) => ({
+      status: 200,
+      json: async () => ({ result: { decision: 'allow', reason: 'default-allow' } }),
+    }))
+    vi.stubGlobal('fetch', fetchSpy)
+    const svc = new PolicyEngineService(makeConfig({ 'infra.policyEngineUrl': 'http://opa.local/v1/data/furmx/tool/decision' }))
+
+    await svc.check({ ...INPUT, userId: 'u1' })
+
+    const init = fetchSpy.mock.calls[0][1] as RequestInit
+    const body = JSON.parse(String(init.body))
+    expect(body.input).toMatchObject({
+      principal: { id: 'u1', workspaceId: 'ws1' },
+      resource: { kind: 'tool', tool: 'form_delete', risk: 'high', isWrite: true },
+      action: 'form_delete',
+      args: { formId: 'f1' },
+    })
+    expect(body.principal).toBeUndefined()
+  })
+
+  it('OPA 的 {result:{decision,reason}} 形状 → 自动解包并采纳', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        status: 200,
+        json: async () => ({ result: { decision: 'requireConfirm', reason: 'destructive-tool' } }),
+      })),
+    )
+    const svc = new PolicyEngineService(
+      makeConfig({ 'infra.policyEngineUrl': 'http://opa.local/v1/data/furmx/tool/decision' }),
+    )
+
+    const d = await svc.check(INPUT)
+
+    expect(d).toMatchObject({ decision: 'requireConfirm', reason: 'destructive-tool', source: 'external' })
   })
 
   it('网络失败 → 默认 fail-open（allow）', async () => {

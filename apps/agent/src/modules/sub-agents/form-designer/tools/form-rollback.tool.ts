@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { Tool } from '../../../harness/tool.decorator'
 import { z } from 'zod'
 import { ContextService } from '../../../context/context.service'
+import { resolveExistingForm } from './form-resolver'
 
 /**
  * 表单回滚（阶段 5 / 5.5）：把已保存的表单恢复到某个历史版本。
@@ -20,7 +21,7 @@ import { ContextService } from '../../../context/context.service'
     target: z
       .string()
       .optional()
-      .describe('要回滚的表：填【会话中的表单】里那张表的 key、标题或 formId'),
+      .describe('要回滚的表：填表单标题/表名、会话里的 key 或 formId。可以是当前工作空间里已保存的任意表单'),
     formId: z.string().optional().describe('已保存表单的 id（编排层会按 target 自动注入，一般不用手填）'),
     version: z.number().optional().describe('要回滚到的版本号。不填 = 上一个版本'),
   }),
@@ -41,14 +42,24 @@ export class FormRollbackTool {
     if (!token) {
       return { summary: '回滚失败：未获取到登录凭证，请重新登录后重试', ok: false, error: 'no_token_in_session' }
     }
-    const formId = args.formId
-    if (!formId) {
+    if (!args.formId && !args.target) {
       return {
         summary: '这张表还没有保存过，没有可回滚的版本。请先保存一次。',
         ok: false,
         error: 'not_saved',
       }
     }
+    // 目标表可以不在本会话（以前保存的）：按名称在当前工作空间里解析真实 id
+    const resolved = await resolveExistingForm(
+      this.contextService,
+      token,
+      args.workspaceId,
+      args.formId,
+      args.target,
+      { action: '回滚', noTargetSummary: '这张表还没有保存过，没有可回滚的版本。请先保存一次。' },
+    )
+    if (resolved.failure) return resolved.failure
+    const formId = resolved.formId!
 
     const versions = await this.contextService.getFormVersions(token, formId)
     // 按 version 倒序：[0] 是当前版本

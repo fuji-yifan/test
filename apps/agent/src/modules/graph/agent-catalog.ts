@@ -243,7 +243,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             // 第二行用 \n 断行，前端 .confirm-prompt 是 white-space: pre-line。
             id: 'schema-review',
             afterTool: 'form_assemble_schema',
-            prompt: '表单结构已生成，下方可查看预览\n这个结构是否可行？',
+            prompt: '表单结构已生成，下方可查看预览。\n这个结构是否可行？',
             options: [
               { value: 'continue', label: '没问题', style: 'primary' },
               { value: 'abort', label: '再改一版', style: 'danger' },
@@ -253,7 +253,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             // 用户要求：保存前问一次
             id: 'space-approval',
             beforeTool: 'form_save',
-            prompt: '是否将表单保存到当前空间',
+            prompt: '是否将表单保存到当前空间？',
             options: [
               { value: 'continue', label: '保存', style: 'primary' },
               { value: 'abort', label: '暂不保存', style: 'danger' },
@@ -264,7 +264,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             // 回滚同样写库（追加新版本），执行前征求同意（阶段 5 / 5.5）
             id: 'rollback-approval',
             beforeTool: 'form_rollback',
-            prompt: '是否将这张表单回滚到上一版本\n（追加为新版本）',
+            prompt: '是否将这张表单回滚到上一版本并追加？',
             options: [
               { value: 'continue', label: '确认', style: 'primary' },
               { value: 'abort', label: '取消', style: 'danger' },
@@ -275,7 +275,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             // 删除表单是破坏性操作（阶段 6 / S4.2），执行前必须人工确认
             id: 'delete-approval',
             beforeTool: 'form_delete',
-            prompt: '是否删除这张表单\n（移入回收站，可由管理员恢复）',
+            prompt: '是否删除这张表单？\n将移入回收站并由管理员恢复。',
             options: [
               { value: 'continue', label: '确认', style: 'danger' },
               { value: 'abort', label: '取消', style: 'primary' },
@@ -286,7 +286,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
             // 删除历史版本同属破坏性操作（阶段 6 / S4.2）
             id: 'version-delete-approval',
             beforeTool: 'form_version_delete',
-            prompt: '是否删除这个历史版本\n（移入回收站，可由管理员恢复）',
+            prompt: '是否删除这个历史版本？\n将移入回收站并由管理员恢复。',
             options: [
               { value: 'continue', label: '确认', style: 'danger' },
               { value: 'abort', label: '取消', style: 'primary' },
@@ -365,7 +365,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
           {
             id: 'save-approval',
             beforeTool: 'flow_save',
-            prompt: '流程定义已就绪，下方可查看预览\n是否确认保存？',
+            prompt: '流程定义已就绪，下方可查看预览。\n是否确认保存？',
             options: [
               { value: 'continue', label: '保存', style: 'primary' },
               { value: 'abort', label: '暂不保存', style: 'danger' },
@@ -375,7 +375,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
           {
             id: 'bind-form-approval',
             beforeTool: 'flow_bind_form',
-            prompt: '是否把表单关联到这个流程？（关联只是意向，发布后才真正生效）',
+            prompt: '是否把表单关联到这个流程？\n待流程发布后可真正生效。',
             options: [
               { value: 'continue', label: '关联', style: 'primary' },
               { value: 'abort', label: '取消', style: 'danger' },
@@ -385,7 +385,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
           {
             id: 'publish-approval',
             beforeTool: 'flow_publish',
-            prompt: '是否发布这个流程？发布后，开始节点关联的表单被提交时会自动发起本流程。',
+            prompt: '是否发布这个流程？\n发布后，关联表单提交时会自动发起本流程。',
             options: [
               { value: 'continue', label: '发布', style: 'primary' },
               { value: 'abort', label: '暂不发布', style: 'danger' },
@@ -437,7 +437,7 @@ export class AgentCatalogService implements OnApplicationBootstrap {
           {
             id: 'instantiate-approval',
             beforeTool: 'template_instantiate',
-            prompt: '已选中该模板，下方可查看预览\n是否用它生成表单？',
+            prompt: '已选中该模板，下方可查看预览。\n是否用它生成表单？',
             options: [
               { value: 'continue', label: '生成', style: 'primary' },
               { value: 'abort', label: '暂不生成', style: 'danger' },

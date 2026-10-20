@@ -54,6 +54,16 @@ export interface ConfirmOption {
   value: string
   label: string
   style?: 'primary' | 'default' | 'danger'
+  /**
+   * 消歧候选的预览数据（仅 disambiguate 的候选可能带）。
+   * 同名表光看标题分不出来，前端据此在候选行上直接打开预览。
+   */
+  form?: {
+    title?: string
+    schema?: unknown
+    formId?: string
+    fieldCount?: number
+  }
 }
 
 export interface ConfirmRequiredPayload {

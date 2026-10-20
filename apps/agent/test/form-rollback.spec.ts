@@ -5,9 +5,11 @@ import { FormRollbackTool } from '../src/modules/sub-agents/form-designer/tools/
  * form_rollback（阶段 5 / 5.5）：读版本快照、把上一版 schema 再 PATCH 回去。
  * 版本列表按 version 倒序（[0] = 当前），所以「上一版」是 [1]。
  */
-function makeTool(versions: any[]) {
+function makeTool(versions: any[], opts?: { formList?: any }) {
   const saved: any[] = []
   const ctx = {
+    getForm: async (_token: string, formId: string) => ({ id: formId, name: '客户登记表' }),
+    listForms: async () => opts?.formList ?? { list: [] },
     getFormVersions: async () => versions,
     saveFormDraft: async (_token: string, data: any) => {
       saved.push(data)
@@ -62,5 +64,22 @@ describe('form_rollback 回滚', () => {
     const { tool } = makeTool([V(3), V(2)])
     const res = await tool.execute({ formId: 'f1' })
     expect(res.error).toBe('no_token_in_session')
+  })
+
+  it('目标不在本会话（只给表名）→ 按名称解析真实 id 再回滚', async () => {
+    const { tool, saved } = makeTool([V(2), V(1)], {
+      formList: { list: [{ id: 'real-form-id', name: '报名统计表' }] },
+    })
+    const res = await tool.execute({ token: 't', workspaceId: 'ws1', target: '报名统计表' })
+    expect(res.formId).toBe('real-form-id')
+    expect(res.version).toBe(1)
+    expect(saved[0]).toMatchObject({ formId: 'real-form-id', schema: V(1).schema })
+  })
+
+  it('表名在当前空间找不到 → form_not_found，不写库', async () => {
+    const { tool, saved } = makeTool([V(2), V(1)], { formList: { list: [] } })
+    const res = await tool.execute({ token: 't', workspaceId: 'ws1', target: '不存在的表' })
+    expect(res.error).toBe('form_not_found')
+    expect(saved).toHaveLength(0)
   })
 })

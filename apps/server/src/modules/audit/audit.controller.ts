@@ -1,7 +1,7 @@
 import { Controller, Get, Delete, Param, Query, Res, UseGuards } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger'
 import { Response } from 'express'
-import { AuditService } from './audit.service'
+import { AuditService, CleanupUnit } from './audit.service'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { PermissionGuard, RequiredPermission } from '../../common/guards/permission.guard'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
@@ -31,6 +31,11 @@ export class AuditController {
     return this.auditService.getActionTypes(wsId)
   }
 
+  @Get('users')
+  getUsers(@Param('wsId') wsId: string) {
+    return this.auditService.getUsers(wsId)
+  }
+
   @Get('stats')
   getStats(
     @Param('wsId') wsId: string,
@@ -43,7 +48,7 @@ export class AuditController {
   @RequiredPermission('audit:export')
   async exportCsv(
     @Param('wsId') wsId: string,
-    @Query() query: { action?: string; resourceType?: string; startDate?: string; endDate?: string },
+    @Query() query: { action?: string; resourceType?: string; userId?: string; startDate?: string; endDate?: string },
     @CurrentUser('userId') userId: string,
     @Res() res: Response,
   ) {
@@ -58,11 +63,15 @@ export class AuditController {
   @RequiredPermission('audit:cleanup')
   async cleanup(
     @Param('wsId') wsId: string,
-    @Query('days') days: number,
+    @Query('amount') amount: string,
+    @Query('unit') unit: string,
     @CurrentUser('userId') userId: string,
   ) {
-    try { await this.auditService.log({ workspaceId: wsId, userId, action: '清理审计日志', resourceType: 'AuditLog', details: { days: +days || 7 } }) } catch { /* 记录失败不影响清理 */ }
-    return this.auditService.cleanup(wsId, +days || 7)
+    // 下限 1：负数会让 cutoff 落到未来，一次把日志全删光（query 参数是外部输入，前端 min 挡不住手搓请求）
+    const n = Math.max(1, Math.floor(Number(amount) || 7))
+    const u: CleanupUnit = unit === 'month' || unit === 'year' ? unit : 'day'
+    try { await this.auditService.log({ workspaceId: wsId, userId, action: '清理审计日志', resourceType: 'AuditLog', details: { amount: n, unit: u } }) } catch { /* 记录失败不影响清理 */ }
+    return this.auditService.cleanup(wsId, n, u)
   }
 
   @Get(':id')

@@ -64,6 +64,32 @@ describe('guardHallucination', () => {
     expect(guardHallucination('版本删除成功。', tools, ['form_version_delete']).suspicious).toBe(false)
   })
 
+  // 2026-10-19 实测：表单名较长时「已删除「教职工信息登记表」的 V2 版本」不匹配
+  // 「删除后 4 字内是版本」的旧正则，被 form_delete 认领 → 成功的版本删除被误报「未落库」。
+  it('长表单名 + V2 版本：归因为版本删除，成功后不误报', () => {
+    const tools = ['form_delete', 'form_version_delete']
+    const reply = '已删除「教职工信息登记表」的 V2 版本，该版本已移入回收站，管理员可恢复。'
+    expect(guardHallucination(reply, tools, ['form_version_delete']).suspicious).toBe(false)
+
+    const r = guardHallucination(reply, tools, [])
+    expect(r.suspicious).toBe(true)
+    expect(r.expectedTool).toBe('form_version_delete')
+  })
+
+  it('版本声明在前、回收站在后的分句也归为版本删除', () => {
+    const tools = ['form_delete', 'form_version_delete']
+    const r = guardHallucination('该版本已移入回收站。', tools, [])
+    expect(r.suspicious).toBe(true)
+    expect(r.expectedTool).toBe('form_version_delete')
+  })
+
+  it('只成功删了版本、却声称删了整张表 → 仍按表单删除判', () => {
+    const tools = ['form_delete', 'form_version_delete']
+    const r = guardHallucination('已经帮你删除这张表单了。', tools, ['form_version_delete'])
+    expect(r.suspicious).toBe(true)
+    expect(r.expectedTool).toBe('form_delete')
+  })
+
   it('成功删除表单后不被版本正则误判', () => {
     const tools = ['form_delete', 'form_version_delete']
     expect(guardHallucination('已经帮你删除这张表单了，可在回收站恢复。', tools, ['form_delete']).suspicious).toBe(

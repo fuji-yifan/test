@@ -168,6 +168,30 @@ export function applyAssemble(
   }
 }
 
+/**
+ * 把一张**工作空间里已保存、但不在本次会话工作台**的表登记进来。
+ *
+ * 背景（2026-10-19 实测）：用户说「给教职工信息登记表加一个备注字段」，该表是在
+ * 别的会话里建的，工作台里只有 f1/f2/… 其它表。`resolveFormTarget` 找不到就当成
+ * 「新建」，于是模型用补丁字段凭空生成了一张只有 1 个字段的「新建表单」。
+ * act 节点按名称解析到真实表单后，用它把原 schema + formId 补进工作台，后续的
+ * `form_assemble_schema`（合并）与 `form_save`（PATCH）就能走正常的改表路径。
+ */
+export function registerSavedForm(
+  ws: FormWorksheet | undefined | null,
+  form: { formId: string; title: string; schema: Record<string, unknown> },
+): { worksheet: FormWorksheet; key: string } {
+  const sheet = ws ?? emptyWorksheet()
+  const key = nextKey(sheet)
+  return {
+    key,
+    worksheet: {
+      forms: [...sheet.forms, { key, title: form.title, schema: form.schema, formId: form.formId }],
+      focusKey: key,
+    },
+  }
+}
+
 /** 登记一次保存：把 formId 记到对应表上 */
 export function markSaved(
   ws: FormWorksheet,

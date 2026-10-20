@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { Tool } from '../../../harness/tool.decorator'
 import { z } from 'zod'
 import { ContextService } from '../../../context/context.service'
+import { resolveExistingForm } from './form-resolver'
 
 /**
  * 表单历史版本软删除（阶段 6 / S4.2）：把某个版本快照移入回收站。
@@ -19,7 +20,7 @@ import { ContextService } from '../../../context/context.service'
     target: z
       .string()
       .optional()
-      .describe('目标表：填【会话中的表单】里那张表的 key、标题或 formId'),
+      .describe('目标表：填表单标题/表名、会话里的 key 或 formId。可以是当前工作空间里已保存的任意表单'),
     formId: z.string().optional().describe('目标表单的 id（编排层会按 target 自动注入，一般不用手填）'),
     version: z.number().describe('要删除的版本号'),
   }),
@@ -39,17 +40,19 @@ export class FormVersionDeleteTool {
     if (!token) {
       return { summary: '删除失败：未获取到登录凭证，请重新登录后重试', ok: false, error: 'no_token_in_session' }
     }
-    const formId = args.formId
-    if (!formId) {
-      return {
-        summary: '没有确定要操作的表（或这张表还没保存过）。请先说明是哪张已保存的表。',
-        ok: false,
-        error: 'no_form_id',
-      }
-    }
     if (typeof args.version !== 'number') {
       return { summary: '请指定要删除的版本号。', ok: false, error: 'no_version' }
     }
+    const resolved = await resolveExistingForm(
+      this.contextService,
+      token,
+      args.workspaceId,
+      args.formId,
+      args.target,
+      { action: '删除版本', noTargetSummary: '没有确定要操作的表。请先说明是哪张已保存的表。' },
+    )
+    if (resolved.failure) return resolved.failure
+    const formId = resolved.formId!
 
     await this.contextService.deleteFormVersion(token, formId, args.version)
     return {

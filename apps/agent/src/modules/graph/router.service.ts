@@ -20,7 +20,7 @@ import { AgentCatalogService } from './agent-catalog'
 const STRONG: { agent: AgentKey; re: RegExp }[] = [
   { agent: 'template', re: /搜索.*模板|查找.*模板|有什么模板|找.*模板|浏览.*模板/ },
   { agent: 'workflow', re: /创建.*审批|设计.*流程|搭建.*流程|配置.*审批|审批流|工作流/ },
-  { agent: 'form-designer', re: /设计.*[表表单]|创建.*表单|做一个.*[表表单]|新建.*表单/ },
+  { agent: 'form-designer', re: /设计.*[表表单]|创建.*表单|做一个.*[表表单]|新建.*表单|(删除|删掉|移除).*(表单|登记表|数据表|统计表|表)/ },
   { agent: 'submission', re: /分析.*数据|数据.*分析|统计.*数据|数据.*趋势/ },
 ]
 
@@ -45,6 +45,26 @@ const CROSS_TEMPLATE_FLOW = (msg: string): boolean => {
 const CROSS_TEMPLATE_FORM = (msg: string): boolean => {
   const t = msg.toLowerCase()
   return (t.includes('基于') || t.includes('模板')) && (t.includes('创建') || t.includes('生成'))
+}
+
+/**
+ * 用户明确要「创建/设计表单」——只有这种意图才需要 form-designer 步骤。
+ * 名词要紧跟动词（允许量词），避免把「新建一个流程并绑定…登记表」当成建表。
+ */
+const CREATE_FORM = /(设计|创建|新建|生成|制作|做)(一个|一张|个|张)?[^，,。;；\s]{0,8}(表单|登记表|表格|数据表)/
+
+/** 把一张**已有**表单绑定/关联到流程（不涉及建表） */
+const BIND_EXISTING_FORM = /(绑定|关联|挂到|挂上).{0,16}(表单|登记表|表)|(表单|登记表).{0,16}(绑定|关联)/
+
+/**
+ * 「新建流程并绑定已有表单」：这是 workflow 的活，表单不需要再生成。
+ *
+ * 实测 LLM 分类器会把「绑定教职工信息登记表」误判成跨领域（workflow + form-designer），
+ * 导致流程建完后表单设计助手又凭空生成一张表。这里用确定性的意图判据兜底：
+ * 文案里出现流程/审批 + 绑定/关联表单，且**没有**建表意图时，不算表单设计需求。
+ */
+export function isBindExistingForm(msg: string): boolean {
+  return BIND_EXISTING_FORM.test(msg) && /流程|审批|工作流/.test(msg) && !CREATE_FORM.test(msg)
 }
 
 /** decide 的可选上下文：会话连续性所需的信息（手册 D5） */
@@ -256,6 +276,10 @@ export class RouterService {
 - "搜索客服工单模板，基于它创建表单" → template, form-designer
 - "搜索请假模板，基于它建表单并配一个审批流" → template, form-designer, workflow
 
+注意区分「建表」和「绑定已有表单」：
+- "新建一个流程并绑定教职工信息登记表" → 只交 workflow（表单已存在，flow_bind_form 会按名称解析）。**不要**加 form-designer。
+- 只有用户明确说「创建/设计/新建**表单**、增删字段」时才把 form-designer 放进 steps。
+
 会话连续性（最高优先级）：若用户这句话只是对上一轮追问的补充或回答（例如状态栏显示上一轮在数据分析里问"要分析哪张表"，用户回"教职工信息表单"），应沿用「上一轮领域」，不要仅凭出现"表单/数据"等词就改判领域。真正换领域会明确说出「创建/设计表单」「搜索模板」这类意图。
 
 只输出 JSON（不要 markdown、不要解释）：
@@ -279,10 +303,25 @@ export class RouterService {
       return null
     }
 
-    const agent = parsed?.targetAgent as AgentKey | undefined
+    let agent = parsed?.targetAgent as AgentKey | undefined
     if (!agent || !this.catalog.get(agent)) return null
 
-    const steps = (parsed?.steps as any[] | undefined)?.map((s) => s.agent).filter((a) => this.catalog.get(a))
+    // 兜底：分类器直接给了 form-designer，但这句是「流程 + 绑定已有表单」→ 交给 workflow
+    if (agent === 'form-designer' && isBindExistingForm(userMessage)) agent = 'workflow'
+
+    let steps = (parsed?.steps as any[] | undefined)?.map((s) => s.agent).filter((a) => this.catalog.get(a))
+
+    // 确定性兜底：LLM 把「绑定已有表单」误判成跨领域时，去掉多余的 form-designer 步骤。
+    // 否则流程建完后表单设计助手会再生成一张表（2026-10-18 实测）。
+    if (steps && steps.length > 1 && isBindExistingForm(userMessage)) {
+      const filtered = steps.filter((a) => a !== 'form-designer')
+      if (filtered.length === 0) return null
+      if (filtered.length !== steps.length) {
+        this.logger.log(`路由修正：绑定已有表单，去掉 form-designer 步骤（${steps.join(',')} → ${filtered.join(',')}）`)
+        steps = filtered
+      }
+    }
+
     if (parsed?.isCrossDomain && steps && steps.length > 1) {
       return {
         agent: steps[0] as AgentKey,
@@ -291,6 +330,17 @@ export class RouterService {
         reason: parsed?.reason || 'LLM 判定为跨领域任务',
         isCrossDomain: true,
         plan: this.planFromAgents(steps as AgentKey[], userMessage),
+      }
+    }
+
+    // 跨领域计划被修正成单步时，按剩下的那一步执行
+    if (parsed?.isCrossDomain && steps && steps.length === 1) {
+      return {
+        agent: steps[0] as AgentKey,
+        scenario: this.catalog.scenarioByAgent(steps[0] as AgentKey),
+        source: 'llm',
+        reason: parsed?.reason || 'LLM 判定为跨领域任务',
+        isCrossDomain: false,
       }
     }
 
@@ -326,7 +376,7 @@ export class RouterService {
           id: '2',
           agent: 'form-designer',
           action: 'customize',
-          input: { templateRef: '$1.schema' },
+          input: { templateRef: '$1.schema', description: userMessage },
           dependsOn: ['1'],
           expects: 'FormArtifact',
         },
@@ -359,7 +409,7 @@ export class RouterService {
           id: '2',
           agent: 'form-designer',
           action: 'customize',
-          input: { templateRef: '$1.schema' },
+          input: { templateRef: '$1.schema', description: userMessage },
           dependsOn: ['1'],
           expects: 'FormArtifact',
         },

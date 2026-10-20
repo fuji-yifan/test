@@ -80,6 +80,8 @@ function toConfirmOptions(options: InterruptPayload['options']): ConfirmOption[]
     value: o.value,
     label: o.label,
     style: normalizeStyle(o.style),
+    // 消歧候选的预览数据必须原样透传，否则前端只能看到一行标题
+    ...(o.form ? { form: o.form } : {}),
   }))
 }
 
@@ -141,7 +143,24 @@ export class LangGraphTurnService {
 
     let result: RunGraphResult
     try {
-      if (body.confirmCallId && pending && pending.callId === body.confirmCallId) {
+      if (body.confirmCallId) {
+        if (!pending || pending.callId !== body.confirmCallId) {
+          // 失效/重复的检查点回执：页面刷新后 localStorage 里残留的旧卡片、或已经
+          // 答过的检查点。绝不能把按钮文案（「确认」「保存」）当新消息再跑一轮 ——
+          // 实测它会落到当前页面场景，比如 form-designer 反问「请描述你想创建的表单…」。
+          this.logger.log(`会话 ${session.id} 收到失效的检查点回执：${body.confirmCallId}`)
+          this.safeWrite(sse, SseEventType.MESSAGE, {
+            role: 'assistant',
+            content: pending
+              ? '这个检查点已经失效，请确认当前最新的检查点后再继续。'
+              : '这个检查点已经处理过了，无需再次确认。请直接说明接下来要做什么。',
+          })
+          this.safeWrite(sse, SseEventType.DONE, {
+            sessionId: session.id,
+            stopReason: 'stale_confirm',
+          })
+          return
+        }
         // 用户点了检查点上的按钮
         const action = body.confirmAction || pending.options?.[0]?.value || 'abort'
         await this.clearPending(session.id)
@@ -292,6 +311,8 @@ export class LangGraphTurnService {
   ): Promise<void> {
     const callId = `graph_${shortId()}`
     const options = toConfirmOptions(payload.options)
+    // 候选 schema 只用于前端预览，不写进会话元数据：待答复记录只需要 value 能回执。
+    const persistedOptions = options.map((o) => ({ value: o.value, label: o.label, style: o.style }))
     const prompt = payload.prompt || payload.summary || '需要你的确认'
     // 检查点不能只给按钮：用户得看到自己在批准什么。
     // 产物只能从载荷里拿 —— 子图挂起期间它的 channel patch 还没冒泡到父图，
@@ -305,7 +326,7 @@ export class LangGraphTurnService {
       toolCallId: payload.toolCallId,
       tool: payload.tool ?? null,
       prompt,
-      options,
+      options: persistedOptions,
     }
     await this.sessions
       .updateMetadata(session.id, { [PENDING_KEY]: record, phase: 'waiting_user' })

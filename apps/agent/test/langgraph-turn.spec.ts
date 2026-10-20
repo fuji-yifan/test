@@ -426,7 +426,7 @@ describe('LangGraphTurnService — interrupt 与回执', () => {
     expect(calls[0].params.resume).toEqual({ action: 'continue' })
   })
 
-  it('callId 对不上时不当作回执，按新消息处理', async () => {
+  it('callId 对不上时不跑图，如实告知检查点已失效（不能把「确认」当新消息）', async () => {
     const pending: PendingGraphInterrupt = {
       callId: 'graph_abc',
       kind: 'checkpoint',
@@ -437,16 +437,33 @@ describe('LangGraphTurnService — interrupt 与回执', () => {
       options: INTERRUPT_PAYLOAD.options,
     }
     const session = newSession({ pendingGraphInterrupt: pending })
-    const { service, calls, sse } = makeService({ result: OK_RESULT }, session)
+    const { service, calls, events, sse, patches } = makeService({ result: OK_RESULT }, session)
 
     await service.runTurn({
       ...turnParams(session, { confirmCallId: 'graph_stale', confirmAction: 'continue' }),
       sse,
     })
 
-    // 走的是「悬挂中断」分支：先 abort，再跑新消息
-    expect(calls.map((c) => c.kind)).toEqual(['resume', 'run'])
-    expect(calls[0].params.resume).toEqual({ action: 'abort' })
+    // 既不 resume 也不 run：按钮文案（如「保存」）落到当前页面场景会答非所问
+    expect(calls).toEqual([])
+    expect(lastOf(events, 'message')?.payload.content).toContain('失效')
+    expect(lastOf(events, 'done')?.payload.stopReason).toBe('stale_confirm')
+    // 真正待答的检查点不能被一条过期回执连带清掉
+    expect(patches.some((p) => p.pendingGraphInterrupt === null)).toBe(false)
+  })
+
+  it('没有待答检查点时的迟到回执（刷新后残留卡片）不跑图', async () => {
+    const session = newSession()
+    const { service, calls, events, sse } = makeService({ result: OK_RESULT }, session)
+
+    await service.runTurn({
+      ...turnParams(session, { confirmCallId: 'graph_gone', confirmAction: 'continue' }),
+      sse,
+    })
+
+    expect(calls).toEqual([])
+    expect(lastOf(events, 'message')?.payload.content).toContain('已经处理过')
+    expect(lastOf(events, 'done')?.payload.stopReason).toBe('stale_confirm')
   })
 })
 

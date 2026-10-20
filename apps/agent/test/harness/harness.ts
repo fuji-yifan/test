@@ -24,7 +24,13 @@ export interface Harness {
 export function createBuildHarness(getSaver: () => unknown) {
   return function buildHarness(
     script: Script,
-    overrides?: { catalogSpec?: any; config?: Record<string, unknown>; memories?: any[] },
+    overrides?: {
+      catalogSpec?: any
+      config?: Record<string, unknown>
+      memories?: any[]
+      /** 假的 ContextService：验「工作空间里已保存的表」按名称载入 */
+      context?: any
+    },
   ): Harness {
     const registry = new FakeRegistry() as any
     const gateway = new FakeGateway()
@@ -46,7 +52,7 @@ export function createBuildHarness(getSaver: () => unknown) {
       catalog.list = () => [overrides.catalogSpec]
     }
     const llm = new ScriptedLlm(script)
-    const subgraphs = new AgentSubgraphFactory(bridge, llm as any, registry, skills, config)
+    const subgraphs = new AgentSubgraphFactory(bridge, llm as any, registry, skills, config, overrides?.context)
     const router = new RouterService(catalog, llm as any)
     const plan = new PlanService()
     const checkpoint = { enabled: true, get saver() { return getSaver() } } as any

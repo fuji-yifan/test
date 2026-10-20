@@ -13,7 +13,7 @@ import { ContextService } from '../../../context/context.service'
 @Tool({
   name: 'flow_publish',
   description:
-    '发布流程，使其真正生效。发布后，流程开始节点关联的表单被提交时会自动发起本流程。这是高风险操作，执行前必须向用户说明影响并取得确认。',
+    '发布流程，使其真正生效。发布后，流程关联的表单被提交时会自动发起本流程。这是高风险操作，执行前必须向用户说明影响并取得确认。',
   inputSchema: z.object({
     flowId: z.string().optional().describe('要发布的流程 id（编排层会自动注入，一般不用手填）'),
     name: z.string().optional().describe('流程名称（说明用）'),
@@ -52,7 +52,7 @@ export class FlowPublishTool {
     }
 
     return {
-      summary: args.name ? `流程「${args.name}」已发布，开始节点关联的表单提交后会自动发起本流程` : '流程已发布，开始节点关联的表单提交后会自动发起本流程',
+      summary: args.name ? `流程「${args.name}」已发布，关联的表单提交后会自动发起本流程` : '流程已发布，关联的表单提交后会自动发起本流程',
       flowId,
       status: 'published',
     }

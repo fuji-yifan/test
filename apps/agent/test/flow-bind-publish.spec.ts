@@ -27,9 +27,19 @@ function httpError(status: number, message: string) {
   return e
 }
 
-function makeBind(opts?: { def?: any; getThrows?: any; updateThrows?: any }) {
+function makeBind(opts?: {
+  def?: any
+  getThrows?: any
+  updateThrows?: any
+  form?: any
+  getFormThrows?: any
+  formList?: any
+  listFormsThrows?: any
+}) {
   const getCalls: Array<{ token: string; flowId: string }> = []
   const updateCalls: Array<{ token: string; data: any }> = []
+  const formCalls: Array<{ token: string; formId: string }> = []
+  const listCalls: Array<{ token: string; workspaceId: string; query?: any }> = []
   const ctx = {
     getProcessDefinition: async (token: string, flowId: string) => {
       getCalls.push({ token, flowId })
@@ -41,8 +51,18 @@ function makeBind(opts?: { def?: any; getThrows?: any; updateThrows?: any }) {
       if (opts?.updateThrows) throw opts.updateThrows
       return {}
     },
+    getForm: async (token: string, formId: string) => {
+      formCalls.push({ token, formId })
+      if (opts?.getFormThrows) throw opts.getFormThrows
+      return opts?.form ?? { id: formId, name: '请假申请' }
+    },
+    listForms: async (token: string, workspaceId: string, query?: any) => {
+      listCalls.push({ token, workspaceId, query })
+      if (opts?.listFormsThrows) throw opts.listFormsThrows
+      return opts?.formList ?? { list: [] }
+    },
   } as any
-  return { tool: new FlowBindFormTool(ctx), getCalls, updateCalls }
+  return { tool: new FlowBindFormTool(ctx), getCalls, updateCalls, formCalls, listCalls }
 }
 
 function makePublish(opts?: { throws?: any }) {
@@ -85,6 +105,68 @@ describe('flow_bind_form', () => {
     expect(start.config.variables).toEqual({ a: 1 }) // 既有 config 必须保留
     const end = nodes.find((n: any) => n.type === 'end')
     expect(end).toEqual(DEFAULT_DEF.nodes[1]) // 非 start 节点原样保留
+  })
+
+  it('模型编造的 formId → 按 formName 解析真实 id 再写库', async () => {
+    const { tool, updateCalls, formCalls, listCalls } = makeBind({
+      getFormThrows: httpError(404, '表单不存在'),
+      formList: { list: [{ id: 'real-form', name: '教职工信息登记表' }] },
+    })
+    const res = await tool.execute({
+      token: 't', flowId: 'wf1', workspaceId: 'ws1',
+      formId: 'teacher_info_register', formName: '教职工信息登记表',
+    })
+    expect(formCalls).toEqual([{ token: 't', formId: 'teacher_info_register' }])
+    expect(listCalls[0]).toMatchObject({ token: 't', workspaceId: 'ws1' })
+    expect(res.formId).toBe('real-form')
+    expect(res.summary).toContain('教职工信息登记表')
+    const start = updateCalls[0].data.nodes.find((n: any) => n.type === 'start')
+    expect(start.config.formId).toBe('real-form')
+    expect(start.config.formName).toBe('教职工信息登记表')
+  })
+
+  it('formId 指向别的工作空间 → 拒绝，不 PATCH', async () => {
+    const { tool, updateCalls } = makeBind({ form: { id: 'f1', name: '请假申请', workspaceId: 'ws-other' } })
+    const res = await tool.execute({ token: 't', flowId: 'wf1', workspaceId: 'ws1', formId: 'f1' })
+    expect(res.ok).toBe(false)
+    expect(res.error).toBe('form_workspace_mismatch')
+    expect(updateCalls).toHaveLength(0)
+  })
+
+  it('只给 formName → 按名称解析（不调 getForm）', async () => {
+    const { tool, updateCalls, formCalls, listCalls } = makeBind({
+      formList: { list: [{ id: 'real-form', name: '教职工信息登记表' }] },
+    })
+    const res = await tool.execute({ token: 't', flowId: 'wf1', workspaceId: 'ws1', formName: '教职工信息登记表' })
+    expect(formCalls).toHaveLength(0)
+    expect(listCalls).toHaveLength(1)
+    expect(res.formId).toBe('real-form')
+    const start = updateCalls[0].data.nodes.find((n: any) => n.type === 'start')
+    expect(start.config.formId).toBe('real-form')
+  })
+
+  it('名称在当前空间找不到 → form_not_found，不 PATCH', async () => {
+    const { tool, updateCalls } = makeBind({ formList: { list: [] } })
+    const res = await tool.execute({ token: 't', flowId: 'wf1', workspaceId: 'ws1', formName: '不存在的表' })
+    expect(res.ok).toBe(false)
+    expect(res.error).toBe('form_not_found')
+    expect(res.summary).toContain('没有名为')
+    expect(updateCalls).toHaveLength(0)
+  })
+
+  it('同名多张 → form_ambiguous，不 PATCH', async () => {
+    const { tool, updateCalls } = makeBind({
+      formList: { list: [
+        { id: 'f-a', name: '登记表' },
+        { id: 'f-b', name: '登记表' },
+      ] },
+    })
+    const res = await tool.execute({ token: 't', flowId: 'wf1', workspaceId: 'ws1', formName: '登记表' })
+    expect(res.ok).toBe(false)
+    expect(res.error).toBe('form_ambiguous')
+    expect(res.summary).toContain('f-a')
+    expect(res.summary).toContain('f-b')
+    expect(updateCalls).toHaveLength(0)
   })
 
   it('没有 token → 未登录，不调 server', async () => {

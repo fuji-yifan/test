@@ -112,14 +112,6 @@ export const infraConfig = registerAs('infra', () => ({
   guardrailsTimeoutMs: parseInt(process.env.NEMO_GUARDRAILS_TIMEOUT_MS || '2000', 10),
 }))
 
-/**
- * 工具调用审计（阶段 6 / S2）：落 server 的 `audit_logs` 表（agent 只写不建）。
- * 无 `AGENT_DATABASE_URL` / 连不上 → store 自动 no-op 降级。`enabled=false` 一键回滚（仅留内存缓冲）。
- */
-export const auditConfig = registerAs('audit', () => ({
-  enabled: (process.env.AUDIT_ENABLED || 'true') === 'true',
-}))
-
 /** LangGraph checkpoint 持久化（与 server 共库，表结构由 Prisma migration 管理） */
 export const checkpointConfig = registerAs('checkpoint', () => ({
   databaseUrl: process.env.AGENT_DATABASE_URL || '',

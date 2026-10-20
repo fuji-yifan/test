@@ -14,7 +14,7 @@
  * 2. act 每次只执行「队首一个」tool_call —— 避免 resume 时重放已完成的副作用；
  * 3. 所有副作用只发生在 act（工具执行）与 planDriver（产物登记）。
  */
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, Optional } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { END, START, StateGraph, getWriter, interrupt } from '@langchain/langgraph'
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages'
@@ -31,12 +31,16 @@ import { AgentState } from './agent-state'
 import { projectMemory, detectClarification } from './conversation-state'
 import {
   entryOf,
+  registerSavedForm,
   resolveFormTarget,
+  schemaTitle,
   seedFromDraft,
   toFormArtifact,
   type TargetResolution,
   type WorksheetEntry,
 } from './worksheet'
+import { ContextService } from '../context/context.service'
+import { resolveExistingForm } from '../sub-agents/form-designer/tools/form-resolver'
 import { guardHallucination, hallucinationCorrection } from './hallucination-guard'
 import { degradeReply } from './degrade'
 
@@ -47,12 +51,25 @@ export interface GraphLlm {
   }
 }
 
+/**
+ * 消歧候选自带的预览数据。
+ *
+ * 同名表的标题一模一样，光看按钮分不出来；前端据此在候选行上直接「预览」，
+ * 不用先选再后悔（2026-10-19 用户反馈）。
+ */
+export interface DisambiguationFormPreview {
+  title?: string
+  schema?: unknown
+  formId?: string
+  fieldCount?: number
+}
+
 /** 发给前端的 HITL 中断载荷 */
 export interface InterruptPayload {
   kind: 'checkpoint' | 'tool_confirm' | 'disambiguate'
   toolCallId: string
   prompt: string
-  options: { value: string; label: string; style?: string }[]
+  options: { value: string; label: string; style?: string; form?: DisambiguationFormPreview }[]
   checkpointId?: string
   tool?: string
   args?: Record<string, unknown>
@@ -110,7 +127,33 @@ function toPendingCall(tc: any): PendingCall {
 }
 
 /** 需要按 `target` 寻址的表单类工具 */
-const FORM_TOOLS = new Set(['form_assemble_schema', 'form_save', 'form_rollback'])
+const FORM_TOOLS = new Set([
+  'form_assemble_schema',
+  'form_save',
+  'form_rollback',
+  'form_delete',
+  'form_version_delete',
+])
+
+/**
+ * 只对「已保存的表」有意义的工具：没有新建语义。
+ * 目标不在会话工作台时必须去工作空间按名称找，同名就先消歧 ——
+ * 否则 rollback / delete 会直接进入业务确认检查点，等用户确认完才报 form_ambiguous。
+ */
+const SAVED_FORM_ONLY_TOOLS = new Set(['form_rollback', 'form_delete', 'form_version_delete'])
+
+/** 工作空间里的真实表单 id：同名消歧的候选 value 就是它 */
+const FORM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** 同名消歧的候选标记：A / B / C…（超过 26 张就退回序号） */
+function optionMarker(i: number): string {
+  return i < 26 ? String.fromCharCode(65 + i) : `${i + 1}`
+}
+
+/** 候选选项文案：只留区分信息，不附着 id（用户 2026-10-19 反馈） */
+function formOptionLabel(i: number, fieldCount?: number): string {
+  return `${optionMarker(i)}. ${typeof fieldCount === 'number' ? `${fieldCount}个字段` : '已保存'}`
+}
 
 /**
  * 该 Agent 当前草稿的产物形态。
@@ -163,6 +206,8 @@ export class AgentSubgraphFactory {
     private readonly registry: ToolRegistry,
     private readonly skills: SkillsLoader,
     private readonly config: ConfigService,
+    // 可选：测试直接 new 时没有它，按名称解析「工作空间里已保存的表」随之关闭。
+    @Optional() private readonly context?: ContextService,
   ) {}
 
   /** 为某个 Agent 编译子图（不带 checkpointer：状态与中断都由父图承载） */
@@ -385,8 +430,10 @@ export class AgentSubgraphFactory {
 
   // ==================== gate（唯一的 HITL 入口，无副作用） ====================
 
-  private gate(state: AgentStateType, spec: AgentSpec): Partial<AgentStateType> {
-    const ask = this.firstPendingAsk(state, spec)
+  private async gate(state: AgentStateType, spec: AgentSpec): Promise<Partial<AgentStateType>> {
+    // 注意：消歧要查工作空间里的同名表，所以 gate 里有一次**只读**查询。
+    // 它没有写副作用，resume 重跑 gate 也安全（写入仍只发生在 act）。
+    const ask = await this.firstPendingAsk(state, spec)
 
     if (!ask) {
       const outcome: AgentStateType['gateOutcome'] =
@@ -420,10 +467,13 @@ export class AgentSubgraphFactory {
 
     // 重名消歧（阶段 5 / 5.2）：用户选中的 key 直接改写本次调用的 target，
     // 让 act 的 resolveFormTarget 按 key 精确命中 → 不再 ambiguous。
+    // 会话工作台里没有这张表时，option 的 value 是工作空间里的真实 formId：
+    // 同样改写进 target，act 的 loadSavedForm 会按 id 载入它。
     if (ask.kind === 'disambiguate') {
       const next = state.pendingCalls[0]
       const chosen = typeof action === 'string' ? action : ''
-      if (!next || !chosen || !entryOf(state.formWorksheet, chosen)) {
+      const usable = !!chosen && (!!entryOf(state.formWorksheet, chosen) || FORM_ID_RE.test(chosen))
+      if (!next || !usable) {
         // 非法回答（abort / 非候选）→ 按用户取消处理，绝不把脏值写进 target
         return { ...identity, gateOutcome: 'halt', halted: true }
       }
@@ -473,7 +523,7 @@ export class AgentSubgraphFactory {
   }
 
   /** 找出第一个待答复的问题（afterTool 业务检查点 → beforeTool 业务检查点 → 风险确认） */
-  private firstPendingAsk(state: AgentStateType, spec: AgentSpec): PendingAsk | null {
+  private async firstPendingAsk(state: AgentStateType, spec: AgentSpec): Promise<PendingAsk | null> {
     const answered = (checkpointId: string, toolCallId: string) =>
       state.checkpointDone.some((c) => c.checkpointId === checkpointId && c.toolCallId === toolCallId)
 
@@ -516,12 +566,21 @@ export class AgentSubgraphFactory {
     //    form_save 会静默写到 keys[0]（错的表）。
     if (FORM_TOOLS.has(next.name)) {
       const resolved = resolveFormTarget(next.args?.target as string | undefined, state.formWorksheet)
+      const targetText = typeof next.args?.target === 'string' ? next.args.target : '同名'
+      const verb =
+        next.name === 'form_save'
+          ? '把改动保存到'
+          : next.name === 'form_rollback'
+            ? '回滚'
+            : next.name === 'form_delete'
+              ? '删除'
+              : next.name === 'form_version_delete'
+                ? '删除版本'
+                : '操作'
       if (resolved.kind === 'ambiguous') {
         const candidates = resolved.keys
           .map((k) => entryOf(state.formWorksheet, k))
           .filter((e): e is WorksheetEntry => !!e)
-        const targetText = typeof next.args?.target === 'string' ? next.args.target : '同名'
-        const verb = next.name === 'form_save' ? '把改动保存到' : next.name === 'form_rollback' ? '回滚' : '操作'
         return {
           kind: 'disambiguate',
           payload: {
@@ -529,15 +588,86 @@ export class AgentSubgraphFactory {
             toolCallId: next.id,
             tool: next.name,
             args: next.args,
-            // label 必须带 key：重名即归一标题相同，只靠标题用户分不清。
+            // 标题在 prompt 里已经说过，且重名时它不具区分度；选项只给区分信息，
+            // 避免长标题把按钮撑出容器。
             prompt: `会话中有 ${candidates.length} 张「${targetText}」，请选择要${verb}哪一张`,
-            options: candidates.map((e) => ({
-              value: e.key,
-              label: `${e.title}（${e.key}${e.formId ? '，已保存' : ''}）`,
-              style: 'default',
-            })),
+            options: candidates.map((e, i) => {
+              const fieldCount = Array.isArray((e.schema as any)?.fields)
+                ? ((e.schema as any).fields as unknown[]).length
+                : 0
+              return {
+                value: e.key,
+                label: formOptionLabel(i, fieldCount),
+                style: 'default',
+                form: { title: e.title, schema: e.schema, formId: e.formId, fieldCount },
+              }
+            }),
             ...(artifact ? { artifact } : {}),
           },
+        }
+      }
+
+      // 2b) 目标不在会话工作台，但工作空间里有同名已保存的表：
+      //     唯一命中交给 act 载入；**多张同名必须先问**，绝不能静默新建
+      //     （2026-10-19：空间里有两张「教职工信息登记表」，此前直接退回了新建）。
+      if (
+        resolved.kind === 'create' &&
+        resolved.title &&
+        this.shouldResolveWorkspaceForm(next.name, state.userMessage)
+      ) {
+        const lookup = await this.lookupSavedForm(state, resolved.title)
+        if (lookup && 'ambiguous' in lookup) {
+          // 同名时标题没有区分度，用户需要能先看内容再选。这里把每个候选的 schema
+          // 一并带上（只取前 8 张，避免载荷失控），前端在候选行上直接「预览」。
+          const MAX_PREVIEWS = 8
+          const previews = await Promise.all(
+            lookup.ambiguous.map(async (c, i) => {
+              if (i >= MAX_PREVIEWS || !this.context) return { ...c }
+              try {
+                const form = await this.context.getForm(state.userToken, c.formId)
+                const schema = form?.schema ?? null
+                const fieldCount = Array.isArray((schema as any)?.fields)
+                  ? ((schema as any).fields as unknown[]).length
+                  : 0
+                return {
+                  ...c,
+                  formName: form?.name || c.formName,
+                  schema,
+                  fieldCount,
+                }
+              } catch {
+                // 单张读取失败不影响消歧本身：该候选仍可被选中
+                return { ...c }
+              }
+            }),
+          )
+          return {
+            kind: 'disambiguate',
+            payload: {
+              kind: 'disambiguate',
+              toolCallId: next.id,
+              tool: next.name,
+              args: next.args,
+              // 标题已在 prompt 里说过；选项只给 A/B/C + 字段数，且每行一个。
+              prompt: `工作空间中有 ${previews.length} 张「${targetText}」，请选择要${verb}哪一张`,
+              options: previews.map((c: any, i: number) => ({
+                value: c.formId,
+                label: formOptionLabel(i, c.fieldCount),
+                style: 'default',
+                ...(c.schema
+                  ? {
+                      form: {
+                        title: c.formName,
+                        schema: c.schema,
+                        formId: c.formId,
+                        fieldCount: c.fieldCount,
+                      },
+                    }
+                  : {}),
+              })),
+              ...(artifact ? { artifact } : {}),
+            },
+          }
         }
       }
     }
@@ -594,6 +724,114 @@ export class AgentSubgraphFactory {
     return null
   }
 
+  /**
+   * 该不该去工作空间里按名称找一张已保存的表。
+   *
+   * 只在「改表」意图下找：消息里有明确的新建词、且没有任何修改词，就是真的要做新表，
+   * 不能被同名的旧表劫持（用户说「新建请假申请表」时即使已有一张同名表，也应当建新表
+   * —— 那由用户在重名消歧里决定，而不是这里静默改旧表）。其它情况（加/改/删/设置…）
+   * 一律先查；查不到再按新建走，行为与原先一致。
+   */
+  /**
+   * gate 阶段该不该去工作空间按名称查这张表。
+   *
+   * 回滚/删除没有「新建」语义，工作空间里的同名旧表就是唯一可能的操作对象，
+   * 所以无条件查；assemble/save 还要看用户是不是明确要新建（见 shouldLoadSavedForm）。
+   */
+  private shouldResolveWorkspaceForm(toolName: string, userMessage: string): boolean {
+    return SAVED_FORM_ONLY_TOOLS.has(toolName) || this.shouldLoadSavedForm(toolName, userMessage)
+  }
+
+  private shouldLoadSavedForm(toolName: string, userMessage: string): boolean {
+    if (toolName !== 'form_assemble_schema' && toolName !== 'form_save') return false
+    const create =
+      /(新建|创建|建一[个张份]|建(表单|表)|做一[个张份]|做个|设计一[个张份]|设计个|生成一[个张份]|生成个|来一[个张份])/.test(
+        userMessage,
+      )
+    const modify =
+      /(添加|增加|新增|加入|加一|加个|加上|补充|修改|改成|改为|更新|删除|删掉|移除|去掉|精简|设置|设为|调整|重命名|排序)/.test(
+        userMessage,
+      )
+    return modify || !create
+  }
+
+  /**
+   * 在工作空间里按名称（或 uuid）找已保存的表，**不**读 schema。
+   *
+   * 有多个同名候选时把候选带出来 —— 调用方（gate）必须先问用户，绝不能默默新建；
+   * 只有唯一命中时才交给 act 载入（2026-10-19：工作空间里恰有两张「教职工信息登记表」，
+   * 之前直接退回新建，用户要求的消歧没有出现）。
+   */
+  private async lookupSavedForm(
+    state: AgentStateType,
+    target: string,
+  ): Promise<
+    | { formId: string; formName?: string }
+    | { ambiguous: Array<{ formId: string; formName: string }> }
+    | null
+  > {
+    if (!this.context || !state.userToken || !state.workspaceId) return null
+    try {
+      const found = await resolveExistingForm(
+        this.context,
+        state.userToken,
+        state.workspaceId,
+        undefined,
+        target,
+        { action: '修改' },
+      )
+      const candidates = found.failure?.candidates
+      if (candidates && candidates.length > 0) return { ambiguous: candidates }
+      if (found.failure || !found.formId) return null
+      return { formId: found.formId, formName: found.formName }
+    } catch (err: any) {
+      this.logger.warn(`按名称查找已保存表单失败（${target}）：${err?.message ?? err}`)
+      return null
+    }
+  }
+
+  /**
+   * 按名称把工作空间里已保存的表载入会话工作台。
+   *
+   * 用户点名的表往往是在**别的会话**里建的，不在【会话中的表单】里；不载入的话，
+   * form_assemble_schema 只拿着补丁字段（例如一个备注字段）凭空生成一张新表
+   * （2026-10-19 实测：变成 1 个字段的「新建表单」）。重名候选已由 gate 先行消歧，
+   * 走到这里的一定是唯一命中。
+   */
+  private async loadSavedForm(
+    state: AgentStateType,
+    target: string,
+  ): Promise<{ formId: string; title: string; schema: Record<string, unknown> } | null> {
+    if (!this.context || !state.userToken) return null
+    const found = await this.lookupSavedForm(state, target)
+    if (!found || 'ambiguous' in found) return null
+    try {
+      const raw = await this.context.getFormSchema(state.userToken, found.formId)
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+      const title = found.formName || target
+      const base = raw as Record<string, unknown>
+      // 老 schema 可能没有 settings.formTitle（或为空）。不补的话，改表时
+      // form_assemble_schema 会把它默认成「新建表单」，工作表条目也跟着改名，
+      // 紧接着的 form_save 按表名就找不到这张表，又会被当成新建/重名。
+      const schema = schemaTitle(base)
+        ? base
+        : {
+            ...base,
+            settings: {
+              ...(base.settings && typeof base.settings === 'object' && !Array.isArray(base.settings)
+                ? (base.settings as Record<string, unknown>)
+                : {}),
+              formTitle: title,
+            },
+          }
+      return { formId: found.formId, title, schema }
+    } catch (err: any) {
+      // 读 schema 失败退回原来的「新建」路径，不阻断本轮
+      this.logger.warn(`加载已保存表单失败（${target}）：${err?.message ?? err}`)
+      return null
+    }
+  }
+
   // ==================== act（唯一的工具副作用点） ====================
 
   private async act(state: AgentStateType, spec: AgentSpec): Promise<Partial<AgentStateType>> {
@@ -601,16 +839,38 @@ export class AgentSubgraphFactory {
     if (!call) return { gateOutcome: 'think' }
 
     // 寻址放在 act：它同时握着 args 与图状态。bridge 只按解析结果决定注入什么。
-    const resolved = FORM_TOOLS.has(call.name)
+    let resolved = FORM_TOOLS.has(call.name)
       ? resolveFormTarget(call.args?.target as string | undefined, state.formWorksheet)
       : null
+    let worksheet = state.formWorksheet
+
+    // 目标不在【会话中的表单】里，但工作空间里确实有这张已保存的表 → 载入它的原
+    // schema 与 formId，把「新建」改判成「改表」。否则模型只拿着补丁字段（比如
+    // 一个备注字段）凭空生成一张新表（2026-10-19 实测：变成 1 个字段的「新建表单」）。
+    if (
+      resolved?.kind === 'create' &&
+      resolved.title &&
+      this.shouldLoadSavedForm(call.name, state.userMessage)
+    ) {
+      const loaded = await this.loadSavedForm(state, resolved.title)
+      if (loaded) {
+        const reg = registerSavedForm(worksheet, loaded)
+        worksheet = reg.worksheet
+        resolved = { kind: 'update', key: reg.key }
+        this.logger.log(`目标「${loaded.title}」不在会话工作台，按工作空间名称解析为 ${loaded.formId}`)
+      }
+    }
+
     if (resolved?.kind === 'ambiguous') {
       this.logger.warn(
         `表单标题重名，先取最先命中的 ${resolved.keys[0]}（候选：${resolved.keys.join(', ')}）`,
       )
     }
 
-    const ctx = toolCtx(state, spec, resolved)
+    // extractArtifact 也看这份（补齐了已保存表的）工作台，这样 applyAssemble/markSaved
+    // 能命中同一个 entry，保住 formId —— 否则保存时又会被当成新建。
+    const callState = worksheet === state.formWorksheet ? state : { ...state, formWorksheet: worksheet }
+    const ctx = toolCtx(callState, spec, resolved)
     const opts = { requestId: call.id }
 
     emit({ type: 'tool_start', callId: call.id, tool: call.name, args: call.args })
@@ -733,7 +993,7 @@ export class AgentSubgraphFactory {
       const extracted = spec.extractArtifact({
         toolName: call.name,
         result,
-        state,
+        state: callState,
         resolved: resolved ?? undefined,
       })
       if (extracted?.draftUpdate) {
@@ -782,11 +1042,22 @@ export class AgentSubgraphFactory {
       }
     }
 
-    emit({ type: 'message', role: 'assistant', content })
+    const lastStep = (state.stepIndex ?? 0) >= ((state.plan?.steps?.length ?? 1) - 1)
+
+    // 多步计划的中间步骤：只要这一步**成功产出并交接**给下一步，就不把它的收尾话术
+    // 发给用户。否则会前后矛盾 —— 2026-10-19 实测：模板助手说「还没写进表单管理，
+    // 需要交给表单设计助手…需要我继续帮你…」，但编排层紧接着就自动跑了下一步。
+    // 进度由 planDriver 的 status 与工具事件体现；失败/无产物的步骤不抑制（它的说明
+    // 是后续步骤被跳过的唯一解释）。
+    const handedOff =
+      !lastStep &&
+      !state.halted &&
+      !state.gaveUp &&
+      (state.turnDraftAgents ?? []).includes(spec.key)
+    if (!handedOff) emit({ type: 'message', role: 'assistant', content })
 
     // 只有计划**最后一步**（或单步）的收尾才写会话级状态：多步计划里 respond 每步都跑，
     // 共享 channel 是替换语义、后写覆盖先写，中间步若以问句结尾会污染 pendingClarification。
-    const lastStep = (state.stepIndex ?? 0) >= ((state.plan?.steps?.length ?? 1) - 1)
     if (!lastStep) return corrected ? { finalContent: content } : {}
 
     // gaveUp 也会走到 respond（gate 收尾），故必须把 halted || gaveUp 一起传进去，

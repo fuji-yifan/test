@@ -54,7 +54,10 @@ export class PlanService {
       if (key === 'query' || key === 'description') {
         parts.push(`${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`)
       } else if (value !== null && value !== undefined) {
-        parts.push(`${key}: ${typeof value === 'object' ? JSON.stringify(value).slice(0, 2000) : String(value)}`)
+        // 上游产物不能截断：模板 schema 常有几十个字段，`slice(0, 2000)` 会把它切成
+        // 半截 JSON，下游模型完全无法理解（2026-10-19 实测：表单设计助手因此回复
+        // 「请描述你想创建的表单」）。宁可多花 token，也要传完整结构。
+        parts.push(`${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
       }
     }
     if (parts.length === 1) parts.push(originalMessage)

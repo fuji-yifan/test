@@ -32,16 +32,6 @@ class StubRegistry {
   }
 }
 
-class StubAudit {
-  records: any[] = []
-  async available() {
-    return true
-  }
-  async record(entry: any) {
-    this.records.push(entry)
-  }
-}
-
 function makeConfig(): ConfigService {
   return {
     get: (k: string) =>
@@ -54,18 +44,17 @@ function makeConfig(): ConfigService {
 
 function makeGateway(policy?: { check: () => Promise<PolicyDecision> }) {
   const registry = new StubRegistry()
-  const audit = new StubAudit()
   const config = makeConfig()
   const cache = new ToolResultCache(null, config)
   const gateway = policy
-    ? new ToolGateway(registry as any, {} as any, cache, config, audit as any, policy as any)
-    : new ToolGateway(registry as any, {} as any, cache, config, audit as any)
-  return { gateway, registry, audit }
+    ? new ToolGateway(registry as any, {} as any, cache, config, policy as any)
+    : new ToolGateway(registry as any, {} as any, cache, config)
+  return { gateway, registry }
 }
 
 describe('ToolGateway 策略门（S3.1+S3.2）', () => {
   it('外部 PDP deny → 拦截，不打 registry，落 POLICY_DENIED 审计', async () => {
-    const { gateway, registry, audit } = makeGateway({
+    const { gateway, registry } = makeGateway({
       check: async () => ({ decision: 'deny', reason: 'blocked', source: 'external' }),
     })
 
@@ -74,8 +63,9 @@ describe('ToolGateway 策略门（S3.1+S3.2）', () => {
     expect(res.ok).toBe(false)
     expect(res.error).toBe('policy_denied')
     expect(registry.calls).toEqual([])
-    expect(audit.records).toHaveLength(1)
-    expect(audit.records[0].summary).toContain('POLICY_DENIED')
+    const records = gateway.getAuditLog()
+    expect(records).toHaveLength(1)
+    expect(records[0].summary).toContain('POLICY_DENIED')
   })
 
   it('内置删除兜底：删除工具被评 low → requireConfirm（不打 registry）', async () => {
@@ -89,7 +79,7 @@ describe('ToolGateway 策略门（S3.1+S3.2）', () => {
   })
 
   it('敏感字段 → warn：照常执行，审计带 note=pii_access', async () => {
-    const { gateway, registry, audit } = makeGateway()
+    const { gateway, registry } = makeGateway()
 
     const res = await gateway.execute(
       'data_query',
@@ -99,17 +89,17 @@ describe('ToolGateway 策略门（S3.1+S3.2）', () => {
 
     expect(res.ok).toBe(true)
     expect(registry.calls).toEqual(['data_query'])
-    expect(audit.records[0].note).toBe('pii_access')
+    expect(gateway.getAuditLog()[0].auditNote).toBe('pii_access')
   })
 
-  it('legacy 5 参构造（无策略服务）：低风险工具照常执行、不落额外审计', async () => {
-    const { gateway, registry, audit } = makeGateway()
+  it('legacy 4 参构造（无策略服务）：低风险工具照常执行、不落额外审计', async () => {
+    const { gateway, registry } = makeGateway()
 
     const res = await gateway.execute('data_query', { token: 't', q: 'x' }, { workspaceId: 'ws1' })
 
     expect(res).toEqual({ ok: true, summary: 'ok', result: { v: 1 } })
     expect(registry.calls).toEqual(['data_query'])
-    expect(audit.records).toHaveLength(1)
+    expect(gateway.getAuditLog()).toHaveLength(1)
   })
 
   it('executeConfirmed：外部 deny 也拦（不再放行）', async () => {

@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config'
 import { ToolRegistry } from './tool.registry'
 import { SessionService } from '../session/session.service'
 import { ToolResultCache } from '../cache/tool-cache.service'
-import { AuditStore } from '../audit/audit.store'
 import { withTimeout, isTimeoutError } from './timeout'
 import { WRITE_TOOLS } from './write-tools'
 import { combineDecisions, evaluateBuiltinPolicy, type PolicyDecision } from './policy-rules'
@@ -53,7 +52,7 @@ export class ToolGateway {
   private readonly logger = new Logger(ToolGateway.name)
   /** 幂等性：已完成的 request_id 集合（内存，重启丢失） */
   private completedRequestIds: Set<string> = new Set()
-  /** 审计日志环形缓冲（最多保留 1000 条，重启丢失；DB 落库见 AuditStore） */
+  /** 审计日志环形缓冲（最多保留 1000 条，重启丢失） */
   private auditLog: AuditEntry[] = []
 
   constructor(
@@ -61,7 +60,6 @@ export class ToolGateway {
     private sessionService: SessionService,
     private cache: ToolResultCache,
     private config: ConfigService,
-    private audit: AuditStore,
     /** 外部策略引擎（S3.1，可选注入：未配置即 no-op）。内置纯规则（S3.2）恒跑、不依赖它。 */
     @Optional() private policy?: PolicyEngineService,
     /** 链路追踪（S2.3，可选注入：未配 endpoint 即零外呼；traceId 恒贯通）。 */
@@ -436,27 +434,6 @@ export class ToolGateway {
     this.auditLog.push(record)
     if (this.auditLog.length > 1000) {
       this.auditLog = this.auditLog.slice(-1000)
-    }
-
-    // 落库持久化（阶段 6 / S2）：fire-and-forget，不阻塞工具关键路径；
-    // 无库 / 未配置 workspaceId / 写入失败一律在 AuditStore 内 no-op 降级（只 warn）。
-    if (this.config?.get<boolean>('audit.enabled') !== false) {
-      void this.audit
-        .record({
-          traceId,
-          sessionId: entry.sessionId,
-          userId: entry.userId,
-          workspaceId: entry.workspaceId ?? '',
-          toolName: entry.tool,
-          riskLevel: entry.risk,
-          confirmed: entry.confirmed,
-          durationMs: entry.durationMs,
-          ok: entry.ok,
-          summary: entry.summary,
-          args: entry.args,
-          note: entry.auditNote,
-        })
-        .catch(() => {})
     }
 
     this.logger.log(

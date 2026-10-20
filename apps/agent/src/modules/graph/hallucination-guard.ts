@@ -20,16 +20,16 @@ const CLAIM_PATTERNS: { tool: string; re: RegExp; note: string }[] = [
     note: '表单回滚',
   },
   // 版本删除与表单删除在同一 Agent 的 produceTools 里共存，两个正则必须互斥：
-  // 表单删除用负向断言排除「删除…版本 / 版本删除」措辞，否则一次成功的版本删除
-  // 会在 form_version_delete（有结果→continue）之后又被 form_delete 误判（见 spec）。
+  // 只要分句命中「删除 … 版本」就归给 form_version_delete，form_delete 直接跳过该分句。
+  // 表单名可能很长（「已删除「教职工信息登记表」的 V2 版本」），所以不能用「删除后 4 字内必须是版本」。
   {
     tool: 'form_version_delete',
-    re: /已(经)?(帮你)?删除.{0,4}版本|版本已(经)?删除/,
+    re: /(删除|删掉|移除|移入回收站)[^。！？!?\n]{0,30}版本|版本[^。！？!?\n]{0,30}(删除|删掉|移除|移入回收站)/,
     note: '版本删除',
   },
   {
     tool: 'form_delete',
-    re: /已(经)?(帮你)?删除(?!.{0,4}版本)|(?<!版本)删除成功|已移入回收站/,
+    re: /已(经)?(帮你)?删除|(?<!版本)删除成功|已移入回收站/,
     note: '表单删除',
   },
   {
@@ -60,6 +60,14 @@ function scannable(content: string): string {
     .join('。')
 }
 
+/** 再按逗号/分号切成短分句：归因要看「删除」和「版本」是否在同一个分句里 */
+function clausesOf(text: string): string[] {
+  return text
+    .split(/[。！？!?\n，,；;]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 export interface HallucinationCheck {
   suspicious: boolean
   /** 命中的完成态声明原文（便于日志/展示） */
@@ -86,12 +94,19 @@ export function guardHallucination(
   // 先剔除「失败叙述」的句子，避免把转述的错误文案当成完成态声明
   const text = scannable(content)
 
-  for (const { tool, re, note } of CLAIM_PATTERNS) {
-    if (!produceTools.includes(tool)) continue
-    const m = text.match(re)
-    if (!m) continue
-    if (ok.has(tool)) continue // 有对应工具结果 → 不是幻觉
-    return { suspicious: true, claim: m[0], expectedTool: tool, note }
+  const versionRe = CLAIM_PATTERNS.find((p) => p.tool === 'form_version_delete')!.re
+
+  for (const clause of clausesOf(text)) {
+    for (const { tool, re, note } of CLAIM_PATTERNS) {
+      if (!produceTools.includes(tool)) continue
+      // 版本声明只归 form_version_delete：否则「已删除 X 的 V2 版本」会被表单删除规则认领，
+      // 一次成功的版本删除也会被误报成「未落库」。
+      if (tool === 'form_delete' && versionRe.test(clause)) continue
+      const m = clause.match(re)
+      if (!m) continue
+      if (ok.has(tool)) continue // 有对应工具结果 → 不是幻觉
+      return { suspicious: true, claim: m[0], expectedTool: tool, note }
+    }
   }
   return { suspicious: false }
 }

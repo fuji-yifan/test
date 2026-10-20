@@ -1,6 +1,24 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaClient } from '@prisma/client'
 
+/** 审计日志清理的保留期单位 */
+export type CleanupUnit = 'day' | 'month' | 'year'
+
+/**
+ * 不在「操作筛选」里的动作，一律不进审计日志页面（列表/导出/统计/详情）。
+ * - agent.tool_call：agent 调用本身不再审计（业务操作照常由 Prisma 中间件记录）
+ * - auth.*：登录 / 登录失败 / 权限拒绝属于安全事件，不是业务操作
+ * 数据仍保留在库中，只是不展示。
+ */
+const HIDDEN_ACTIONS = [
+  'agent.tool_call',
+  'auth.login',
+  'auth.login_failed',
+  'auth.register',
+  'auth.permission_denied',
+]
+const HIDDEN_ACTION_FILTER = { notIn: HIDDEN_ACTIONS }
+
 interface AuditQuery {
   page?: number
   pageSize?: number
@@ -32,7 +50,7 @@ export class AuditService {
     const page = Number(query.page) || 1
     const pageSize = Number(query.pageSize) || 50
 
-    const where: any = { workspaceId }
+    const where: any = { workspaceId, action: HIDDEN_ACTION_FILTER }
 
     if (query.action) where.action = query.action
     if (query.resourceType) where.resourceType = query.resourceType
@@ -42,6 +60,7 @@ export class AuditService {
       if (query.startDate) where.createdAt.gte = new Date(query.startDate)
       if (query.endDate) where.createdAt.lte = new Date(query.endDate + 'T23:59:59.999Z')
     }
+
 
     const [list, total] = await Promise.all([
       this.prisma.auditLog.findMany({
@@ -75,7 +94,31 @@ export class AuditService {
   }
 
   async getDetail(id: string) {
-    return this.prisma.auditLog.findUnique({ where: { id } })
+    const log = await this.prisma.auditLog.findUnique({ where: { id } })
+    return log && HIDDEN_ACTIONS.includes(log.action) ? null : log
+  }
+
+  /**
+   * 「按用户筛选」下拉：当前空间成员 ∪ 审计日志中出现过的用户。
+   * 只取日志用户的话，新空间/暂无日志时下拉是空的；成员并集保证总有可选用户，
+   * 同时保留已离开空间但留下过操作记录的人。
+   */
+  async getUsers(workspaceId: string) {
+    const [rows, members] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where: { workspaceId, userId: { not: null }, action: HIDDEN_ACTION_FILTER },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+      this.prisma.workspaceMember.findMany({ where: { workspaceId }, select: { userId: true } }),
+    ])
+    const ids = [...new Set([...rows, ...members].map((r) => r.userId).filter((id): id is string => !!id))]
+    if (!ids.length) return []
+    return this.prisma.user.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, email: true, nickname: true },
+      orderBy: { nickname: 'asc' },
+    })
   }
 
   async getActionTypes(workspaceId: string) {
@@ -121,7 +164,7 @@ export class AuditService {
       }
     }
     // 中间件根据 data 字段细分出来的子类型
-    for (const act of ['发布表单', '归档表单', '复制表单', '超时升级']) {
+    for (const act of ['发布表单', '归档表单', '复制表单', '发布固有流程', '撤回固有流程', '超时升级']) {
       all.push({ action: act, count: countMap[act] || 0 })
     }
     return all
@@ -133,7 +176,7 @@ export class AuditService {
     since.setHours(0, 0, 0, 0)
 
     const logs = await this.prisma.auditLog.findMany({
-      where: { workspaceId, createdAt: { gte: since } },
+      where: { workspaceId, createdAt: { gte: since }, action: HIDDEN_ACTION_FILTER },
       select: { action: true, createdAt: true },
     })
 
@@ -155,20 +198,25 @@ export class AuditService {
       .map(([date, count]) => ({ date, count }))
   }
 
-  async cleanup(workspaceId: string, days: number) {
+  async cleanup(workspaceId: string, amount: number, unit: CleanupUnit = 'day') {
     const since = new Date()
-    since.setDate(since.getDate() - days)
     since.setHours(0, 0, 0, 0)
+    // 月/年按日历推（1 个月 ≠ 30 天）。月末会向前溢出：10/31 减一个月落到 10/1 ——
+    // 结果是 cutoff 偏晚、删得更少，不会误删更多，因此不做额外纠正。
+    if (unit === 'year') since.setFullYear(since.getFullYear() - amount)
+    else if (unit === 'month') since.setMonth(since.getMonth() - amount)
+    else since.setDate(since.getDate() - amount)
     const result = await this.prisma.auditLog.deleteMany({
       where: { workspaceId, createdAt: { lt: since } },
     })
-    return { deletedCount: result.count, keepDays: days }
+    return { deletedCount: result.count, keepAmount: amount, keepUnit: unit }
   }
 
   async exportCsv(workspaceId: string, query: AuditQuery): Promise<string> {
-    const where: any = { workspaceId }
+    const where: any = { workspaceId, action: HIDDEN_ACTION_FILTER }
     if (query.action) where.action = query.action
     if (query.resourceType) where.resourceType = query.resourceType
+    if (query.userId) where.userId = query.userId
     if (query.startDate || query.endDate) {
       where.createdAt = {}
       if (query.startDate) where.createdAt.gte = new Date(query.startDate)

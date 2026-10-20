@@ -65,8 +65,12 @@ export class ContextService {
 
   // ---- 便捷方法 ----
 
-  async listForms(token: string, workspaceId: string): Promise<any> {
-    return this.fetch(`/api/v1/workspaces/${workspaceId}/forms`, token)
+  async listForms(token: string, workspaceId: string, query?: { pageSize?: number; keyword?: string }): Promise<any> {
+    const qs = new URLSearchParams()
+    if (query?.pageSize) qs.set('pageSize', String(query.pageSize))
+    if (query?.keyword) qs.set('keyword', query.keyword)
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return this.fetch(`/api/v1/workspaces/${workspaceId}/forms${suffix}`, token)
   }
 
   async getForm(token: string, formId: string): Promise<any> {

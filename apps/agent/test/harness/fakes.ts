@@ -80,17 +80,24 @@ export class FakeGateway {
     return this.result(name, args)
   }
   private result(name: string, args: Record<string, unknown> = {}) {
-    // 组装的标题跟着 target 走，这样两张表各有各的标题，便于断言「各是各的」
+    // 与真实工具同口径：显式 formTitle > 已有 schema 的标题 > target（新表）> 默认。
+    // 有 existingSchema 时回显它的字段，避免假网关把「改表」演示成「整表重建」。
+    const existing = args.existingSchema as any
+    const existingTitle = existing?.settings?.formTitle
     const title =
-      typeof args.target === 'string' && args.target
-        ? args.target
-        : typeof args.formTitle === 'string' && args.formTitle
-          ? args.formTitle
-          : '新建表单'
+      typeof args.formTitle === 'string' && args.formTitle
+        ? args.formTitle
+        : typeof existingTitle === 'string' && existingTitle
+          ? existingTitle
+          : typeof args.target === 'string' && args.target
+            ? args.target
+            : '新建表单'
+    const fields =
+      Array.isArray(existing?.fields) && existing.fields.length > 0
+        ? existing.fields
+        : [{ key: 'name', type: 'string' }]
     const payloads: Record<string, unknown> = {
-      form_assemble_schema: {
-        schema: { settings: { formTitle: title }, fields: [{ key: 'name', type: 'string' }] },
-      },
+      form_assemble_schema: { schema: { settings: { formTitle: title }, fields } },
       form_validate_schema: { passed: true, issues: [] },
       form_preview: { previewUrl: 'http://x/preview' },
       form_save: { formId: 'F-1' },

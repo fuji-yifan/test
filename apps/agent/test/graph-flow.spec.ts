@@ -167,6 +167,9 @@ describe('LangGraph 编排', () => {
       'template_instantiate',
       'form_assemble_schema',
     ])
+    // 模板步骤已成功交接，它的收尾话术（「还没写进表单管理…需要交给表单助手」）
+    // 不再作为面向用户的回复发出，否则会和自动继续的下一步自相矛盾。
+    expect(h.events.filter((e) => e.type === 'message')).toHaveLength(0)
 
     // 交接的证据：第 2 步拿到的指令里，带着第 1 步解析出来的模板 schema
     const formStep = h.llm.seen.find((msgs) => String(msgs[1]?.content ?? '').includes('[步骤 2]'))
@@ -183,6 +186,10 @@ describe('LangGraph 编排', () => {
       'flow_create',
     ])
     expect(afterForm.finalContent).toContain('流程已创建')
+    // 整轮只应看到最后一步（workflow）的收尾，中间的表单步骤话术同样被抑制
+    const messages = h.events.filter((e) => e.type === 'message') as any[]
+    expect(messages).toHaveLength(1)
+    expect(messages[0].content).toContain('流程已创建')
 
     // 三步都产出并登记了产物
     const agg = h.events.find((e) => e.type === 'aggregate')
@@ -207,6 +214,10 @@ describe('LangGraph 编排', () => {
 
     expect(r.interrupted).toBeUndefined()
     expect(r.finalContent).toContain('暂无相关模板')
+    // 没有产出、后续步骤被跳过：这时的说明必须发给用户，不能被「中间步骤抑制」吞掉
+    expect(
+      (h.events.filter((e) => e.type === 'message') as any[]).map((e) => e.content).join('\n'),
+    ).toContain('暂无相关模板')
     // 只搜了一次；表单设计助手一步没跑，更没碰 form_save
     expect(h.gateway.calls.map((c) => c.name)).toEqual(['template_search'])
 
@@ -403,6 +414,220 @@ describe('LangGraph 编排', () => {
     // （旧代码会把第一张的 schema 无条件注入第二次 → 9 → 19 的混表）
     expect(assembleCalls[0].args.existingSchema).toBeUndefined()
     expect(assembleCalls[1].args.existingSchema).toBeUndefined()
+  })
+
+  it('工作空间里已保存、但不在会话工作台的表：按名称载入原 schema 后改表（不新建）', async () => {
+    // 2026-10-19 实测：教职工信息登记表是在别的会话里建的，本会话工作台没有它。
+    // 用户说「加一个备注字段」，旧逻辑当成新建 → 生成 1 个字段的「新建表单」。
+    const savedSchema = {
+      fields: [{ id: 'field_name', col: 12, key: 'name', name: '姓名', type: 'input', props: {}, rules: [] }],
+      version: 1,
+      settings: { canvasCols: 24, labelPosition: 'left' },
+    }
+    const context = {
+      listForms: vi.fn(async () => ({ list: [{ id: 'form-jzg', name: '教职工信息登记表' }] })),
+      getForm: vi.fn(async () => ({ id: 'form-jzg', name: '教职工信息登记表', workspaceId: 'w1' })),
+      getFormSchema: vi.fn(async () => savedSchema),
+    }
+    const h = buildHarness(
+      [
+        {
+          calls: [
+            {
+              id: 'c1',
+              name: 'form_assemble_schema',
+              args: { target: '教职工信息登记表', fields: [{ key: 'field_remark', name: '备注', type: 'textarea' }] },
+            },
+          ],
+        },
+        { calls: [{ id: 'c2', name: 'form_save', args: { name: '教职工信息登记表', target: '教职工信息登记表' } }] },
+        { content: '已给教职工信息登记表加上备注字段。' },
+      ],
+      { context },
+    )
+
+    const first = await runTurn(h, '给教职工信息登记表加一个备注字段')
+    // 关键：合并底稿是原表的完整 schema，而不是凭空新建
+    expect(h.gateway.calls[0].name).toBe('form_assemble_schema')
+    // 载入时补上 settings.formTitle：老 schema 没有它，否则改表会把标题落成「新建表单」
+    expect(h.gateway.calls[0].args.existingSchema).toEqual({
+      ...savedSchema,
+      settings: { ...savedSchema.settings, formTitle: '教职工信息登记表' },
+    })
+    expect((first.interrupted?.artifact as any)?.forms?.[0]?.formId).toBe('form-jzg')
+
+    await resumeTurn(h, { action: 'continue' }) // schema-review 放行 → form_save 的保存确认
+    const last = await resumeTurn(h, { action: 'continue' })
+    expect(last.interrupted).toBeUndefined()
+
+    // form_save 拿到同一个 formId：PATCH 原表，不再造第二张
+    const save = h.gateway.calls.find((c) => c.name === 'form_save')!
+    expect(save.args.formId).toBe('form-jzg')
+  })
+
+  it('工作空间里有多张同名表：先消歧再改，不会静默新建', async () => {
+    // 2026-10-19：空间里确有两张「教职工信息登记表」。只做唯一匹配的话
+    // resolveExistingForm 会返回 form_ambiguous，旧实现直接退回新建 —— 消歧没出现。
+    const ID_A = 'aaaaaaaa-1111-4111-8111-111111111111'
+    const ID_B = 'bbbbbbbb-2222-4222-8222-222222222222'
+    const schemaA = {
+      fields: [{ id: 'a1', key: 'name', name: '姓名', type: 'input', props: {}, rules: [] }],
+      version: 1,
+      settings: {},
+    }
+    const schemaB = {
+      fields: [{ id: 'b1', key: 'dept', name: '部门', type: 'input', props: {}, rules: [] }],
+      version: 1,
+      settings: {},
+    }
+    const byId: Record<string, any> = {
+      [ID_A]: { id: ID_A, name: '教职工信息登记表', workspaceId: 'w1' },
+      [ID_B]: { id: ID_B, name: '教职工信息登记表', workspaceId: 'w1' },
+    }
+    const context = {
+      listForms: vi.fn(async () => ({ list: [byId[ID_A], byId[ID_B]] })),
+      // getForm 要带 schema：消歧卡把候选 schema 一并下发，供前端直接预览
+      getForm: vi.fn(async (_t: string, id: string) => ({
+        ...byId[id],
+        schema: id === ID_A ? schemaA : schemaB,
+        updatedAt: id === ID_A ? '2026-10-10T02:00:00.000Z' : '2026-10-18T02:00:00.000Z',
+      })),
+      getFormSchema: vi.fn(async (_t: string, id: string) => (id === ID_A ? schemaA : schemaB)),
+    }
+    const h = buildHarness(
+      [
+        {
+          calls: [
+            {
+              id: 'c1',
+              name: 'form_assemble_schema',
+              args: { target: '教职工信息登记表', fields: [{ key: 'field_remark', name: '备注', type: 'textarea' }] },
+            },
+          ],
+        },
+        { calls: [{ id: 'c2', name: 'form_save', args: { name: '教职工信息登记表', target: '教职工信息登记表' } }] },
+        { content: '已更新。' },
+      ],
+      { context },
+    )
+
+    let r = await runTurn(h, '给教职工信息登记表加一个备注字段')
+    expect(r.interrupted?.kind).toBe('disambiguate')
+    expect(String(r.interrupted?.prompt)).toContain('2 张')
+    expect((r.interrupted?.options ?? []).map((o: any) => o.value)).toEqual([ID_A, ID_B])
+    // 每个候选都带自己的 schema，前端才能「先预览再选」
+    const opts = r.interrupted?.options as any[]
+    expect(opts.map((o) => o.form?.formId)).toEqual([ID_A, ID_B])
+    expect(opts[1].form?.schema?.fields?.[0]?.key).toBe('dept')
+    expect(opts[1].form?.fieldCount).toBe(1)
+    // 选项只留 A/B + 字段数，不附着 id、也不重复长标题
+    expect(opts.map((o) => o.label)).toEqual(['A. 1个字段', 'B. 1个字段'])
+    // 消歧前绝不能执行工具
+    expect(h.gateway.calls).toHaveLength(0)
+
+    // 选第二张 → act 按 formId 载入它的原 schema
+    r = await resumeTurn(h, { action: ID_B })
+    expect(r.interrupted?.checkpointId).toBe('schema-review')
+    expect(h.gateway.calls[0].name).toBe('form_assemble_schema')
+    expect(h.gateway.calls[0].args.existingSchema).toEqual({
+      ...schemaB,
+      settings: { formTitle: '教职工信息登记表' },
+    })
+
+    r = await resumeTurn(h, { action: 'continue' })
+    expect(r.interrupted?.checkpointId).toBe('space-approval')
+    r = await resumeTurn(h, { action: 'continue' })
+    expect(r.interrupted).toBeUndefined()
+
+    const save = h.gateway.calls.find((c) => c.name === 'form_save')!
+    expect(save.args.formId).toBe(ID_B)
+  })
+
+  it('回滚也在工作空间同名时先消歧，而不是直接弹回滚确认', async () => {
+    // 2026-10-19 实测：目标不在会话工作台时，gate 只对 assemble/save 查工作空间，
+    // form_rollback 直接进了 rollback-approval；用户确认完才由工具报「目标不唯一」。
+    const ID_A = 'aaaaaaaa-1111-4111-8111-111111111111'
+    const ID_B = 'bbbbbbbb-2222-4222-8222-222222222222'
+    const schemaA = {
+      fields: [{ id: 'a1', key: 'name', name: '姓名', type: 'input', props: {}, rules: [] }],
+      version: 1,
+      settings: {},
+    }
+    const schemaB = {
+      fields: [
+        { id: 'b1', key: 'dept', name: '部门', type: 'input', props: {}, rules: [] },
+        { id: 'b2', key: 'phone', name: '电话', type: 'input', props: {}, rules: [] },
+      ],
+      version: 1,
+      settings: {},
+    }
+    const context = {
+      listForms: vi.fn(async () => ({
+        list: [
+          { id: ID_A, name: '教职工信息登记表', workspaceId: 'w1' },
+          { id: ID_B, name: '教职工信息登记表', workspaceId: 'w1' },
+        ],
+      })),
+      getForm: vi.fn(async (_t: string, id: string) => ({
+        id,
+        name: '教职工信息登记表',
+        schema: id === ID_A ? schemaA : schemaB,
+      })),
+      getFormSchema: vi.fn(async (_t: string, id: string) => (id === ID_A ? schemaA : schemaB)),
+    }
+    const h = buildHarness(
+      [
+        {
+          calls: [
+            { id: 'c1', name: 'form_rollback', args: { target: '教职工信息登记表' } },
+          ],
+        },
+        { content: '已回滚。' },
+      ],
+      { context },
+    )
+
+    let r = await runTurn(h, '将教职工信息登记表回滚到上一版')
+    expect(r.interrupted?.kind).toBe('disambiguate')
+    expect(String(r.interrupted?.prompt)).toContain('回滚')
+    const opts = (r.interrupted?.options ?? []) as any[]
+    expect(opts.map((o) => o.value)).toEqual([ID_A, ID_B])
+    expect(opts.map((o) => o.label)).toEqual(['A. 1个字段', 'B. 2个字段'])
+    // 消歧之前绝不能先弹回滚确认、更不能执行
+    expect(h.gateway.calls).toHaveLength(0)
+
+    // 选第二张：target 改写成 formId 后直接执行；选中目标同时充当回滚确认
+    r = await resumeTurn(h, { action: ID_B })
+    expect(r.interrupted).toBeUndefined()
+    const rollback = h.gateway.calls.find((c) => c.name === 'form_rollback')!
+    expect(rollback.args.target).toBe(ID_B)
+  })
+
+  it('明确要求新建时，不按名称劫持工作空间里的同名旧表', async () => {
+    const context = {
+      listForms: vi.fn(async () => ({ list: [{ id: 'form-old', name: '教职工信息登记表' }] })),
+      getForm: vi.fn(async () => ({ id: 'form-old', name: '教职工信息登记表' })),
+      getFormSchema: vi.fn(async () => ({ fields: [{ key: 'name' }], settings: {} })),
+    }
+    const h = buildHarness(
+      [
+        {
+          calls: [
+            {
+              id: 'c1',
+              name: 'form_assemble_schema',
+              args: { target: '教职工信息登记表', fields: [{ key: 'name', name: '姓名', type: 'input' }] },
+            },
+          ],
+        },
+        { content: '建好了。' },
+      ],
+      { context },
+    )
+
+    await runTurn(h, '新建教职工信息登记表')
+    expect(h.gateway.calls[0].args.existingSchema).toBeUndefined()
+    expect(context.listForms).not.toHaveBeenCalled()
   })
 
   it('同轮里保存表 A 再保存表 B：B 不带上 A 的 formId（修静默覆盖）', async () => {
@@ -684,6 +909,8 @@ describe('路由与计划（纯函数）', () => {
     expect(d.isCrossDomain).toBe(true)
     expect(d.plan?.steps.map((s) => s.agent)).toEqual(['template', 'form-designer', 'workflow'])
     expect(d.plan?.steps[1].input.templateRef).toBe('$1.schema')
+    // 交接步骤还要带上原始需求，否则模型只看到一段 JSON，容易当成空消息
+    expect(d.plan?.steps[1].input.description).toBe('搜索请假模板，基于它创建表单并配一个审批流程')
   })
 
   it('单步模板请求补上表单设计助手落库（模板 Agent 没有 form_save）', () => {
@@ -706,6 +933,27 @@ describe('路由与计划（纯函数）', () => {
     const ref = plan.resolveRef('$1.schema', artifacts)
     expect(ref).toEqual({ fields: [1, 2] })
     expect(plan.resolveRef('$2.schema', artifacts)).toBeNull()
+  })
+
+  // 2026-10-19 实测：模板 schema 超过 2000 字符时被截断成半截 JSON，表单设计助手
+  // 看不懂，回复「请描述你想创建的表单」。上游产物必须完整传递。
+  it('大体积上游产物完整传给下一步（不截断 JSON）', () => {
+    const plan = new PlanService()
+    const fields = Array.from({ length: 200 }, (_, i) => ({ key: `f${i}`, name: `字段${i}`, type: 'text' }))
+    const artifacts = { '1': { type: 'TemplateArtifact', data: { schema: { fields } } } }
+    const step: any = {
+      id: '2',
+      agent: 'form-designer',
+      action: 'customize',
+      input: { templateRef: '$1.schema', description: '基于请假模板建表单' },
+    }
+    const { message } = plan.buildStepInput(step, artifacts, '基于请假模板建表单')
+    expect(message).toContain('description: 基于请假模板建表单')
+    expect(message).toContain('"name":"字段199"')
+
+    const start = message.indexOf('templateRef: ') + 'templateRef: '.length
+    const end = message.indexOf('\ndescription: ')
+    expect(() => JSON.parse(message.slice(start, end))).not.toThrow()
   })
 
   it('hasUnresolvedRefs：引用全解析不到才算缺产物', () => {

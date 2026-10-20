@@ -5,7 +5,6 @@ import { APP_GUARD } from '@nestjs/core'
 import { PassportModule } from '@nestjs/passport'
 import { JwtModule } from '@nestjs/jwt'
 import configuration, {
-  auditConfig,
   cacheConfig,
   checkpointConfig,
   contextConfig,
@@ -46,7 +45,6 @@ import { HealthController } from './modules/health/health.controller'
         checkpointConfig,
         cacheConfig,
         userMemoryConfig,
-        auditConfig,
         infraConfig,
       ],
       envFilePath: ['.env'],

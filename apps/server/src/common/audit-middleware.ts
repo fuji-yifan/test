@@ -84,6 +84,12 @@ function buildAction(prismaAction: string, model: string, args?: any): string {
     if (data.status === 'archived') return '归档表单'
     return '修改表单'
   }
+  // ProcessDefinition.update: 发布/撤回发布（都是改 status）与普通修改区分开
+  if (model === 'ProcessDefinition' && prismaAction === 'update') {
+    const data = (args as any)?.data || {}
+    if (data.status === 'published' && data.publishedAt) return '发布固有流程'
+    if (data.status === 'draft' && data.publishedAt === null) return '撤回固有流程'
+  }
   // TaskInstance: 根据 data.status 细分
   if (model === 'TaskInstance' && prismaAction === 'update') {
     const data = (args as any)?.data || {}
