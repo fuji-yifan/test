@@ -47,12 +47,14 @@
     <!-- ========== 顶部工具栏 ========== -->
     <header class="designer-header">
       <div class="header-left">
-        <el-button
-          text
-          @click="goBack"
-        >
-          <el-icon><ArrowLeft /></el-icon> 返回
-        </el-button>
+        <el-tooltip content="返回" placement="top">
+          <el-button
+            text
+            @click="goBack"
+          >
+            <el-icon><ArrowLeft /></el-icon>
+          </el-button>
+        </el-tooltip>
       </div>
       <div class="header-center">
         <el-button-group class="header-btn-group">

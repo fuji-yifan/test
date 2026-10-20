@@ -223,6 +223,15 @@ watch(wsId, () => {
   fetchPie()
 })
 
+// 画布尺寸是 init 那一刻按容器量的。init 时 hasXxxData 还是 false → 容器是 200px（chart-box-sm），
+// 数据回来后才换成 320px（chart-box），卡片下方就多出 120px 空白。数据态一变就 resize。
+// flush:'post' 保证量到的是切换后的高度。
+watch([hasTrendData, hasRankData, hasPieData], () => {
+  trendChart?.resize()
+  rankChart?.resize()
+  pieChart?.resize()
+}, { flush: 'post' })
+
 onBeforeUnmount(() => {
   trendChart?.dispose()
   rankChart?.dispose()

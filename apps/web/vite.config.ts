@@ -16,6 +16,11 @@ export default defineConfig({
         target: 'http://localhost:3000',
         changeOrigin: true,
       },
+      // 审批签名/附件由 server 静态托管
+      '/uploads': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
       '/agent-api': {
         target: 'http://localhost:3002',
         changeOrigin: true,

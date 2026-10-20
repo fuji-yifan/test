@@ -201,7 +201,10 @@ body {
 .page-header h2, .page-header h3 { margin: 0; font-weight: 700; color: var(--app-text-primary); }
 .el-card { border-radius: var(--app-radius-lg); border: 1px solid var(--app-border-color); }
 .el-dialog { border-radius: var(--app-radius-lg); }
-.el-dialog__header { border-bottom: 1px solid var(--app-border-light); padding-bottom: 16px; margin-bottom: 0; }
+.el-dialog__header { border-bottom: 1px solid var(--app-border-light); margin-bottom: 0; }
+/* 那条分隔线是 header 的 border-bottom，而 el-dialog__body 自身没有内边距，
+   不补这一段的话分隔线会直接贴上正文。和 header 用同一个变量，保证线上下等距。 */
+.el-dialog__body { padding-top: var(--el-dialog-padding-primary); }
 .el-tag { font-weight: 500; }
 .el-button { font-weight: 500; }
 .el-dropdown-menu { border-radius: 8px; box-shadow: var(--app-shadow-lg); }
@@ -459,4 +462,30 @@ html.dark .user-link:hover { color: var(--el-color-primary); border-bottom-color
 .user-link:hover {
   color: var(--el-color-primary);
   border-bottom-color: var(--el-color-primary);
+}
+
+/* ==============================
+   输入框合成层残影修正
+   ============================== */
+/*
+ * Element Plus 给输入框包裹层加了 transform: translate(0,0)。视觉上无变化，
+ * 但会让每个输入框成为独立 GPU 合成层；配合 box-shadow 的焦点过渡，Chromium
+ * 在圆角/滚动容器里重绘时会留下陈旧像素，表现为输入框左边缘出现极淡黑点。
+ * 全局取消层提升与阴影过渡，从根上去掉残影的产生条件。
+ * 代价：焦点环由渐变改为瞬间亮起，不影响交互。
+ */
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+  transform: none !important;
+  transition: none !important;
+}
+/*
+ * Element Plus 把下拉框的选中值/占位符渲染成 z-index:-1 的绝对定位元素，原本是靠
+ * wrapper 上的 transform 建立层叠上下文才不会被不透明背景盖住。transform 移除后
+ * 必须补一个同样能建立层叠上下文、但不会提升合成层的声明，否则所有下拉框的
+ * 已选内容都会“消失”。isolation 只建立层叠上下文，不触发 GPU 图层提升。
+ */
+.el-select__wrapper {
+  isolation: isolate;
 }

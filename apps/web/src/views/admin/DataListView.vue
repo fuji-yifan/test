@@ -1,12 +1,14 @@
 <template>
   <div>
     <div class="page-header">
-      <el-button
-        text
-        @click="$router.back()"
-      >
-        <el-icon><ArrowLeft /></el-icon> 返回
-      </el-button>
+      <el-tooltip content="返回" placement="top">
+        <el-button
+          text
+          @click="$router.back()"
+        >
+          <el-icon><ArrowLeft /></el-icon>
+        </el-button>
+      </el-tooltip>
       <h2>提交数据</h2>
       <div class="header-actions">
         <el-button size="small" @click="exportCSV">导出 CSV</el-button>

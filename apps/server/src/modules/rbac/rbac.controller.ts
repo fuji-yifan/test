@@ -3,7 +3,6 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger'
 import { RbacService } from './rbac.service'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { PermissionGuard, RequiredPermission } from '../../common/guards/permission.guard'
-import { CurrentUser } from '../../common/decorators/current-user.decorator'
 
 @ApiTags('RBAC')
 @ApiBearerAuth()
@@ -27,15 +26,15 @@ export class RbacController {
   @UseGuards(PermissionGuard)
   @RequiredPermission('role:edit')
   @Patch(':id')
-  updateRole(@Param('id') id: string, @Body() dto: { name?: string; permissions?: string[] }, @CurrentUser('userId') userId: string) {
-    return this.rbacService.updateRole(id, dto, userId)
+  updateRole(@Param('id') id: string, @Body() dto: { name?: string; permissions?: string[] }) {
+    return this.rbacService.updateRole(id, dto)
   }
 
   @UseGuards(PermissionGuard)
   @RequiredPermission('role:delete')
   @Delete(':id')
-  deleteRole(@Param('id') id: string, @CurrentUser('userId') userId: string) {
-    return this.rbacService.deleteRole(id, userId)
+  deleteRole(@Param('id') id: string) {
+    return this.rbacService.deleteRole(id)
   }
 
   @UseGuards(PermissionGuard)

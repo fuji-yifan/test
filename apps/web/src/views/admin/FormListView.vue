@@ -34,8 +34,8 @@
           />
         </el-select>
         <el-select
-          v-model="workflowFilter"
-          placeholder="流程"
+          v-model="typeFilter"
+          placeholder="类型"
           clearable
           style="width:120px"
         >
@@ -44,15 +44,22 @@
             value=""
           />
           <el-option
-            label="已绑定"
-            value="bound"
+            label="普通表单"
+            value="normal"
           />
           <el-option
-            label="未绑定"
-            value="unbound"
+            label="流程表单"
+            value="flow"
           />
         </el-select>
-        <el-button @click="openRecycle">回收站</el-button>
+        <el-tooltip
+          content="回收站"
+          placement="top"
+        >
+          <el-button @click="goRecycle">
+            <el-icon><Delete /></el-icon>
+          </el-button>
+        </el-tooltip>
         <el-button type="primary" @click="createForm">新建表单</el-button>
       </div>
     </div>
@@ -121,12 +128,11 @@
             >
               <template #reference>
                 <el-tag
-                  type="warning"
                   size="small"
                   class="workflow-badge"
                   @click.stop
                 >
-                  已绑定流程
+                  流程表单
                 </el-tag>
               </template>
               <div class="workflow-popover">
@@ -134,7 +140,7 @@
                   v-for="wf in boundWorkflows[f.id]"
                   :key="wf.id"
                   class="workflow-item"
-                  @click="goWorkflowDesigner(wf.id)"
+                  @click="goWorkflowList(wf.name)"
                 >
                   <span class="wf-name">{{ wf.name }}</span>
                   <el-tag
@@ -147,11 +153,19 @@
               </div>
             </el-popover>
           </div>
-          <p
+          <el-tooltip
             v-if="f.description"
+            :content="f.description"
+            placement="top"
+            :show-after="300"
+          >
+            <p class="desc">{{ f.description }}</p>
+          </el-tooltip>
+          <p
+            v-else
             class="desc"
           >
-            {{ f.description }}
+            暂无描述
           </p>
           <div class="meta">
             <el-tag
@@ -188,9 +202,16 @@
           >
             设置
           </el-button>
-          <el-dropdown trigger="click">
+          <el-dropdown
+            trigger="click"
+            @visible-change="(v: boolean) => onMoreVisible(f.id, v)"
+          >
             <el-button size="small">
-              更多 <el-icon><ArrowDown /></el-icon>
+              更多
+              <el-icon
+                class="more-arrow"
+                :class="{ 'is-open': openMoreId === f.id }"
+              ><ArrowDown /></el-icon>
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
@@ -342,77 +363,13 @@
       </template>
     </el-dialog>
 
-    <!-- 回收站 -->
-    <el-dialog
-      v-model="showRecycle"
-      title="回收站"
-      width="640px"
-    >
-      <div v-loading="recycleLoading">
-        <el-empty
-          v-if="!recycleLoading && recycleForms.length === 0"
-          description="回收站为空"
-        />
-        <el-table
-          v-else
-          :data="recycleForms"
-          size="small"
-        >
-          <el-table-column
-            label="表单"
-            min-width="200"
-          >
-            <template #default="{ row }">
-              <div>{{ row.name }}</div>
-              <div
-                v-for="v in row.versions"
-                :key="v.version"
-                class="recycle-version"
-              >
-                版本 v{{ v.version }}
-                <el-button
-                  link
-                  type="primary"
-                  size="small"
-                  @click="restoreVersion(row, v)"
-                >
-                  恢复此版本
-                </el-button>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column
-            label="删除时间"
-            width="180"
-          >
-            <template #default="{ row }">
-              {{ formatDate(row.deletedAt) }}
-            </template>
-          </el-table-column>
-          <el-table-column
-            label="操作"
-            width="100"
-          >
-            <template #default="{ row }">
-              <el-button
-                link
-                type="primary"
-                @click="restoreForm(row)"
-              >
-                恢复表单
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ArrowDown, Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import http from '@/api/client'
 import type { Form, Workspace } from '@/types/models'
@@ -435,7 +392,8 @@ const { list, total, page, pageSize, loading, fetch: _fetch } = usePagedList<For
   12,
 )
 
-const search = ref('')
+/** 初值取自 ?keyword=（流程管理的「关联表单」点过来会带上表单名），首次 fetch 就用它过滤 */
+const search = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
 /** 是否完成过至少一次加载 —— 用来把骨架屏限定在首次进入，避免空列表时反复闪骨架 */
 const loadedOnce = ref(false)
 const statusFilter = ref('')
@@ -452,10 +410,18 @@ interface BoundWorkflow {
   status: string
 }
 const boundWorkflows = ref<Record<string, BoundWorkflow[]>>({})
-const workflowFilter = ref('')
+/** 表单类型：'' 全部 / 'normal' 普通表单 / 'flow' 流程表单（被已发布流程绑定的表单） */
+const typeFilter = ref('')
 
 // 跨工作空间复制
 const wsStore = useWorkspaceStore()
+/** 当前展开「更多」下拉的表单 id：用于切换箭头方向 */
+const openMoreId = ref('')
+function onMoreVisible(id: string, visible: boolean) {
+  if (visible) openMoreId.value = id
+  else if (openMoreId.value === id) openMoreId.value = ''
+}
+
 const showCopyDialog = ref(false)
 const copyTargetWsId = ref('')
 const copyingForm = ref<Form | null>(null)
@@ -465,9 +431,9 @@ const otherWorkspaces = computed(() =>
 )
 
 const filteredList = computed(() => {
-  if (!workflowFilter.value) return list.value
-  const bound = workflowFilter.value === 'bound'
-  return list.value.filter(f => bound ? !!boundWorkflows.value[f.id]?.length : !boundWorkflows.value[f.id]?.length)
+  if (!typeFilter.value) return list.value
+  const isFlowForm = (f: Form) => !!boundWorkflows.value[f.id]?.length
+  return list.value.filter(f => typeFilter.value === 'flow' ? isFlowForm(f) : !isFlowForm(f))
 })
 
 // 将筛选参数传入 fetch
@@ -532,7 +498,10 @@ async function doCreate() {
 function openDesigner(f: Form) { router.push(`/workspace/${wsId.value}/forms/${f.id}/designer`) }
 function viewData(f: Form) { router.push(`/workspace/${wsId.value}/forms/${f.id}/data`) }
 function goSettings(f: Form) { router.push(`/workspace/${wsId.value}/forms/${f.id}/settings`) }
-function goWorkflowDesigner(wfId: string) { router.push(`/workspace/${wsId.value}/workflows/${wfId}/designer`) }
+/** 跳去流程管理并按流程名搜索（与流程管理「关联表单」跳过来互为反向） */
+function goWorkflowList(name: string) {
+  router.push({ name: 'ProcessList', params: { wsId: wsId.value }, query: { keyword: name } })
+}
 function copyForm(f: Form) {
   copyingForm.value = f
   copyTargetWsId.value = ''
@@ -577,58 +546,7 @@ function deleteForm(f: Form) {
   )
 }
 
-// ==================== 回收站 ====================
-interface RecycleVersion {
-  version: number
-  deletedAt: string
-}
-interface RecycleForm {
-  id: string
-  name: string
-  deletedAt: string
-  versions: RecycleVersion[]
-}
-const showRecycle = ref(false)
-const recycleLoading = ref(false)
-const recycleForms = ref<RecycleForm[]>([])
-
-async function openRecycle() {
-  showRecycle.value = true
-  await fetchRecycle()
-}
-
-async function fetchRecycle() {
-  recycleLoading.value = true
-  try {
-    const res: any = await http.get(`/workspaces/${wsId.value}/forms/recycle`)
-    const payload = res?.data ?? res
-    recycleForms.value = (payload?.list ?? []) as RecycleForm[]
-  } catch {
-    recycleForms.value = []
-  } finally {
-    recycleLoading.value = false
-  }
-}
-
-async function restoreForm(f: RecycleForm) {
-  try {
-    await http.post(`/forms/${f.id}/restore`)
-    ElMessage.success('已恢复表单')
-    await Promise.all([fetchRecycle(), fetchList()])
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || e?.message || '恢复失败')
-  }
-}
-
-async function restoreVersion(f: RecycleForm, v: RecycleVersion) {
-  try {
-    await http.post(`/forms/${f.id}/versions/${v.version}/restore`)
-    ElMessage.success(`已恢复版本 v${v.version}`)
-    await fetchRecycle()
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || e?.message || '恢复失败')
-  }
-}
+function goRecycle() { router.push(`/workspace/${wsId.value}/forms/recycle`) }
 
 function statusLabel(s: string) { return s === 'published' ? '已发布' : s === 'archived' ? '已归档' : '草稿' }
 function formatDate(d: string) { return d ? new Date(d).toLocaleDateString('zh-CN') : '-' }
@@ -643,13 +561,41 @@ function formatDate(d: string) { return d ? new Date(d).toLocaleDateString('zh-C
 .form-card { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); display: flex; flex-direction: column; justify-content: space-between; transition: box-shadow 0.2s; }
 .form-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
 .skeleton-card { pointer-events: none; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+/* 正文撑满剩余高度：底部分类/状态行始终贴底，描述字数多少都不改变其位置 */
+.card-body { flex: 1; display: flex; flex-direction: column; }
 .card-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .card-title-row h4 { margin: 0; font-size: 16px; flex: 1; }
+/* 流程表单徽章用紫色：Element Plus 没有紫色预设，而内置的 warning 已被「已归档」占用。
+   选择器带 .el-tag 是为压过 .el-tag.el-tag--* 那几个同优先级的变量赋值 */
+.workflow-badge.el-tag {
+  --el-tag-bg-color: #f9f0ff;
+  --el-tag-border-color: #d3adf7;
+  --el-tag-text-color: #722ed1;
+}
 .workflow-badge { cursor: pointer; flex-shrink: 0; }
-.desc { font-size: 13px; color: #909399; margin: 0 0 12px; }
-.meta { display: flex; align-items: center; gap: 12px; }
+/* 描述最多两行，超出省略；完整内容通过悬停 tooltip 查看 */
+.desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  min-height: 39px;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #909399;
+  margin: 0 0 12px;
+  word-break: break-word;
+}
+/* 分类、状态、时间固定在卡片底部，与模板卡片保持一致 */
+.meta { display: flex; align-items: center; gap: 12px; margin-top: auto; }
 .time { font-size: 12px; color: #c0c4cc; }
-.card-actions { display: flex; gap: 4px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+.card-actions { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+/* Element Plus 给相邻的 .el-button 额外加 12px margin-left，而「更多」外面套着 el-dropdown、
+   不在兄弟选择器里 —— 结果前三个间距 16px、和「更多」之间只有 gap 的 4px。归零，统一交给 gap 管 */
+.card-actions .el-button + .el-button { margin-left: 0; }
+/* 「更多」下拉展开时箭头翻转 */
+.more-arrow { margin-left: 2px; transition: transform 0.2s; }
+.more-arrow.is-open { transform: rotate(180deg); }
 .pagination { margin-top: 20px; justify-content: center; }
 
 .workflow-popover { display: flex; flex-direction: column; gap: 6px; }
@@ -661,5 +607,4 @@ function formatDate(d: string) { return d ? new Date(d).toLocaleDateString('zh-C
 .workflow-item:hover .wf-name { color: #409eff; }
 .wf-name { font-size: 13px; color: #303133; }
 
-.recycle-version { font-size: 12px; color: #909399; margin-top: 4px; }
 </style>

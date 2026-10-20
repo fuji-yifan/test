@@ -2,42 +2,36 @@
   <div class="process-list-page">
     <div class="page-header">
       <h2>流程管理</h2>
-      <el-button type="primary" @click="showCreate = true">新建流程</el-button>
-    </div>
-
-    <!-- 搜索&筛选 -->
-    <div class="filters">
-      <el-input
-        v-model="searchKeyword"
-        placeholder="搜索流程名称"
-        clearable
-        style="width: 240px"
-        @input="onSearch"
-      />
-      <el-select
-        v-model="statusFilter"
-        placeholder="状态筛选"
-        clearable
-        style="width: 140px"
-        @change="onFilterChange"
-      >
-        <el-option
-          label="全部"
-          value=""
+      <div class="header-actions">
+        <el-input
+          v-model="searchKeyword"
+          placeholder="搜索流程..."
+          clearable
+          class="search-input"
+          @input="onSearch"
         />
-        <el-option
-          label="草稿"
-          value="draft"
-        />
-        <el-option
-          label="已发布"
-          value="published"
-        />
-        <el-option
-          label="已归档"
-          value="archived"
-        />
-      </el-select>
+        <el-select
+          v-model="statusFilter"
+          placeholder="状态"
+          clearable
+          style="width: 120px"
+          @change="onFilterChange"
+        >
+          <el-option
+            label="全部"
+            value=""
+          />
+          <el-option
+            label="草稿"
+            value="draft"
+          />
+          <el-option
+            label="已发布"
+            value="published"
+          />
+        </el-select>
+        <el-button type="primary" @click="showCreate = true">新建流程</el-button>
+      </div>
     </div>
 
     <!-- 列表 -->
@@ -55,7 +49,10 @@
         show-overflow-tooltip
       >
         <template #default="{ row }">
-          <router-link :to="`/workspace/${wsId}/workflows/${row.id}/designer`">
+          <router-link
+            class="table-link"
+            :to="`/workspace/${wsId}/workflows/${row.id}/designer`"
+          >
             {{ row.name }}
           </router-link>
         </template>
@@ -75,11 +72,29 @@
       >
         <template #default="{ row }">
           <el-tag
-            :type="row.status === 'published' ? 'success' : row.status === 'draft' ? 'info' : 'warning'"
+            :type="row.status === 'published' ? 'success' : 'info'"
             size="small"
           >
-            {{ row.status === 'published' ? '已发布' : row.status === 'draft' ? '草稿' : '已归档' }}
+            {{ row.status === 'published' ? '已发布' : '草稿' }}
           </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column
+        label="关联表单"
+        min-width="140"
+        align="center"
+        show-overflow-tooltip
+      >
+        <template #default="{ row }">
+          <!-- 跳去表单管理并按表单名搜索：带的是名字而非 id，因为表单可能已被彻底删除（列表查不到 → 空态） -->
+          <router-link
+            v-if="row.formName"
+            class="table-link"
+            :to="{ name: 'FormList', params: { wsId }, query: { keyword: row.formName } }"
+          >
+            {{ row.formName }}
+          </router-link>
+          <span v-else>-</span>
         </template>
       </el-table-column>
       <el-table-column
@@ -203,7 +218,8 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 20
 const loading = ref(false)
-const searchKeyword = ref('')
+/** 初值取自 ?keyword=（表单管理的「流程表单」徽章点过来会带上流程名），首次 fetch 就用它过滤 */
+const searchKeyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
 const statusFilter = ref('')
 
 const showCreate = ref(false)
@@ -310,5 +326,11 @@ function formatDate(d: string) {
   margin-bottom: 16px;
 }
 .page-header h2 { margin: 0; }
-.filters { display: flex; gap: 12px; }
+.header-actions { display: flex; gap: 12px; }
+.search-input { width: 200px; }
+
+/* 表格里的链接：裸 <a> 是浏览器默认的蓝字 + 下划线，跟 Element Plus 表格不搭。
+   对齐 el-link 的主色样式：静止无下划线，hover 变浅色并补上下划线。 */
+.table-link { color: var(--el-color-primary); text-decoration: none; transition: color 0.15s; }
+.table-link:hover { color: var(--el-color-primary-light-3); text-decoration: underline; }
 </style>

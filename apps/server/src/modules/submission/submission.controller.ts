@@ -48,8 +48,7 @@ export class SubmissionController {
     return this.submissionService.submit(formId, dto, userId)
   }
 
-  @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequiredPermission('submission:edit')
+  @UseGuards(JwtAuthGuard)
   @UseInterceptors(FieldACLInterceptor)
   @ApiBearerAuth()
   @Post('forms/:formId/submit')
@@ -116,8 +115,7 @@ export class SubmissionController {
     return this.submissionService.getById(formId, id, userId)
   }
 
-  @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequiredPermission('submission:edit')
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Patch('forms/:formId/submissions/:id')
   updateStatus(

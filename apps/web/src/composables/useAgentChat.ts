@@ -10,6 +10,13 @@ export interface ConfirmOption {
   value: string
   label: string
   style?: 'primary' | 'default' | 'danger'
+  /** 消歧候选的预览数据：前端在候选行上直接渲染「预览」按钮 */
+  form?: {
+    title?: string
+    schema?: unknown
+    formId?: string
+    fieldCount?: number
+  }
 }
 
 export interface AgentToolCall {
@@ -443,8 +450,54 @@ export function useAgentChat(options: UseAgentChatOptions) {
     try { localStorage.removeItem(LS_KEY()); localStorage.removeItem(`${LS_KEY()}_sid`) } catch { /* */ }
   }
 
+  /**
+   * 用服务端真实的待答状态校正从 localStorage 恢复出来的检查点卡片。
+   *
+   * 为什么必须有这一步：localStorage 快照是在上一轮 `done` 时写的。用户点「保存」后
+   * 立刻退出/刷新时，这次确认还没写进快照，回来就会看到一张已经答过的可点卡片；
+   * 再点一下，后端拿到的 callId 早已失效（幂等收尾已清掉 pending）。
+   * 只保留与 metadata.pendingGraphInterrupt.callId 对得上的那张，其余标成已处理。
+   */
+  async function reconcilePendingConfirms(): Promise<void> {
+    // 只校正调用时已经存在的卡片，避免慢请求把这一瞬间新收到的检查点误标失效
+    const restored: AgentToolCall[] = []
+    for (const msg of messages.value) {
+      for (const tc of msg.toolCalls || []) {
+        if (tc.status === 'confirming') restored.push(tc)
+      }
+    }
+    if (!restored.length) return
+
+    let pendingCallId: string | undefined
+    const sid = sessionId.value
+    if (sid) {
+      try {
+        const res = await fetch(`/agent-api/api/v1/agent/sessions/${sid}`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        })
+        if (!res.ok) return // 拿不到权威状态时不乱动，后端对失效回执也有兜底
+        const body = await res.json()
+        const data = body?.data || body
+        pendingCallId = data?.metadata?.pendingGraphInterrupt?.callId
+      } catch {
+        return // 网络失败同上
+      }
+    }
+
+    let changed = false
+    for (const tc of restored) {
+      if (tc.status === 'confirming' && tc.callId !== pendingCallId) {
+        tc.status = 'interrupted'
+        tc.summary = '已处理'
+        changed = true
+      }
+    }
+    if (changed) persistToLocal()
+  }
+
   // 初始化时恢复
   restoreFromLocal()
+  void reconcilePendingConfirms()
 
   async function loadSession(sessId: string) {
     const token = getToken()
@@ -517,6 +570,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
     cancel,
     clearMessages,
     loadSession,
+    reconcilePendingConfirms,
     listSessions,
   }
 }

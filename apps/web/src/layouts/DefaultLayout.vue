@@ -189,14 +189,20 @@
             <span class="ai-btn-text">FlowX</span>
           </button>
           <!-- 用户 -->
-          <el-dropdown trigger="click">
+          <el-dropdown
+            trigger="click"
+            @visible-change="(v: boolean) => (userMenuOpen = v)"
+          >
             <span class="user-info">
               <el-avatar
                 :size="32"
                 icon="UserFilled"
               />
               <span class="user-name">{{ auth.currentUser?.nickname || auth.currentUser?.email }}</span>
-              <el-icon><ArrowDown /></el-icon>
+              <el-icon
+                class="user-arrow"
+                :class="{ 'is-open': userMenuOpen }"
+              ><ArrowDown /></el-icon>
             </span>
             <template #dropdown>
               <el-dropdown-menu>
@@ -259,6 +265,8 @@ import ChatPanel from '@/components/ChatPanel.vue'
 
 const chatVisible = ref(false)
 const wsPopoverVisible = ref(false)
+/** 右上角用户下拉是否展开：用于翻转箭头 */
+const userMenuOpen = ref(false)
 const wsSelectRef = ref<{ blur: () => void } | null>(null)
 
 // 根据当前路由自动推断 Agent 场景
@@ -360,6 +368,10 @@ const breadcrumbs = computed(() => {
     Home: [],
     WorkspaceHome: [{ title: '工作台' }],
     FormList: [{ title: '表单管理' }],
+    FormRecycle: [
+      { title: '表单管理', to: `/workspace/${wsIdVal}/forms` },
+      { title: '回收站' },
+    ],
     FormDesigner: [
       { title: '表单管理', to: `/workspace/${wsIdVal}/forms` },
       { title: '表单设计器' },
@@ -395,7 +407,6 @@ const breadcrumbs = computed(() => {
     MyTasks: [{ title: '我的待办' }],
     MyProcesses: [{ title: '我的流程' }],
     Notifications: [{ title: '消息通知' }],
-    InstanceViewer: [{ title: '流程进度' }],
   }
 
   const extra = map[routeName] || []
@@ -571,6 +582,9 @@ function handleLogout() {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 用户下拉展开时箭头翻转 */
+.user-arrow { transition: transform 0.2s; }
+.user-arrow.is-open { transform: rotate(180deg); }
 
 .sidebar-footer {
   display: flex;

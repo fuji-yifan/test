@@ -32,45 +32,53 @@
 
     <div
       v-loading="loading"
-      class="card-grid"
+      class="tpl-grid"
     >
-      <el-card
+      <div
         v-for="tpl in templates"
         :key="tpl.id"
         class="tpl-card"
-        shadow="hover"
       >
-        <template #header>
-          <div class="card-title">
-            <span>{{ tpl.name }}</span>
+        <div class="card-body">
+          <div class="card-title-row">
+            <h4>{{ tpl.name }}</h4>
+            <el-tag
+              size="small"
+              effect="plain"
+              class="template-badge"
+            >
+              模板
+            </el-tag>
+          </div>
+          <p class="desc">
+            {{ tpl.description || '暂无描述' }}
+          </p>
+          <!-- 标签行固定占位：有无标签的卡片高度保持一致；分类在前，标签最多展示 3 个 -->
+          <div class="tpl-tags">
             <el-tag
               v-if="tpl.category"
               size="small"
             >
               {{ tpl.category }}
             </el-tag>
+            <el-tag
+              v-for="tag in (tpl.tags || []).slice(0, 3)"
+              :key="tag"
+              size="small"
+              effect="plain"
+            >
+              {{ tag }}
+            </el-tag>
           </div>
-        </template>
-        <p class="tpl-desc">
-          {{ tpl.description || '暂无描述' }}
-        </p>
-        <div
-          v-if="tpl.tags?.length"
-          class="tpl-tags"
-        >
-          <el-tag
-            v-for="tag in tpl.tags"
-            :key="tag"
-            size="small"
-            effect="plain"
-          >
-            {{ tag }}
-          </el-tag>
+          <div class="meta">
+            <span class="meta-item">
+              已使用 {{ tpl.usageCount }} 次
+            </span>
+            <span class="time">{{ formatDate(tpl.createdAt) }}</span>
+          </div>
         </div>
-        <div class="tpl-meta">
-          <span>已使用 {{ tpl.usageCount }} 次</span>
-        </div>
-        <div class="tpl-actions">
+
+        <div class="card-actions">
           <el-button
             size="small"
             @click="previewTemplate(tpl)"
@@ -91,7 +99,7 @@
             使用
           </el-button>
         </div>
-      </el-card>
+      </div>
     </div>
 
     <el-empty
@@ -110,31 +118,10 @@
     <!-- ========== 预览弹窗 ========== -->
     <el-dialog
       v-model="previewVisible"
-      title="模板预览"
+      :title="previewTpl ? `模板预览：${previewTpl.name}` : '模板预览'"
       width="960px"
     >
       <template v-if="previewTpl">
-        <el-descriptions
-          :column="2"
-          border
-          size="small"
-        >
-          <el-descriptions-item label="名称">
-            {{ previewTpl.name }}
-          </el-descriptions-item>
-          <el-descriptions-item label="分类">
-            {{ previewTpl.category || '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="使用次数">
-            {{ previewTpl.usageCount }}
-          </el-descriptions-item>
-          <el-descriptions-item label="标签">
-            {{ (previewTpl.tags || []).join(', ') || '-' }}
-          </el-descriptions-item>
-        </el-descriptions>
-        <h4 style="margin:16px 0 8px">
-          表单预览
-        </h4>
         <div class="form-preview-box">
           <PreviewPanel :schema="previewTpl.schema" hide-actions hide-title />
         </div>
@@ -183,13 +170,17 @@
           </el-select>
         </el-form-item>
         <el-form-item label="标签">
-          <el-select
-            v-model="form.tags"
-            multiple
-            allow-create
-            filterable
-            placeholder="输入后回车添加标签"
-          />
+          <div class="tag-field">
+            <el-select
+              v-model="form.tags"
+              multiple
+              allow-create
+              filterable
+              :multiple-limit="3"
+              placeholder="输入后回车添加标签"
+            />
+            <span class="tag-count">{{ form.tags.length }}/3</span>
+          </div>
         </el-form-item>
         <el-form-item
           v-if="!editingId"
@@ -212,26 +203,26 @@
             </el-option>
           </el-select>
         </el-form-item>
-        <!-- 表单预览 + 修改视图入口 -->
+        <!-- 新建时预览所选的来源表单；修改模板时不预览（内容已定型，要改直接进设计器） -->
         <el-form-item
-          v-if="selectedFormName && previewSchema?.fields?.length"
+          v-if="!editingId && selectedFormName && previewSchema?.fields?.length"
           label="表单预览"
         >
           <div class="form-preview-box">
             <PreviewPanel :schema="previewSchema" hide-actions hide-title />
           </div>
-          <div
-            v-if="editingId"
-            style="margin-top:10px;text-align:right"
+        </el-form-item>
+        <el-form-item
+          v-if="editingId"
+          label="表单视图"
+        >
+          <el-button
+            type="primary"
+            size="small"
+            @click="editTemplateInDesigner()"
           >
-            <el-button
-              type="primary"
-              size="small"
-              @click="editTemplateInDesigner()"
-            >
-              在设计中修改视图
-            </el-button>
-          </div>
+            在设计中修改视图
+          </el-button>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -257,6 +248,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '@/api/client'
 import PreviewPanel from '@/components/PreviewPanel.vue'
 const CATEGORIES = ['人事', '财务', '行政', '销售', '运营', '项目']
+
+function formatDate(d?: string): string {
+  return d ? new Date(d).toLocaleDateString('zh-CN') : '-'
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -341,8 +336,8 @@ function openCreate() {
 function openEdit(tpl: any) {
   editingId.value = tpl.id
   form.name = tpl.name; form.description = tpl.description || ''
-  form.category = tpl.category || ''; form.tags = tpl.tags || []
-  selectedFormId.value = ''; selectedFormName.value = tpl.name
+  form.category = tpl.category || ''; form.tags = (tpl.tags || []).slice(0, 3)
+  selectedFormId.value = ''
   previewSchema.value = tpl.schema
   createVisible.value = true
 }
@@ -401,14 +396,74 @@ watch(page, fetchList)
 .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .header h2 { margin: 0; }
 .header-right { display: flex; gap: 8px; align-items: center; }
-.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-top: 16px; }
-.tpl-card { cursor: default; }
-.tpl-card .card-title { display: flex; justify-content: space-between; align-items: center; }
-.tpl-desc { color: #666; min-height: 36px; margin: 0 0 8px; }
-.tpl-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
-.tpl-meta { font-size: 12px; color: #999; margin-bottom: 8px; }
-.tpl-actions { display: flex; gap: 8px; justify-content: flex-end; }
-.pagination { margin-top: 16px; justify-content: center; }
+/* 标签输入：右侧常驻计数，输入后也始终可见 */
+.tag-field { display: flex; align-items: center; gap: 8px; width: 100%; }
+.tag-field .el-select { flex: 1; min-width: 0; }
+.tag-count { flex-shrink: 0; font-size: 12px; color: #909399; font-variant-numeric: tabular-nums; }
+/* 与表单管理同一套栅格与卡片密度（间距交给 el-tabs 默认的 15px，不再额外加 margin） */
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.tpl-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow 0.2s;
+}
+.tpl-card:hover { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+
+/* ---- 卡片正文：与表单管理的表单卡片同构，只在元信息上体现「模板」 ---- */
+/* 撑满剩余高度，保证同一行卡片的操作栏底部对齐 */
+.card-body { flex: 1; display: flex; flex-direction: column; }
+.card-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.card-title-row .el-tag { flex-shrink: 0; }
+/* 「模板」标识：中性灰，弱于分类标签，只做轻提示 */
+.template-badge.el-tag {
+  --el-tag-bg-color: #f4f4f5;
+  --el-tag-border-color: #e9e9eb;
+  --el-tag-text-color: #909399;
+}
+.card-title-row h4 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 描述固定两行高度：每张卡片大小一致，操作栏也在同一水平线 */
+.desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  min-height: 39px;
+  margin: 0 0 8px;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #909399;
+}
+/* 保留标签行：固定最小高度，保证有无标签时卡片仍然等宽等高 */
+/* margin-top:auto 让分类/标签行连同元信息始终贴在卡片底部，描述字数多少都不影响其位置 */
+.tpl-tags { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; min-height: 24px; margin-top: auto; margin-bottom: 8px; overflow: hidden; }
+/* 分类是「归属」，用主色实标签；标签是「补充」，改成中性灰描边，拉开层级 */
+.tpl-tags .el-tag:not(.el-tag--plain) { font-weight: 500; }
+.tpl-tags .el-tag--plain {
+  --el-tag-bg-color: #fff;
+  --el-tag-border-color: #e4e7ed;
+  --el-tag-text-color: #909399;
+}
+.meta { display: flex; align-items: center; gap: 12px; font-size: 12px; color: #c0c4cc; }
+.meta-item { display: inline-flex; align-items: center; gap: 4px; color: #909399; }
+.time { font-size: 12px; color: #c0c4cc; }
+
+.card-actions { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+/* 同表单管理：EP 给相邻 .el-button 加的 12px margin-left 会叠在 gap 上（实渲染 20px），归零交给 gap */
+.card-actions .el-button + .el-button { margin-left: 0; }
+.pagination { margin-top: 20px; justify-content: center; }
 .form-preview-box { max-height: 420px; overflow-y: auto; border: 1px solid #e4e7ed; border-radius: 6px; padding: 16px; background: #fafbfc; }
-h4 { margin: 0; }
 </style>

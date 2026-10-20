@@ -277,22 +277,6 @@ model WebhookDelivery {
   @@map("webhook_deliveries")
 }
 
-// ==================== 文件记录（MinIO 上传） ====================
-model FileRecord {
-  id          String   @id @default(uuid()) @db.VarChar(36)
-  workspaceId String   @map("workspace_id") @db.VarChar(36)
-  userId      String   @map("user_id") @db.VarChar(36)
-  fileName    String   @map("file_name") @db.VarChar(255)
-  fileSize    Int      @map("file_size")
-  mimeType    String   @map("mime_type") @db.VarChar(100)
-  minioKey    String   @map("minio_key") @db.VarChar(500)
-  url         String   @db.VarChar(1000)
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  @@index([workspaceId, createdAt(sort: Desc)])
-  @@map("file_records")
-}
-
 // ==================== 消息通知 ====================
 model Notification {
   id          String   @id @default(uuid()) @db.VarChar(36)
@@ -343,6 +327,8 @@ model ProcessInstance {
   currentState     String    @default("draft") @map("current_state") @db.VarChar(20)
   currentNodeIds   Json      @default("[]") @map("current_node_ids")
   context          Json      @default("{}")
+  // 发起时冻结的流程定义快照（name/nodes/edges/settings），改动定义不影响已发起的实例
+  definitionSnapshot Json?   @map("definition_snapshot")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
   completedAt      DateTime? @map("completed_at")
@@ -362,6 +348,10 @@ model TaskInstance {
   assigneeId      String    @map("assignee_id") @db.VarChar(36)
   status          String    @default("pending") @db.VarChar(20)
   comment         String?   @db.Text
+  // 审批签名图片地址（手写签名上传后落盘，仅存 URL）
+  signature       String?   @db.VarChar(500)
+  // 审批附件 [{ name, url, size, mimeType }]
+  attachments     Json?
   transferredFrom String?   @map("transferred_from") @db.VarChar(36)
   addedBySign     Boolean   @default(false) @map("added_by_sign")
   createdAt       DateTime  @default(now()) @map("created_at")

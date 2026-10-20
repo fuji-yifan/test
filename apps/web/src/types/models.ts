@@ -59,6 +59,8 @@ export interface Role {
   name: string
   permissions: string[]
   isSystem: boolean
+  /** 权限矩阵接口下发：该角色为系统角色，权限由系统固定、不可改（创建者恒为全权限、查看者恒为空），前端据此锁行 */
+  permissionsLocked?: boolean
   users?: { user: User }[]
   createdAt: string
 }

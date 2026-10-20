@@ -90,8 +90,15 @@ async function markRead(n: Notification) {
     n.isRead = true
     unreadCount.value = Math.max(0, unreadCount.value - 1)
   }
-  if (n.relatedType === 'instance') router.push(`/instance/${n.relatedId}`)
-  else if (n.relatedType === 'process') router.push('/my-processes')
+  // 审批任务直接落到「我的待办」的待处理页签；SLA 预警/升级落到待办列表（全部），
+  // 因为升级通知的原审批人任务已变为「已转交」，只在待处理里看不到。
+  if (n.type === 'approval') {
+    router.push({ path: '/my-tasks', query: { status: 'pending' } })
+  } else if (n.type === 'warning') {
+    router.push('/my-tasks')
+  } else if (n.relatedType === 'instance' || n.relatedType === 'process') {
+    router.push('/my-processes')
+  }
 }
 
 async function markAllRead() {

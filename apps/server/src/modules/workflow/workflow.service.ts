@@ -64,16 +64,19 @@ export class WorkflowService {
     if (query.status) where.status = query.status
     if (query.keyword) where.name = { contains: query.keyword }
 
-    const [list, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       this.prisma.processDefinition.findMany({
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy: { updatedAt: 'desc' },
-        select: { id: true, name: true, description: true, status: true, publishedAt: true, createdAt: true, updatedAt: true },
+        select: { id: true, name: true, description: true, status: true, publishedAt: true, createdAt: true, updatedAt: true, nodes: true },
       }),
       this.prisma.processDefinition.count({ where }),
     ])
+
+    const startForms = await this.resolveStartForms(rows.map((d) => d.nodes))
+    const list = rows.map(({ nodes, ...rest }, idx) => ({ ...rest, ...startForms[idx] }))
 
     return {
       list,
@@ -83,8 +86,8 @@ export class WorkflowService {
 
   async createDefinition(workspaceId: string, userId: string, dto: { name: string; description?: string; nodes?: any; edges?: any }) {
     const defaultNodes: ProcessNode[] = [
-      { id: 'start', type: 'start', name: '开始', position: { x: 200, y: 50 }, config: {} },
-      { id: 'end', type: 'end', name: '结束', position: { x: 200, y: 400 }, config: {} },
+      { id: 'start', type: 'start', name: '开始', position: { x: 195, y: 45 }, config: {} },
+      { id: 'end', type: 'end', name: '结束', position: { x: 195, y: 405 }, config: {} },
     ]
     const defaultEdges = [{ id: 'e1', sourceNodeId: 'start', targetNodeId: 'end' }]
 
@@ -148,8 +151,19 @@ export class WorkflowService {
     })
     if (!def) throw new NotFoundException('流程定义不存在')
 
-    if (!this.startFormId(def.nodes)) {
+    const formId = this.startFormId(def.nodes)
+    if (!formId) {
       throw new BadRequestException('请先为该流程关联表单后再发布')
+    }
+
+    // 绑定的表单必须真实存在且属于当前空间：agent 曾把模型编造的 id 写进开始节点，
+    // 不校验的话流程能发布成功、但提交表单永远不会触发。
+    const boundForm = await this.prisma.form.findFirst({
+      where: { id: formId, workspaceId: def.workspaceId, deletedAt: null },
+      select: { id: true },
+    })
+    if (!boundForm) {
+      throw new BadRequestException('关联的表单不存在或已删除，请重新关联后再发布')
     }
 
     await this.assertFormBindingFree(def.workspaceId, def.nodes, id)
@@ -215,6 +229,8 @@ export class WorkflowService {
         currentState: instance.currentState,
         currentNodeIds: instance.currentNodeIds as any,
         context: instance.context as any,
+        // 发起即定格：之后在设计器里改流程，不影响这条实例的展示与流转
+        definitionSnapshot: { name: definition.name, nodes, edges, settings } as any,
         completedAt: instance.currentState === 'completed' ? new Date() : null,
       },
     })
@@ -266,7 +282,14 @@ export class WorkflowService {
   /**
    * 审批通过
    */
-  async approveTask(instanceId: string, nodeId: string, operatorId: string, comment?: string) {
+  async approveTask(
+    instanceId: string,
+    nodeId: string,
+    operatorId: string,
+    comment?: string,
+    signature?: string,
+    attachments?: { name: string; url: string; size?: number; mimeType?: string }[],
+  ) {
     const instance = await this.prisma.processInstance.findUnique({
       where: { id: instanceId },
       include: { definition: true, tasks: true },
@@ -278,9 +301,12 @@ export class WorkflowService {
       where: { instanceId, nodeId, assigneeId: operatorId, status: 'pending' },
     })
     if (currentTask) {
+      const decision: any = { status: 'approved', comment, processedAt: new Date() }
+      if (signature) decision.signature = signature
+      if (attachments?.length) decision.attachments = attachments
       await this.prisma.taskInstance.update({
         where: { id: currentTask.id },
-        data: { status: 'approved', comment, processedAt: new Date() },
+        data: decision,
       })
     }
     // 取消该节点的 SLA 定时器
@@ -296,8 +322,9 @@ export class WorkflowService {
       where: { instanceId, nodeId },
     })
 
-    // 检查该节点的会签策略
-    const defNodes = (instance.definition.nodes as any) as ProcessNode[]
+    // 检查该节点的会签策略（用实例冻结的那版定义，流程管理里改了定义不影响已发起的实例）
+    const defSource = this.instanceDefinition(instance)
+    const defNodes = (defSource.nodes as any) as ProcessNode[]
     const node = defNodes.find((n: ProcessNode) => n.id === nodeId)
     if (node && APPROVAL_NODE_TYPES.includes(node.type as any)) {
       const config = node.config as ApprovalConfig
@@ -312,13 +339,13 @@ export class WorkflowService {
 
     // 流转到下一节点
     const def = {
-      ...instance.definition,
+      ...defSource,
       nodes: defNodes,
-      edges: instance.definition.edges as any,
-      settings: instance.definition.settings as any,
-      workspaceId: instance.definition.workspaceId,
-      createdAt: instance.definition.createdAt.toISOString(),
-      updatedAt: instance.definition.updatedAt.toISOString(),
+      edges: defSource.edges as any,
+      settings: defSource.settings as any,
+      workspaceId: defSource.workspaceId,
+      createdAt: defSource.createdAt.toISOString(),
+      updatedAt: defSource.updatedAt.toISOString(),
     }
 
     const { newState, nextNodeIds, newTasks, finished, ccRecipients, autoTaskActions } = this.engine.approveTask(
@@ -364,23 +391,23 @@ export class WorkflowService {
       const n = defNodes.find((nd: any) => nd.id === t.nodeId)
       this.notification.send({
         userId: t.assigneeId,
-        workspaceId: instance.definition.workspaceId,
+        workspaceId: defSource.workspaceId,
         type: 'approval',
-        title: `新的审批任务: ${instance.definition.name}`,
+        title: `新的审批任务: ${defSource.name}`,
         content: `节点「${n?.name || t.nodeId}」需要你审批`,
         relatedType: 'instance',
         relatedId: instanceId,
       }).catch(() => {})
     }
     if (newTaskIds.length > 0) {
-      this.registerSLAForTasks(instanceId, newTaskIds, defNodes, instance.definition.name, instance.definition.workspaceId)
+      this.registerSLAForTasks(instanceId, newTaskIds, defNodes, defSource.name, defSource.workspaceId)
     } else if (finished) {
       // 流程完成，通知发起人
       this.notification.send({
         userId: instance.initiatorId,
-        workspaceId: instance.definition.workspaceId,
+        workspaceId: defSource.workspaceId,
         type: 'info',
-        title: `流程已完成: ${instance.definition.name}`,
+        title: `流程已完成: ${defSource.name}`,
         content: '你的流程已审批通过',
         relatedType: 'instance',
         relatedId: instanceId,
@@ -391,9 +418,9 @@ export class WorkflowService {
     for (const cc of ccRecipients) {
       this.notification.send({
         userId: cc.userId,
-        workspaceId: instance.definition.workspaceId,
+        workspaceId: defSource.workspaceId,
         type: 'info',
-        title: `流程通知: ${instance.definition.name}`,
+        title: `流程通知: ${defSource.name}`,
         content: `流程已流转至下一节点，你被「${cc.nodeName}」节点抄送`,
         relatedType: 'instance',
         relatedId: instanceId,
@@ -401,7 +428,7 @@ export class WorkflowService {
     }
 
     // 自动处理节点
-    await this.processAutoTaskActions(autoTaskActions, instance.definition.workspaceId, instance.definition.name)
+    await this.processAutoTaskActions(autoTaskActions, defSource.workspaceId, defSource.name)
 
     return this.getInstanceWithTasks(instanceId)
   }
@@ -409,7 +436,15 @@ export class WorkflowService {
   /**
    * 驳回
    */
-  async rejectTask(instanceId: string, nodeId: string, operatorId: string, comment?: string, targetNodeId?: string) {
+  async rejectTask(
+    instanceId: string,
+    nodeId: string,
+    operatorId: string,
+    comment?: string,
+    targetNodeId?: string,
+    signature?: string,
+    attachments?: { name: string; url: string; size?: number; mimeType?: string }[],
+  ) {
     const instance = await this.prisma.processInstance.findUnique({
       where: { id: instanceId },
       include: { definition: true, tasks: true },
@@ -420,9 +455,12 @@ export class WorkflowService {
       where: { instanceId, nodeId, assigneeId: operatorId, status: 'pending' },
     })
     if (currentTask) {
+      const decision: any = { status: 'rejected', comment, processedAt: new Date() }
+      if (signature) decision.signature = signature
+      if (attachments?.length) decision.attachments = attachments
       await this.prisma.taskInstance.update({
         where: { id: currentTask.id },
-        data: { status: 'rejected', comment, processedAt: new Date() },
+        data: decision,
       })
     }
 
@@ -432,15 +470,16 @@ export class WorkflowService {
       data: { status: 'withdrawn' },
     })
 
-    const defNodes = (instance.definition.nodes as any) as ProcessNode[]
+    const defSource = this.instanceDefinition(instance)
+    const defNodes = (defSource.nodes as any) as ProcessNode[]
     const def = {
-      ...instance.definition,
+      ...defSource,
       nodes: defNodes,
-      edges: instance.definition.edges as any,
-      settings: instance.definition.settings as any,
-      workspaceId: instance.definition.workspaceId,
-      createdAt: instance.definition.createdAt.toISOString(),
-      updatedAt: instance.definition.updatedAt.toISOString(),
+      edges: defSource.edges as any,
+      settings: defSource.settings as any,
+      workspaceId: defSource.workspaceId,
+      createdAt: defSource.createdAt.toISOString(),
+      updatedAt: defSource.updatedAt.toISOString(),
     }
 
     const { targetNodeIds } = this.engine.rejectTask(
@@ -478,7 +517,7 @@ export class WorkflowService {
       include: { definition: true },
     })
     if (!instance) throw new NotFoundException('流程实例不存在')
-    if ((instance.definition?.settings as any)?.allowWithdraw === false) throw new ForbiddenException('该流程不允许撤回')
+    if ((this.instanceDefinition(instance).settings as any)?.allowWithdraw === false) throw new ForbiddenException('该流程不允许撤回')
     if (instance.initiatorId !== operatorId) throw new ForbiddenException('仅发起人可撤回')
     if (instance.currentState !== 'approving') throw new ForbiddenException('当前状态不可撤回')
 
@@ -506,7 +545,7 @@ export class WorkflowService {
     })
     if (!instance) throw new NotFoundException('流程实例不存在')
 
-    const nodes = (instance.definition?.nodes as any[]) || []
+    const nodes = (this.instanceDefinition(instance).nodes as any[]) || []
     const node = nodes.find((n: any) => n.id === nodeId)
     if (node?.config?.allowTransfer === false) {
       throw new ForbiddenException('该节点不允许转交')
@@ -545,7 +584,7 @@ export class WorkflowService {
     })
     if (!instance) throw new NotFoundException('流程实例不存在')
 
-    const defNodes = (instance.definition.nodes as any) as ProcessNode[]
+    const defNodes = (this.instanceDefinition(instance).nodes as any) as ProcessNode[]
     const node = defNodes.find((n: ProcessNode) => n.id === nodeId)
     if (!node || !APPROVAL_NODE_TYPES.includes(node.type as any)) throw new ForbiddenException('仅审批节点可加签')
 
@@ -564,7 +603,7 @@ export class WorkflowService {
 
   // ==================== 待办查询 ====================
 
-  async getMyTasks(userId: string, query: { page?: number; pageSize?: number; status?: string }) {
+  async getMyTasks(userId: string, query: { page?: number; pageSize?: number; status?: string; keyword?: string }) {
     const page = Number(query.page) || 1
     const pageSize = Number(query.pageSize) || 20
     const where: any = { assigneeId: userId }
@@ -573,8 +612,21 @@ export class WorkflowService {
     } else if (query.status) {
       where.status = query.status
     }
+    const keyword = (query.keyword || '').trim()
+    // 分页签角标要在同一搜索词下统计两个状态组的数量，故复制一份不含 status 的 where
+    const countWhere: any = { assigneeId: userId }
+    if (keyword) {
+      // 以发起时冻结的快照名为准（定义改名不影响历史实例），并兼容仍在用的定义名
+      where.instance = {
+        OR: [
+          { definitionSnapshot: { path: '$.name', string_contains: keyword } },
+          { definition: { name: { contains: keyword } } },
+        ],
+      }
+      countWhere.instance = where.instance
+    }
 
-    const [list, total] = await Promise.all([
+    const [list, total, groups] = await Promise.all([
       this.prisma.taskInstance.findMany({
         where,
         include: {
@@ -586,7 +638,9 @@ export class WorkflowService {
               initiatorId: true,
               currentState: true,
               formId: true,
+              submissionId: true,
               createdAt: true,
+              definitionSnapshot: true,
               definition: { select: { name: true, nodes: true, settings: true } },
             },
           },
@@ -596,26 +650,68 @@ export class WorkflowService {
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.taskInstance.count({ where }),
+      this.prisma.taskInstance.groupBy({
+        by: ['status'],
+        where: countWhere,
+        _count: { _all: true },
+      }),
     ])
 
-    const users = await this.resolveUsers(list.map(t => t.instance.initiatorId))
-    const enriched = list.map(t => ({
-      ...t,
-      instance: { ...t.instance, initiator: users[t.instance.initiatorId] || null },
-    }))
+    // 「表单数据」列要的 formId/formName 放在待办行自己身上，前端不必再往里挖 instance
+    const [users, forms] = await Promise.all([
+      this.resolveUsers(list.map(t => t.instance.initiatorId)),
+      this.resolveFormNames(list.map(t => t.instance.formId)),
+    ])
+    const enriched = list.map((t, idx) => {
+      const { definitionSnapshot, ...instanceRest } = t.instance as any
+      return {
+        ...t,
+        ...forms[idx],
+        instance: {
+          ...instanceRest,
+          definition: this.instanceDefinition(t.instance),
+          initiator: users[t.instance.initiatorId] || null,
+        },
+      }
+    })
+
+    const countOf = (s: string) => groups.find(g => g.status === s)?._count._all || 0
+    const counts = {
+      pending: countOf('pending'),
+      processed: groups
+        .filter(g => g.status !== 'pending')
+        .reduce((sum, g) => sum + g._count._all, 0),
+    }
 
     return {
       list: enriched,
+      counts,
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     }
   }
 
-  async getMyInstances(userId: string, query: { page?: number; pageSize?: number }) {
+  async getMyInstances(userId: string, query: { page?: number; pageSize?: number; status?: string; keyword?: string }) {
     const page = Number(query.page) || 1
     const pageSize = Number(query.pageSize) || 20
     const where: any = { initiatorId: userId }
+    if (query.status === 'finished') {
+      where.currentState = { in: ['completed', 'rejected', 'withdrawn'] }
+    } else if (query.status) {
+      where.currentState = query.status
+    }
+    const keyword = (query.keyword || '').trim()
+    // 页签角标要在同一搜索词下统计「审批中 / 已结束」两组数量
+    const countWhere: any = { initiatorId: userId }
+    if (keyword) {
+      // 与「我的待办」一致：优先按发起时冻结的流程名匹配，兼容当前定义名
+      where.OR = [
+        { definitionSnapshot: { path: '$.name', string_contains: keyword } },
+        { definition: { name: { contains: keyword } } },
+      ]
+      countWhere.OR = where.OR
+    }
 
-    const [list, total] = await Promise.all([
+    const [list, total, groups] = await Promise.all([
       this.prisma.processInstance.findMany({
         where,
         include: {
@@ -627,6 +723,11 @@ export class WorkflowService {
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.processInstance.count({ where }),
+      this.prisma.processInstance.groupBy({
+        by: ['currentState'],
+        where: countWhere,
+        _count: { _all: true },
+      }),
     ])
 
     const userIds = new Set<string>()
@@ -634,20 +735,42 @@ export class WorkflowService {
       userIds.add(i.initiatorId)
       i.tasks.forEach(t => userIds.add(t.assigneeId))
     })
-    const users = await this.resolveUsers([...userIds])
-    const enriched = list.map(i => ({
-      ...i,
-      initiator: users[i.initiatorId] || null,
-      tasks: i.tasks.map(t => ({ ...t, assignee: users[t.assigneeId] || null })),
-    }))
+    const [users, forms] = await Promise.all([
+      this.resolveUsers([...userIds]),
+      this.resolveFormNames(list.map(i => i.formId)),
+    ])
+    const enriched = list.map((inst, idx) => {
+      const { definitionSnapshot, ...rest } = inst as any
+      return {
+        ...rest,
+        ...forms[idx],
+        definition: this.instanceDefinition(inst),
+        initiator: users[inst.initiatorId] || null,
+        tasks: inst.tasks.map(t => ({ ...t, assignee: users[t.assigneeId] || null })),
+      }
+    })
+
+    const countOf = (s: string) => groups.find(g => g.currentState === s)?._count._all || 0
+    const counts = {
+      approving: countOf('approving'),
+      finished: countOf('completed') + countOf('rejected') + countOf('withdrawn'),
+    }
 
     return {
       list: enriched,
+      counts,
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     }
   }
 
-  async deleteInstance(instanceId: string) {
+  async deleteInstance(instanceId: string, userId: string) {
+    const instance = await this.prisma.processInstance.findUnique({
+      where: { id: instanceId },
+      select: { initiatorId: true },
+    })
+    if (!instance) throw new NotFoundException('流程实例不存在')
+    if (instance.initiatorId !== userId) throw new ForbiddenException('只能删除自己发起的流程')
+
     // 先删除关联的任务
     await this.prisma.taskInstance.deleteMany({ where: { instanceId } })
     return this.prisma.processInstance.delete({ where: { id: instanceId } })
@@ -657,7 +780,54 @@ export class WorkflowService {
     return this.getInstanceWithTasks(id)
   }
 
+  /**
+   * 流程实例对应的表单数据（审批人要看到发起人当时填了什么才能判断是否通过）。
+   *
+   * 授权只认「发起人本人 / 该实例上有任务的人」，**不要求 submission:view**：
+   * 审批角色未必配了表单数据权限（如「流程管理员」只有 task:approve/workflow:manage），
+   * 而「被指派了这条任务」本身就是看这份数据的凭据。反过来，凭实例 id 硬猜也拿不到
+   * 别人的数据 —— 两个条件都不满足一律 403。
+   */
+  async getInstanceSubmission(instanceId: string, userId: string) {
+    const instance = await this.prisma.processInstance.findUnique({
+      where: { id: instanceId },
+      select: { initiatorId: true, formId: true, submissionId: true, tasks: { select: { assigneeId: true } } },
+    })
+    if (!instance) throw new NotFoundException('流程实例不存在')
+    if (instance.initiatorId !== userId && !instance.tasks.some((t) => t.assigneeId === userId)) {
+      throw new ForbiddenException('只能查看自己发起、或自己参与审批的流程表单数据')
+    }
+    if (!instance.submissionId) throw new NotFoundException('该流程没有关联的表单数据')
+
+    const submission = await this.prisma.formSubmission.findUnique({
+      where: { id: instance.submissionId },
+      select: {
+        id: true, formId: true, submitterId: true, data: true, createdAt: true,
+        submitter: { select: { id: true, nickname: true, email: true } },
+      },
+    })
+    if (!submission) throw new NotFoundException('表单数据不存在')
+
+    // 表单可能被删除/归档，schema 取不到时前端仍能按原始键值展示
+    const form = await this.prisma.form.findUnique({
+      where: { id: instance.formId || submission.formId },
+      select: { id: true, name: true, schema: true },
+    })
+    return { submission, form }
+  }
+
   // ==================== 辅助 ====================
+
+  /**
+   * 实例自己的流程定义：优先返回发起时冻结的快照。
+   * 快照是后加的，历史实例没有；对它们退回当前定义（无法还原历史版本）。
+   * workspaceId 等非快照字段仍取关系行（这些字段本身不随编辑变化）。
+   */
+  private instanceDefinition(instance: { definition?: any; definitionSnapshot?: any }) {
+    const live = instance.definition || {}
+    const snapshot = instance.definitionSnapshot as any
+    return snapshot ? { ...live, ...snapshot } : live
+  }
 
   /** 执行自动处理节点的动作 */
   private async processAutoTaskActions(
@@ -754,21 +924,62 @@ export class WorkflowService {
     instance.tasks.forEach(t => userIds.add(t.assigneeId))
     const users = await this.resolveUsers([...userIds])
 
+    const { definitionSnapshot, ...rest } = instance as any
     return {
-      ...instance,
+      ...rest,
+      definition: this.instanceDefinition(instance),
       initiator: users[instance.initiatorId] || null,
       tasks: instance.tasks.map(t => ({ ...t, assignee: users[t.assigneeId] || null })),
     }
   }
 
   /**
-   * 开始节点关联的表单（设计期写入 config.formId；发布后才算真绑定）。
+   * 开始节点关联的表单（设计期写入 config.formId）；没关联返回 null。
    * 读时也做一次深度归一：历史脏数据里 config 可能是字符串 `"{\"formId\":…}"`，
    * 若不还原，`start?.config?.formId` 会取到 undefined —— 表现为「绑了表单也不发起」。
    */
   private startFormId(nodes: unknown): string | null {
+    return this.startForm(nodes)?.id || null
+  }
+
+  /** 与 startFormId 同一处解析，额外带出 config.formName（仅用于展示，可能是空串） */
+  private startForm(nodes: unknown): { id: string; name: string } | null {
     const start = (coerceJsonDeep((nodes as any[]) || [])).find((n: any) => n.type === 'start')
-    return start?.config?.formId || null
+    const id = start?.config?.formId
+    if (!id) return null
+    return { id, name: start?.config?.formName || '' }
+  }
+
+  /**
+   * 批量解析一批流程定义「开始节点关联的表单」，供流程管理列表展示。
+   * 名称以 forms 表当前值为准，查不到（表单已被软删）退回 config.formName，再退回 formId。
+   * 开始节点选了表单只是设计意向、发布后才真绑定，两种状态都照常展示（与设计器里看到的一致）。
+   */
+  private async resolveStartForms(nodesList: unknown[]): Promise<{ formId: string | null; formName: string | null }[]> {
+    const startForms = nodesList.map((nodes) => this.startForm(nodes))
+    const formIds = [...new Set(startForms.map((f) => f?.id).filter((v): v is string => !!v))]
+    const forms = formIds.length
+      ? await this.prisma.form.findMany({ where: { id: { in: formIds } }, select: { id: true, name: true } })
+      : []
+    const formNameById = new Map(forms.map((f) => [f.id, f.name]))
+    return startForms.map((form) => form
+      ? { formId: form.id, formName: formNameById.get(form.id) || form.name || form.id }
+      : { formId: null, formName: null })
+  }
+
+  /**
+   * 按 formId 批量取表单名（「我的流程 / 我的待办」用）。
+   *
+   * 这里认的是**流程实例自己记的 formId**（发起时提交的那份表单），而不是流程定义此刻绑的表单：
+   * 流程事后改绑过表单时，只有前者才和「实例对应的那份提交数据」对得上。名称查不到退回 id。
+   */
+  private async resolveFormNames(formIds: (string | null)[]): Promise<{ formId: string | null; formName: string | null }[]> {
+    const ids = [...new Set(formIds.filter((v): v is string => !!v))]
+    const forms = ids.length
+      ? await this.prisma.form.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+      : []
+    const formNameById = new Map(forms.map((f) => [f.id, f.name]))
+    return formIds.map((id) => (id ? { formId: id, formName: formNameById.get(id) || id } : { formId: null, formName: null }))
   }
 
   /** 同工作空间内除 exceptId 外，已有【已发布】流程绑定了同一个表单时抛 409 */

@@ -8,15 +8,17 @@
     <!-- ====== 顶部工具栏 ====== -->
     <header class="designer-header">
       <div class="header-left">
-        <el-button text @click="goBack">
-          <el-icon><ArrowLeft /></el-icon> 返回列表
-        </el-button>
+        <el-tooltip content="返回流程列表" placement="top">
+          <el-button text @click="goBack">
+            <el-icon><ArrowLeft /></el-icon>
+          </el-button>
+        </el-tooltip>
       </div>
       <div class="header-center">
         <h2 v-if="definition" class="header-title">{{ definition.name }} — 流程设计</h2>
       </div>
       <div class="header-right">
-        <el-button :loading="saving" @click="saveDefinition">保存</el-button>
+        <el-button type="primary" :loading="saving" @click="saveDefinition">保存</el-button>
         <el-button
           v-if="definition?.status === 'draft'"
           type="success"
@@ -145,10 +147,12 @@
             :key="ep.id"
             :d="ep.d"
             fill="none"
-            :stroke="ep.label ? '#409eff' : '#909399'"
-            stroke-width="2"
-            :stroke-dasharray="ep.label ? '8 4' : 'none'"
-            :marker-end="ep.label ? 'url(#arrowhead-blue)' : 'url(#arrowhead)'"
+            :stroke="edgeColor(ep)"
+            :stroke-width="isEdgeSelected(ep) ? 2.5 : 2"
+            :stroke-dasharray="ep.label ? '7 5' : 'none'"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            :marker-end="(ep.label || isEdgeSelected(ep)) ? 'url(#arrowhead-blue)' : 'url(#arrowhead)'"
             :class="{ 'edge-selected': isEdgeSelected(ep) }"
           />
           <!-- 连线标签 -->
@@ -157,35 +161,41 @@
             :key="'tg' + ep.id"
           >
             <rect
-              :x="ep.labelX - ep.labelW / 2 - 4"
-              :y="ep.labelY - 9"
-              :width="ep.labelW + 8"
-              height="18"
-              rx="4"
-              fill="#fff"
-              stroke="#409eff"
+              :x="ep.labelX - ep.labelW / 2 - 6"
+              :y="ep.labelY - 10"
+              :width="ep.labelW + 12"
+              height="20"
+              rx="10"
+              :fill="isDark ? '#1e293b' : '#ffffff'"
+              :stroke="isDark ? '#475569' : '#bfdbfe'"
               stroke-width="1"
-              fill-opacity="0.95"
+              fill-opacity="0.96"
             />
             <text
               :x="ep.labelX"
               :y="ep.labelY"
-              fill="#303133"
+              :fill="isDark ? '#cbd5e1' : '#334155'"
               font-size="12"
               font-weight="600"
               text-anchor="middle"
               dominant-baseline="middle"
             >{{ ep.label }}</text>
           </g>
-          <!-- 连线临时线 -->
+          <!-- 连线临时线（贝塞尔 + 流动虚线） -->
           <path
             v-if="tempLine.show"
             :d="tempLine.d"
+            class="temp-edge"
             fill="none"
-            stroke="#409eff"
-            stroke-width="2"
-            stroke-dasharray="6 3"
             marker-end="url(#arrowhead-blue)"
+            style="pointer-events: none"
+          />
+          <circle
+            v-if="tempLine.show"
+            :cx="tempLine.x"
+            :cy="tempLine.y"
+            r="4"
+            class="temp-edge-dot"
             style="pointer-events: none"
           />
         </svg>
@@ -193,6 +203,7 @@
         <!-- 节点层 -->
         <div
           class="nodes-layer"
+          :class="{ 'is-connecting': connecting }"
           :style="{ width: canvasWidth + 'px', height: canvasHeight + 'px' }"
         >
           <div
@@ -201,7 +212,7 @@
             :class="nodeClasses(node)"
             :style="nodeStyle(node)"
             @mousedown.stop="onNodeMouseDown($event, node)"
-            @click.stop="selectNode(node)"
+            @click.stop="onNodeClick(node)"
           >
             <!-- 上端口 -->
             <div
@@ -240,6 +251,18 @@
               @click.stop="onPortClick(node)"
             />
           </div>
+
+          <!-- 框选选框 -->
+          <div
+            v-if="marquee.active && (marquee.width > 2 || marquee.height > 2)"
+            class="marquee-box"
+            :style="{
+              left: marquee.left + 'px',
+              top: marquee.top + 'px',
+              width: marquee.width + 'px',
+              height: marquee.height + 'px',
+            }"
+          />
         </div>
       </main>
 
@@ -605,9 +628,9 @@
                 </el-form-item>
                 <el-form-item label="审批角色">
                   <el-input
-                    v-model="selectedNode.config.role"
-                    placeholder="选中审批人后确定"
-                    @input="markDirty"
+                    :model-value="memberRoleLabel(selectedNode.config.role || '')"
+                    placeholder="选择审批人后自动填充"
+                    disabled
                   />
                 </el-form-item>
               </template>
@@ -902,7 +925,7 @@
                 class="form-tip"
                 style="color:#e6a23c;margin-bottom:12px"
               >
-                请在开始节点中绑定表单并勾选流程变量
+                请先在画布设置中为流程关联表单并勾选流程变量
               </div>
               <div
                 v-if="nodeOutEdges.length > 0"
@@ -1025,12 +1048,6 @@
                       :value="n.id"
                     />
                   </el-select>
-                  <el-input
-                    v-model="edgeLabel"
-                    placeholder="分支名"
-                    size="small"
-                    style="width:80px"
-                  />
                 </div>
               </el-form-item>
             </template>
@@ -1078,7 +1095,12 @@
                     :key="e.id"
                     class="edge-item"
                   >
-                    <span>{{ getNodeName(e.targetNodeId) }}</span>
+                    <span class="edge-arrow">→</span>
+                    <span class="edge-target">{{ getNodeName(e.targetNodeId) }}</span>
+                    <span
+                      v-if="e.label"
+                      class="edge-label-chip"
+                    >{{ e.label }}</span>
                     <el-button
                       size="small"
                       text
@@ -1096,8 +1118,12 @@
                     v-model="edgeTarget"
                     placeholder="选择下一节点"
                     size="small"
+                    class="edge-select"
                     @change="setEdge"
                   >
+                    <template #prefix>
+                      <el-icon><Link /></el-icon>
+                    </template>
                     <el-option
                       v-for="n in availableTargets"
                       :key="n.id"
@@ -1134,7 +1160,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, reactive } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -1190,7 +1216,6 @@ const formFields = ref<FormField[]>([])
 const loadedFormId = ref('')
 const ccSelected = ref<string[]>([])
 const edgeTarget = ref('')
-const edgeLabel = ref('')
 const panelMode = ref<'canvas' | 'node'>('canvas')
 const gridType = ref<'none' | 'dot' | 'line'>('dot')
 const dragOverCanvas = ref(false)
@@ -1234,6 +1259,9 @@ function onResizeUp() {
 const canvasRef = ref<HTMLElement>()
 const canvasWidth = ref(1200)
 const canvasHeight = ref(800)
+/** 画布可视区尺寸：网格层至少要铺满可视区，否则大屏下右侧/底部会露出空白 */
+const canvasViewport = reactive({ width: 0, height: 0 })
+let canvasResizeObserver: ResizeObserver | null = null
 const NODE_W = 180
 const NODE_H = 58
 const CIRCLE_SIZE = 60
@@ -1250,7 +1278,18 @@ const dragStart = reactive({ x: 0, y: 0 })
 const DRAG_THRESHOLD = 3
 const connecting = ref(false)
 const connectSourceId = ref<string | null>(null)
-const tempLine = reactive({ show: false, d: '' })
+const tempLine = reactive({ show: false, d: '', x: 0, y: 0 })
+
+// ---- 多选 / 框选 ----
+/** 当前选中的节点集合；selectedNodeId 是其中的「主节点」，用于右侧属性面板 */
+const selectedNodeIds = ref<string[]>([])
+const marquee = reactive({ active: false, left: 0, top: 0, width: 0, height: 0 })
+let marqueeOrigin = { x: 0, y: 0 }
+/** 拖动结束后浏览器还会补发 click，用它阻止多选被 click 收窄成单选 */
+let suppressNodeClick = false
+/** 本轮拖动的起始坐标：多选时整组按同一位移平移 */
+let dragOrigins: Array<{ id: string; x: number; y: number }> = []
+let dragPrimaryOrigin = { x: 0, y: 0 }
 
 // ---- 节点类型定义 ----
 const approvalNodeTypes = [
@@ -1276,6 +1315,12 @@ function isRoleApproval(t: string) { return t === 'role-approval' }
 function isGateway(t: string) { return ['condition', 'parallel', 'join'].includes(t) }
 function isCircle(t: string) { return t === 'start' || t === 'end' }
 function isMultiAssign(node: ProcessNode | undefined) { return node && (node.type === 'countersign' || node.type === 'or-sign' || node.config?.type === 'multi') }
+
+/** 成员角色展示名：系统角色用中文，自定义角色本身已是中文名 */
+function memberRoleLabel(role: string) {
+  const map: Record<string, string> = { owner: '创建者', editor: '编辑者', viewer: '查看者' }
+  return map[role] || role
+}
 
 // ==================== 条件构建器 ====================
 const COND_OPERATORS = [
@@ -1386,7 +1431,7 @@ function nodeClasses(node: ProcessNode) {
   return [
     'canvas-node',
     'node-' + node.type,
-    { selected: selectedNodeId.value === node.id },
+    { selected: selectedNodeIds.value.includes(node.id) },
   ]
 }
 
@@ -1466,7 +1511,7 @@ const edgePaths = computed(() => {
     const labelY = midY - 6
 
     const labelTxt: string = e.label || ''
-    const labelW = labelTxt.length * 12  // 估算中文宽度
+    const labelW = labelTxt.length * 12 + 4  // 估算中文宽度
 
     return { id: e.id, sourceId: e.sourceNodeId, targetId: e.targetNodeId, d, label: labelTxt, labelX, labelY, labelW }
   })
@@ -1488,6 +1533,12 @@ function isEdgeSelected(ep: { sourceId?: string; targetId?: string }) {
   return sid && (ep.sourceId === sid || ep.targetId === sid)
 }
 
+/** 连线默认色：有标签走主题蓝，其余走中性灰（深浅色分别取值） */
+function edgeColor(ep: { label?: string }) {
+  if (ep.label) return isDark.value ? '#60a5fa' : '#409eff'
+  return isDark.value ? '#7b8da6' : '#a3aebd'
+}
+
 function getNodeName(nodeId: string) {
   const n = nodes.value.find((n) => n.id === nodeId)
   return n ? n.name : nodeId
@@ -1495,6 +1546,10 @@ function getNodeName(nodeId: string) {
 
 // ---- 加载 / 选中 ----
 onMounted(() => { loadDefinition(); fetchMembers(); fetchRoles(); fetchForms() })
+onBeforeUnmount(() => {
+  canvasResizeObserver?.disconnect()
+  canvasResizeObserver = null
+})
 
 async function fetchMembers() {
   try {
@@ -1613,11 +1668,25 @@ async function loadDefinition() {
     definition.value = def
     // settings 可能缺失，接口返回的是未类型化 JSON
     if (!def.settings) def.settings = {} as ProcessSettings
-    nodes.value = (def.nodes || []).map(normalizeNode)
+    nodes.value = (def.nodes || []).map((n) => {
+      const node = normalizeNode(n)
+      // 历史/默认数据的坐标不一定在落点网格上：进入即吸附，避免「拖一下才归位」
+      node.position.x = snapToGrid(node.position.x)
+      node.position.y = snapToGrid(node.position.y)
+      return node
+    })
     edges.value = [...(def.edges || [])]
     updateCanvasSize()
     // 表单绑定在画布设置里（默认面板），进入即需回显字段 → 这里就初始化
     syncStartFormFields()
+    // 画布 DOM 在 definition 赋值后才渲染：下一帧读取可视区尺寸并监听其变化
+    nextTick(() => {
+      syncCanvasViewport()
+      if (!canvasResizeObserver && canvasRef.value) {
+        canvasResizeObserver = new ResizeObserver(syncCanvasViewport)
+        canvasResizeObserver.observe(canvasRef.value)
+      }
+    })
   } catch {
     ElMessage.error('加载失败')
     goBack()
@@ -1632,14 +1701,23 @@ function updateCanvasSize() {
     if (n.position.x + w + 100 > maxX) maxX = n.position.x + w + 100
     if (n.position.y + h + 100 > maxY) maxY = n.position.y + h + 100
   })
-  canvasWidth.value = Math.max(1000, maxX)
-  canvasHeight.value = Math.max(600, maxY)
+  canvasWidth.value = Math.max(1000, canvasViewport.width, maxX)
+  canvasHeight.value = Math.max(600, canvasViewport.height, maxY)
+}
+
+/** 读取画布可视区尺寸并重算网格层大小（面板拖拽/窗口缩放时调用） */
+function syncCanvasViewport() {
+  const el = canvasRef.value
+  if (!el) return
+  canvasViewport.width = el.clientWidth
+  canvasViewport.height = el.clientHeight
+  updateCanvasSize()
 }
 
 function selectNode(node: ProcessNode) {
+  selectedNodeIds.value = [node.id]
   selectedNodeId.value = node.id
   panelMode.value = 'node'
-  edgeLabel.value = ''
   // 单出口节点回显已有连线目标
   const outEdges = edges.value.filter((e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) => e.sourceNodeId === node.id)
   edgeTarget.value = outEdges.length === 1 ? outEdges[0].targetNodeId : ''
@@ -1652,10 +1730,10 @@ function selectNode(node: ProcessNode) {
   if (isRoleApproval(node.type)) {
     if (!node.config.approvalMode) node.config.approvalMode = 'assignee'
     if (!node.config.roleList) node.config.roleList = []
-    // 选中单个审批人后自动反查其工作空间角色
+    // 选中单个审批人后自动反查其工作空间角色（展示中文）
     if (node.config.assignees?.length === 1) {
       const member = workspaceMembers.value.find((m: WorkspaceMember) => m.user.id === node.config.assignees[0])
-      if (member) node.config.role = member.role
+      if (member) node.config.role = memberRoleLabel(member.role)
     }
   }
   if (node.type === 'condition') {
@@ -1681,6 +1759,12 @@ function selectNode(node: ProcessNode) {
       else if (node.config.actionType === 'update') node.config.actionConfig = { field: '', value: '' }
     }
   }
+}
+
+/** 节点 click：拖动结束后的那次 click 不要收窄选择集 */
+function onNodeClick(node: ProcessNode) {
+  if (suppressNodeClick) { suppressNodeClick = false; return }
+  selectNode(node)
 }
 
 function switchToNode() { panelMode.value = 'node' }
@@ -1758,7 +1842,11 @@ function addNode(type: string, posX?: number, posY?: number) {
 function removeNode(nodeId: string) {
   nodes.value = nodes.value.filter((n) => n.id !== nodeId)
   edges.value = edges.value.filter((e: ProcessEdge & { _isDefault?: boolean; _condField?: string; _condOp?: string; _condVal?: string }) => e.sourceNodeId !== nodeId && e.targetNodeId !== nodeId)
-  if (selectedNodeId.value === nodeId) { selectedNodeId.value = null; edgeTarget.value = '' }
+  selectedNodeIds.value = selectedNodeIds.value.filter((id) => id !== nodeId)
+  if (selectedNodeId.value === nodeId) {
+    selectedNodeId.value = selectedNodeIds.value[0] || null
+    edgeTarget.value = ''
+  }
   updateCanvasSize()
   markDirty()
 }
@@ -1769,6 +1857,7 @@ function clearAll() {
       nodes.value = nodes.value.filter((n) => n.type === 'start' || n.type === 'end')
       edges.value = []
       selectedNodeId.value = null
+      selectedNodeIds.value = []
       updateCanvasSize()
       markDirty()
     })
@@ -1815,6 +1904,14 @@ function snapToGrid(val: number) {
 
 function onNodeMouseDown(e: MouseEvent, node: ProcessNode) {
   if ((e.target as HTMLElement).classList.contains('port')) return
+  if (!selectedNodeIds.value.includes(node.id)) {
+    // 拖未选中的节点：先把它变成唯一选中并打开属性面板
+    selectNode(node)
+  } else {
+    // 拖已选中的节点：保留整组选择，仅切换面板主节点
+    selectedNodeId.value = node.id
+    panelMode.value = 'node'
+  }
   dragging.value = true
   dragNodeId.value = node.id
   dragMoved.value = false
@@ -1823,21 +1920,66 @@ function onNodeMouseDown(e: MouseEvent, node: ProcessNode) {
   const rect = canvasRef.value!.getBoundingClientRect()
   dragOffset.x = e.clientX - rect.left - node.position.x
   dragOffset.y = e.clientY - rect.top - node.position.y
+  dragPrimaryOrigin = { x: node.position.x, y: node.position.y }
+  dragOrigins = nodes.value
+    .filter((n) => selectedNodeIds.value.includes(n.id))
+    .map((n) => ({ id: n.id, x: n.position.x, y: n.position.y }))
   e.preventDefault()
 }
 
+/** 鼠标位置换算成画布内容坐标（已计入滚动） */
+function canvasPoint(e: MouseEvent) {
+  const rect = canvasRef.value!.getBoundingClientRect()
+  return {
+    x: Math.max(0, Math.min(canvasWidth.value, e.clientX - rect.left + canvasRef.value!.scrollLeft)),
+    y: Math.max(0, Math.min(canvasHeight.value, e.clientY - rect.top + canvasRef.value!.scrollTop)),
+  }
+}
+
+/** 与框选矩形相交的节点（部分重叠即算选中） */
+function nodesInRect(left: number, top: number, width: number, height: number) {
+  const right = left + width
+  const bottom = top + height
+  return nodes.value.filter((n) => {
+    const w = isCircle(n.type) ? CIRCLE_SIZE : isGateway(n.type) ? 150 : NODE_W
+    const h = isCircle(n.type) ? CIRCLE_SIZE : isGateway(n.type) ? 80 : NODE_H
+    return n.position.x < right && n.position.x + w > left &&
+      n.position.y < bottom && n.position.y + h > top
+  }).map((n) => n.id)
+}
+
+/** 框选进行中：更新选框并实时刷新选择集（监听挂在 window 上，移出画布也不中断） */
+function onMarqueeMove(e: MouseEvent) {
+  if (!marquee.active) return
+  const p = canvasPoint(e)
+  marquee.left = Math.min(marqueeOrigin.x, p.x)
+  marquee.top = Math.min(marqueeOrigin.y, p.y)
+  marquee.width = Math.abs(p.x - marqueeOrigin.x)
+  marquee.height = Math.abs(p.y - marqueeOrigin.y)
+  selectedNodeIds.value = nodesInRect(marquee.left, marquee.top, marquee.width, marquee.height)
+}
+
+function onMarqueeUp() {
+  if (!marquee.active) return
+  marquee.active = false
+  window.removeEventListener('mousemove', onMarqueeMove)
+  selectedNodeId.value = selectedNodeIds.value.length === 1 ? selectedNodeIds.value[0] : null
+}
+
 function onCanvasMouseMove(e: MouseEvent) {
+  if (marquee.active) return // 框选交给 window 监听
   if (connecting.value) {
-    const rect = canvasRef.value!.getBoundingClientRect()
-    const x = e.clientX - rect.left + canvasRef.value!.scrollLeft
-    const y = e.clientY - rect.top + canvasRef.value!.scrollTop
+    const { x, y } = canvasPoint(e)
     const srcNode = nodes.value.find((n) => n.id === connectSourceId.value)
     if (srcNode) {
       const srcW = isCircle(srcNode.type) ? CIRCLE_SIZE : isGateway(srcNode.type) ? 150 : NODE_W
       const srcH = isCircle(srcNode.type) ? CIRCLE_SIZE : isGateway(srcNode.type) ? 80 : NODE_H
       const sx = srcNode.position.x + srcW / 2
-      const sy = srcNode.position.y + srcH / 2
-      tempLine.d = `M ${sx} ${sy} L ${x} ${y}`
+      const sy = srcNode.position.y + srcH
+      const midY = (sy + y) / 2
+      tempLine.d = `M ${sx} ${sy} C ${sx} ${midY}, ${x} ${midY}, ${x} ${y}`
+      tempLine.x = x
+      tempLine.y = y
     }
     return
   }
@@ -1850,10 +1992,21 @@ function onCanvasMouseMove(e: MouseEvent) {
     }
     dragMoved.value = true
     const node = nodes.value.find((n) => n.id === dragNodeId.value)
-    if (!node) return
+    if (!node || dragOrigins.length === 0) return
     const rect = canvasRef.value!.getBoundingClientRect()
-    node.position.x = Math.max(0, e.clientX - rect.left - dragOffset.x)
-    node.position.y = Math.max(0, e.clientY - rect.top - dragOffset.y)
+    let dx = e.clientX - rect.left - dragOffset.x - dragPrimaryOrigin.x
+    let dy = e.clientY - rect.top - dragOffset.y - dragPrimaryOrigin.y
+    // 整组一起平移；任一点越界时把位移整体钳住，避免组内相对位置被压扁
+    const minX = Math.min(...dragOrigins.map((o) => o.x))
+    const minY = Math.min(...dragOrigins.map((o) => o.y))
+    dx = Math.max(dx, -minX)
+    dy = Math.max(dy, -minY)
+    dragOrigins.forEach((o) => {
+      const n = nodes.value.find((item) => item.id === o.id)
+      if (!n) return
+      n.position.x = o.x + dx
+      n.position.y = o.y + dy
+    })
     markDirty()
   }
 }
@@ -1861,21 +2014,47 @@ function onCanvasMouseMove(e: MouseEvent) {
 function onCanvasMouseUp() {
   if (dragging.value && dragNodeId.value) {
     // 只有真正拖动过才吸附落位；单击选中保持原坐标不动
-    if (dragMoved.value) {
-      const node = nodes.value.find((n) => n.id === dragNodeId.value)
-      if (node) {
-        node.position.x = snapToGrid(node.position.x)
-        node.position.y = snapToGrid(node.position.y)
+    if (dragMoved.value && dragOrigins.length > 0) {
+      const primary = nodes.value.find((n) => n.id === dragNodeId.value)
+      if (primary) {
+        const dx = snapToGrid(primary.position.x) - dragPrimaryOrigin.x
+        const dy = snapToGrid(primary.position.y) - dragPrimaryOrigin.y
+        // 整组按同一位移吸附，保持相对位置
+        dragOrigins.forEach((o) => {
+          const n = nodes.value.find((item) => item.id === o.id)
+          if (!n) return
+          n.position.x = Math.max(0, o.x + dx)
+          n.position.y = Math.max(0, o.y + dy)
+        })
       }
     }
-    dragging.value = false; dragNodeId.value = null; dragMoved.value = false; updateCanvasSize()
+    if (dragMoved.value) {
+      // 拖动后浏览器会补一次 click，别让它能收窄刚拖出来的多选
+      suppressNodeClick = true
+      setTimeout(() => { suppressNodeClick = false }, 0)
+    }
+    dragging.value = false; dragNodeId.value = null; dragMoved.value = false
+    dragOrigins = []; updateCanvasSize()
   }
 }
 
 function onCanvasMouseDown(e: MouseEvent) {
   if (connecting.value) { cancelConnect(); return }
-  if (e.target === canvasRef.value || (e.target as HTMLElement).classList.contains('nodes-layer')) {
-    selectedNodeId.value = null; edgeTarget.value = ''
+  if (e.button !== 0) return
+  const target = e.target as HTMLElement
+  if (target === canvasRef.value || target.classList.contains('nodes-layer')) {
+    const p = canvasPoint(e)
+    marquee.active = true
+    marquee.left = p.x
+    marquee.top = p.y
+    marquee.width = 0
+    marquee.height = 0
+    marqueeOrigin = p
+    selectedNodeIds.value = []
+    selectedNodeId.value = null
+    edgeTarget.value = ''
+    window.addEventListener('mousemove', onMarqueeMove)
+    window.addEventListener('mouseup', onMarqueeUp, { once: true })
   }
 }
 
@@ -1887,15 +2066,16 @@ function onPortClick(node: ProcessNode) {
     connecting.value = true; connectSourceId.value = node.id; tempLine.show = true
     const w = isCircle(node.type) ? CIRCLE_SIZE : isGateway(node.type) ? 150 : NODE_W
     const h = isCircle(node.type) ? CIRCLE_SIZE : isGateway(node.type) ? 80 : NODE_H
-    const sx = node.position.x + w / 2; const sy = node.position.y + h / 2
+    const sx = node.position.x + w / 2; const sy = node.position.y + h
     tempLine.d = `M ${sx} ${sy} L ${sx} ${sy}`
+    tempLine.x = sx
+    tempLine.y = sy
   } else if (connectSourceId.value === node.id) {
     cancelConnect()
   } else {
-    if (connectSourceId.value) addEdge(connectSourceId.value, node.id, edgeLabel.value || undefined)
+    if (connectSourceId.value) addEdge(connectSourceId.value, node.id)
     if (selectedNodeId.value === connectSourceId.value) edgeTarget.value = node.id
     connecting.value = false; connectSourceId.value = null; tempLine.show = false
-    edgeLabel.value = ''
     updateCanvasSize(); markDirty()
   }
 }
@@ -1925,8 +2105,7 @@ function cancelConnect() {
 
 function setEdge(targetId: string) {
   if (!selectedNodeId.value || !targetId) return
-  addEdge(selectedNodeId.value, targetId, edgeLabel.value || undefined)
-  edgeLabel.value = ''
+  addEdge(selectedNodeId.value, targetId)
   markDirty()
 }
 
@@ -1970,12 +2149,12 @@ function onAssigneesChange(val: string | string[]) {
   if (!selectedNode.value) return
   const arr = Array.isArray(val) ? val : [val]
   selectedNode.value.config.assignees = arr.filter(Boolean)
-  // 角色审批：选中单个审批人后自动反查其工作空间角色
-  if (isRoleApproval(selectedNode.value.type) && arr.length === 1) {
-    const member = workspaceMembers.value.find((m: WorkspaceMember) => m.user.id === arr[0])
-    if (member) {
-      selectedNode.value.config.role = member.role
-    }
+  // 角色审批：选中单个审批人后自动反查其工作空间角色（展示中文）；清空/多人时同步清空
+  if (isRoleApproval(selectedNode.value.type)) {
+    const member = arr.length === 1
+      ? workspaceMembers.value.find((m: WorkspaceMember) => m.user.id === arr[0])
+      : undefined
+    selectedNode.value.config.role = member ? memberRoleLabel(member.role) : ''
   }
   markDirty()
 }
@@ -2091,13 +2270,37 @@ function goBack() { router.push(`/workspace/${wsId.value}/workflows`) }
 .canvas-area.drag-over { box-shadow: inset 0 0 0 2px #409eff; }
 .edges-layer { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1; }
 .edges-layer path {
-  transition: d 0.1s, stroke 0.2s, stroke-width 0.2s;
+  transition: stroke 0.2s, stroke-width 0.2s, filter 0.2s;
 }
 .edges-layer path.edge-selected {
   stroke: #409eff !important;
   stroke-width: 2.5;
+  filter: drop-shadow(0 0 3px rgba(64, 158, 255, 0.45));
+}
+.temp-edge {
+  stroke: #409eff;
+  stroke-width: 2;
+  stroke-dasharray: 7 5;
+  animation: edge-flow 0.45s linear infinite;
+}
+.temp-edge-dot {
+  fill: #409eff;
+  opacity: 0.9;
+}
+@keyframes edge-flow {
+  to { stroke-dashoffset: -12; }
 }
 .nodes-layer { position: relative; z-index: 2; }
+
+/* 框选选框（在节点之上，不接收鼠标事件） */
+.marquee-box {
+  position: absolute;
+  z-index: 20;
+  border: 1px solid #409eff;
+  background: rgba(64, 158, 255, 0.12);
+  border-radius: 3px;
+  pointer-events: none;
+}
 
 /* ---- 节点通用 ---- */
 .canvas-node {
@@ -2166,11 +2369,14 @@ function goBack() { router.push(`/workspace/${wsId.value}/workflows`) }
 .port {
   position: absolute; left: 50%; width: 12px; height: 12px; border-radius: 50%;
   background: #fff; border: 2px solid #c0c4cc; transform: translateX(-50%);
-  z-index: 6; opacity: 0; transition: opacity 0.15s, border-color 0.15s; cursor: crosshair;
+  z-index: 6; opacity: 0;
+  transition: opacity 0.15s, border-color 0.15s, background 0.15s, transform 0.15s, box-shadow 0.15s;
+  cursor: crosshair;
 }
-.canvas-node:hover .port { opacity: 1; }
-.port:hover { border-color: #409eff; background: #ecf5ff; }
-.port.active { opacity: 1; border-color: #409eff; background: #409eff; }
+.canvas-node:hover .port,
+.nodes-layer.is-connecting .port { opacity: 1; }
+.port:hover { border-color: #409eff; background: #ecf5ff; transform: translateX(-50%) scale(1.15); }
+.port.active { opacity: 1; border-color: #409eff; background: #409eff; box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.2); }
 .port-in { top: -6px; }
 .port-out { bottom: -6px; }
 
@@ -2179,6 +2385,10 @@ function goBack() { router.push(`/workspace/${wsId.value}/workflows`) }
   flex-shrink: 0; overflow-y: auto; overflow-x: hidden;
   background: var(--app-bg-card, #fff); border: 1px solid var(--app-border-color, #e4e7ed);
   border-radius: 8px; padding: 16px;
+  /* 面板是圆角滚动容器，Chromium 在焦点重绘时会把残影像素留在同层其他控件
+     边缘。绘制隔离让面板内容作为整体一次性绘制，残影不再跨控件出现。 */
+  contain: paint;
+  isolation: isolate;
 }
 .panel-right::-webkit-scrollbar { width: 6px; }
 .panel-right::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
@@ -2211,6 +2421,12 @@ function goBack() { router.push(`/workspace/${wsId.value}/workflows`) }
   border-bottom: 1px solid #ebeef5;
 }
 .prop-form :deep(.el-form-item) { margin-bottom: 14px; }
+/* Element Plus 的 el-select 内部始终渲染一个 input（不可搜索时是 readonly，
+   可搜索时用于输入过滤词），点一下就会聚焦并画出原生光标，在 7px 内边距下
+   看着像左边缘多了一个黑点。下拉框的选中值/占位符已能表达焦点，统一隐藏光标；
+   输入过滤词时字符仍会实时显示。 */
+.panel-right :deep(.el-select__input) { caret-color: transparent; }
+/* 输入框的合成层修正已提到全局 theme.css，避免每个页面各写一份。 */
 .prop-form :deep(.el-slider__button) { opacity: 0; transition: opacity 0.2s; }
 .prop-form :deep(.el-form-item):hover .el-slider__button { opacity: 1; }
 .form-tip { font-size: 12px; color: #909399; margin: 0; padding: 4px 0; }
@@ -2226,10 +2442,31 @@ function goBack() { router.push(`/workspace/${wsId.value}/workflows`) }
 .name-overflow { font-size: 13px; color: #f56c6c; user-select: none; }
 .field-warning { font-size: 12px; color: #f56c6c; margin-top: 2px; }
 
-.edge-config { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.edge-list { width: 100%; margin-bottom: 8px; }
-.edge-item { display: flex; gap: 6px; align-items: center; padding: 4px 8px; background: #f5f7fa; border-radius: 4px; margin-bottom: 4px; font-size: 12px; }
-.edge-item .edge-target { flex-shrink: 0; color: #606266; max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edge-config { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; width: 100%; }
+.edge-select { width: 100%; }
+.edge-list { width: 100%; display: flex; flex-direction: column; gap: 6px; }
+.edge-item {
+  display: flex; gap: 6px; align-items: center; padding: 6px 8px;
+  background: var(--app-bg-hover, #f8fafc);
+  border: 1px solid var(--app-border-color, #e5e7eb);
+  border-radius: 6px; font-size: 12px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.edge-item:hover {
+  border-color: #409eff;
+  background: var(--app-bg-card, #fff);
+}
+.edge-arrow { flex-shrink: 0; color: var(--app-text-secondary, #94a3b8); }
+.edge-target {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--app-text-primary, #1e293b); font-weight: 500;
+}
+.edge-label-chip {
+  flex-shrink: 0; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 1px 7px; border-radius: 999px;
+  background: rgba(64, 158, 255, 0.12); color: #409eff; font-size: 11px;
+}
+.edge-item :deep(.el-button) { margin-left: auto; flex-shrink: 0; }
 
 .field-label { font-size: 12px; color: #303133; }
 .field-key { font-size: 11px; color: #909399; margin-left: 4px; }

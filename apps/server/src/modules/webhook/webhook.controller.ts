@@ -2,7 +2,6 @@ import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } f
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger'
 import { WebhookService } from './webhook.service'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
-import { PermissionGuard, RequiredPermission } from '../../common/guards/permission.guard'
 
 @ApiTags('Webhooks')
 @ApiBearerAuth()
@@ -16,8 +15,6 @@ export class WebhookController {
     return this.webhookService.list(formId)
   }
 
-  @UseGuards(PermissionGuard)
-  @RequiredPermission('webhook:manage')
   @Post()
   create(
     @Param('formId') formId: string,
@@ -26,8 +23,6 @@ export class WebhookController {
     return this.webhookService.create(formId, dto)
   }
 
-  @UseGuards(PermissionGuard)
-  @RequiredPermission('webhook:manage')
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -36,15 +31,11 @@ export class WebhookController {
     return this.webhookService.update(id, dto)
   }
 
-  @UseGuards(PermissionGuard)
-  @RequiredPermission('webhook:manage')
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.webhookService.remove(id)
   }
 
-  @UseGuards(PermissionGuard)
-  @RequiredPermission('webhook:manage')
   @Post(':id/test')
   test(@Param('id') id: string) {
     return this.webhookService.test(id)

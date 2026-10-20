@@ -67,14 +67,14 @@ export class WorkflowController {
   }
 
   @UseGuards(PermissionGuard)
-  @RequiredPermission('workflow:edit')
+  @RequiredPermission('workflow:publish')
   @Post('workflows/:id/publish')
   publishDefinition(@Param('id') id: string) {
     return this.workflowService.publishDefinition(id)
   }
 
   @UseGuards(PermissionGuard)
-  @RequiredPermission('workflow:edit')
+  @RequiredPermission('workflow:unpublish')
   @Post('workflows/:id/unpublish')
   unpublishDefinition(@Param('id') id: string) {
     return this.workflowService.unpublishDefinition(id)
@@ -82,8 +82,6 @@ export class WorkflowController {
 
   // ==================== 流程实例操作 ====================
 
-  @UseGuards(PermissionGuard)
-  @RequiredPermission('workflow:start')
   @Post('workflows/:id/start')
   startProcess(
     @Param('id') definitionId: string,
@@ -99,9 +97,16 @@ export class WorkflowController {
   approveTask(
     @Param('instanceId') instanceId: string,
     @CurrentUser('userId') userId: string,
-    @Body() dto: { nodeId: string; comment?: string },
+    @Body() dto: {
+      nodeId: string
+      comment?: string
+      signature?: string
+      attachments?: { name: string; url: string; size?: number; mimeType?: string }[]
+    },
   ) {
-    return this.workflowService.approveTask(instanceId, dto.nodeId, userId, dto.comment)
+    return this.workflowService.approveTask(
+      instanceId, dto.nodeId, userId, dto.comment, dto.signature, dto.attachments,
+    )
   }
 
   @UseGuards(PermissionGuard)
@@ -110,13 +115,20 @@ export class WorkflowController {
   rejectTask(
     @Param('instanceId') instanceId: string,
     @CurrentUser('userId') userId: string,
-    @Body() dto: { nodeId: string; comment?: string; targetNodeId?: string },
+    @Body() dto: {
+      nodeId: string
+      comment?: string
+      targetNodeId?: string
+      signature?: string
+      attachments?: { name: string; url: string; size?: number; mimeType?: string }[]
+    },
   ) {
-    return this.workflowService.rejectTask(instanceId, dto.nodeId, userId, dto.comment, dto.targetNodeId)
+    return this.workflowService.rejectTask(
+      instanceId, dto.nodeId, userId, dto.comment, dto.targetNodeId, dto.signature, dto.attachments,
+    )
   }
 
-  @UseGuards(PermissionGuard)
-  @RequiredPermission('workflow:withdraw')
+  // 撤回只认发起人（service 里有归属校验），属于「我的流程」的自助操作，不卡 RBAC
   @Post('process-instances/:instanceId/withdraw')
   withdrawProcess(
     @Param('instanceId') instanceId: string,
@@ -147,11 +159,13 @@ export class WorkflowController {
     return this.workflowService.addSign(instanceId, dto.nodeId, userId, dto.targetUserId)
   }
 
-  @UseGuards(PermissionGuard)
-  @RequiredPermission('workflow:remove')
+  // 删除只认发起人（service 里有归属校验），属于「我的流程」的自助操作，不卡 RBAC
   @Delete('process-instances/:instanceId')
-  deleteInstance(@Param('instanceId') instanceId: string) {
-    return this.workflowService.deleteInstance(instanceId)
+  deleteInstance(
+    @Param('instanceId') instanceId: string,
+    @CurrentUser('userId') userId: string,
+  ) {
+    return this.workflowService.deleteInstance(instanceId, userId)
   }
 
   // ==================== 查询 ====================
@@ -161,10 +175,19 @@ export class WorkflowController {
     return this.workflowService.getInstanceDetail(id)
   }
 
+  // 审批人要看「发起人当时填了什么」才能判断是否通过，所以这条数据的读权限认「发起人本人 / 该实例上有任务的人」
+  @Get('process-instances/:instanceId/submission')
+  getInstanceSubmission(
+    @Param('instanceId') instanceId: string,
+    @CurrentUser('userId') userId: string,
+  ) {
+    return this.workflowService.getInstanceSubmission(instanceId, userId)
+  }
+
   @Get('my-tasks')
   getMyTasks(
     @CurrentUser('userId') userId: string,
-    @Query() query: { page?: number; pageSize?: number; status?: string },
+    @Query() query: { page?: number; pageSize?: number; status?: string; keyword?: string },
   ) {
     return this.workflowService.getMyTasks(userId, query)
   }
@@ -172,7 +195,7 @@ export class WorkflowController {
   @Get('my-instances')
   getMyInstances(
     @CurrentUser('userId') userId: string,
-    @Query() query: { page?: number; pageSize?: number },
+    @Query() query: { page?: number; pageSize?: number; status?: string; keyword?: string },
   ) {
     return this.workflowService.getMyInstances(userId, query)
   }

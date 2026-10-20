@@ -149,6 +149,21 @@ export class FormService {
     })
   }
 
+  /**
+   * 彻底删除（回收站清空）：真删forms 行，版本快照 / 提交数据 / Webhook 由外键级联一并删除，不可恢复。
+   *
+   * 不动 process_instances.formId —— 那是无外键的展示字段，且历史实例的 context 里已存了表单数据的快照，
+   * 级联删实例等于静默掐掉在途审批，超出「删一张表单」的语义。
+   */
+  async purge(id: string) {
+    const form = await this.prisma.form.findUnique({ where: { id }, select: { id: true } })
+    if (!form) throw new NotFoundException('表单不存在')
+    const result = await this.prisma.form.delete({ where: { id } })
+    // 表单没了，已发布的 schema 缓存不能再留着对外渲染
+    await this.cache.invalidateFormCache(id)
+    return result
+  }
+
   async publish(id: string, userId: string) {
     // 将当前最新版本号记为已发布版本（而非独立自增计数器）
     const lastVersion = await this.prisma.formVersion.findFirst({
@@ -233,19 +248,32 @@ export class FormService {
     })
   }
 
-  /** 回收站：列出工作空间内被软删除的表单，及其被软删除的版本快照 */
+  /**
+   * 回收站：列出被软删除的表单，以及「表单还在、但有版本被单独删除」的表单。
+   *
+   * 删除表单时并不级联删版本（恢复表单时版本原样回来），所以被删表单要带上全部版本，
+   * 否则「可恢复的版本」永远是空的；仍存活表单则只带被软删的那几个版本。
+   */
   async listRecycle(workspaceId: string) {
     const list = await this.prisma.form.findMany({
-      where: { workspaceId, deletedAt: { not: null } },
+      where: {
+        workspaceId,
+        OR: [
+          { deletedAt: { not: null } },
+          { versions: { some: { deletedAt: { not: null } } } },
+        ],
+      },
       orderBy: { deletedAt: 'desc' },
       include: {
-        versions: {
-          where: { deletedAt: { not: null } },
-          orderBy: { version: 'desc' },
-        },
+        versions: { orderBy: { version: 'desc' } },
       },
     })
-    return { list }
+    return {
+      list: list.map((form) => ({
+        ...form,
+        versions: form.deletedAt ? form.versions : form.versions.filter((v) => v.deletedAt),
+      })),
+    }
   }
 
   /**

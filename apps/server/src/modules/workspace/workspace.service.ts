@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common'
 import { PrismaClient } from '@prisma/client'
 import { CacheService } from '../cache/cache.service'
 
@@ -29,8 +29,9 @@ export class WorkspaceService {
       where: { userId, roleId: { in: roleIds } },
     })
 
-    // 分配对应 RBAC 角色
-    const rbacRoleName = ROLE_MAP[wsRole]
+    // 分配对应 RBAC 角色。自定义角色直接以角色名传入（如「审批者」），
+    // 只认 owner/editor/viewer 三个旧 key 会让自定义角色分配后被静默清空。
+    const rbacRoleName = ROLE_MAP[wsRole] ?? wsRole
     const targetRole = workspaceRoles.find((r) => r.name === rbacRoleName)
     if (targetRole) {
       await this.prisma.userRole.create({
@@ -39,6 +40,23 @@ export class WorkspaceService {
     }
     // 清除权限缓存，下次请求时重新计算
     await this.cache.invalidateUserPermissions(workspaceId, userId)
+  }
+
+  /**
+   * 校验对外可分配的角色：必须是本空间已存在的 RBAC 角色，且不能是创建者（`*`）。
+   * 前端虽然不展示创建者选项，但 PATCH 的 role 是外部输入，必须在这里挡。
+   */
+  private async assertAssignableRole(workspaceId: string, role: string) {
+    const roleName = ROLE_MAP[role] ?? role
+    const target = await this.prisma.role.findFirst({
+      where: { workspaceId, name: roleName },
+      select: { name: true, permissions: true },
+    })
+    if (!target) throw new BadRequestException('角色不存在')
+    const perms = Array.isArray(target.permissions) ? target.permissions as string[] : []
+    if (target.name === ROLE_MAP.owner || perms.includes('*')) {
+      throw new ForbiddenException('不能将成员设为工作空间创建者')
+    }
   }
 
   async list(userId: string) {
@@ -157,6 +175,7 @@ export class WorkspaceService {
   async addMember(workspaceId: string, dto: { email: string; role: string }) {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } })
     if (!user) throw new NotFoundException('用户不存在')
+    await this.assertAssignableRole(workspaceId, dto.role)
     const member = await this.prisma.workspaceMember.create({
       data: { workspaceId, userId: user.id, role: dto.role },
     })
@@ -188,6 +207,7 @@ export class WorkspaceService {
     })
     if (!member) throw new NotFoundException('成员不存在')
     if (member.role === 'owner') throw new ForbiddenException('不能修改工作空间创建者的角色')
+    await this.assertAssignableRole(workspaceId, role)
 
     await this.prisma.workspaceMember.update({
       where: { workspaceId_userId: { workspaceId, userId } },

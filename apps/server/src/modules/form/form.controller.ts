@@ -70,6 +70,14 @@ export class FormController {
     return this.formService.restore(id)
   }
 
+  // 彻底删除（回收站清空），不可恢复，权限与移入回收站一致
+  @UseGuards(PermissionGuard)
+  @RequiredPermission('form:delete')
+  @Delete('forms/:id/purge')
+  purge(@Param('id') id: string) {
+    return this.formService.purge(id)
+  }
+
   @UseGuards(WorkspaceGuard)
   @Get('workspaces/:wsId/forms/recycle')
   listRecycle(@Param('wsId') wsId: string) {

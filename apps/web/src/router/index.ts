@@ -78,6 +78,12 @@ const routes: RouteRecordRaw[] = [
             component: () => import('@/views/admin/FormListView.vue'),
           },
           {
+            path: 'recycle',
+            name: 'FormRecycle',
+            component: () => import('@/views/admin/RecycleBinView.vue'),
+            meta: { title: '回收站' },
+          },
+          {
             path: ':formId/designer',
             name: 'FormDesigner',
             component: () => import('@/views/designer/DesignerView.vue'),
@@ -154,14 +160,6 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '流程设计器' },
       },
     ],
-  },
-
-  // ======== 流程实例进度查看 ========
-  {
-    path: '/instance/:id',
-    name: 'InstanceViewer',
-    component: () => import('@/views/workflow/InstanceViewer.vue'),
-    meta: { layout: 'default', title: '流程进度', requiresAuth: true, requiresWorkspace: true },
   },
 
   // ======== 通知 ========

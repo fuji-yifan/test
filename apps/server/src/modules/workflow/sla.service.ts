@@ -29,11 +29,13 @@ export class SLAService implements OnModuleInit {
 
       for (const task of pendingTasks as any[]) {
         try {
-          const nodes = (task.instance?.definition?.nodes || []) as any[]
+          // 优先用实例发起时冻结的定义快照，定义被改过也不影响在途任务的 SLA 配置
+          const frozen = (task.instance?.definitionSnapshot || {}) as any
+          const nodes = (frozen.nodes || task.instance?.definition?.nodes || []) as any[]
           const node = nodes.find((n: any) => n.id === task.nodeId)
           const config = (node?.config || {}) as any
           const wsId: string = task.instance?.definition?.workspaceId || ''
-          const defName: string = task.instance?.definition?.name || ''
+          const defName: string = frozen.name || task.instance?.definition?.name || ''
           if (config?.timeout > 0 && config?.escalateTo) {
             const elapsed = Date.now() - new Date(task.createdAt).getTime()
             const timeoutMs = config.timeout * 3600 * 1000

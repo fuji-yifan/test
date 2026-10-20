@@ -20,6 +20,23 @@
             @change="onCascadeChange"
           />
         </el-form-item>
+        <el-form-item label="用户">
+          <el-select
+            v-model="filters.userId"
+            clearable
+            filterable
+            placeholder="全部用户"
+            style="width: 180px"
+            @change="resetPage"
+          >
+            <el-option
+              v-for="u in userOptions"
+              :key="u.id"
+              :label="u.nickname || u.email"
+              :value="u.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="日期范围">
           <el-date-picker
             v-model="dateRange"
@@ -31,31 +48,50 @@
             @change="resetPage"
           />
         </el-form-item>
+        <!-- 没有「查询」按钮：级联 / 日期都是 @change 即时查询 -->
         <el-form-item>
-          <el-button size="small" type="primary" @click="resetPage">查询</el-button>
-          <el-button size="small" @click="clearFilters">重置</el-button>
+          <el-button size="small" type="info" @click="clearFilters">清空查询</el-button>
           <el-button size="small" @click="exportCsv">导出 CSV</el-button>
-          <el-dropdown
-            style="margin-left: 8px"
-            @command="doCleanup"
-          >
-            <el-button size="small" type="warning">
-              清理日志 <el-icon><ArrowDown /></el-icon>
+        </el-form-item>
+        <!-- 保留期自由填（原先只有 1/7/30 天三个选项）。min=1 只是挡住误操作，真正的下限在服务端 -->
+        <el-form-item>
+          <div class="cleanup-row">
+            <span>日志保留</span>
+            <el-input-number
+              v-model="cleanupAmount"
+              :min="1"
+              :step="1"
+              size="small"
+              controls-position="right"
+              style="width: 110px"
+            />
+            <el-select
+              v-model="cleanupUnit"
+              size="small"
+              style="width: 80px"
+            >
+              <el-option
+                label="天"
+                value="day"
+              />
+              <el-option
+                label="月"
+                value="month"
+              />
+              <el-option
+                label="年"
+                value="year"
+              />
+            </el-select>
+            <span>内</span>
+            <el-button
+              size="small"
+              type="warning"
+              @click="doCleanup"
+            >
+              清理
             </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="1">
-                  保留1天内记录
-                </el-dropdown-item>
-                <el-dropdown-item command="7">
-                  保留7天内记录
-                </el-dropdown-item>
-                <el-dropdown-item command="30">
-                  保留30天内记录
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          </div>
         </el-form-item>
       </el-form>
     </el-card>
@@ -125,7 +161,6 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
 import http from '@/api/client'
 
 const route = useRoute()
@@ -140,8 +175,14 @@ const loading = ref(false)
 const filters = reactive({
   action: '',
   resourceType: '',
+  userId: '',
 })
+const userOptions = ref<{ id: string; email: string; nickname: string | null }[]>([])
 const dateRange = ref<[string, string] | null>(null)
+/** 清理日志时要保留多久：数量 + 单位（天/月/年） */
+const cleanupAmount = ref(30)
+const cleanupUnit = ref<'day' | 'month' | 'year'>('day')
+const CLEANUP_UNIT_LABEL = { day: '天', month: '个月', year: '年' } as const
 
 const opCascade = ref<string[]>([])
 const cascadeOptions = buildCascade()
@@ -169,6 +210,8 @@ function buildCascade() {
     { value: '_flow', label: '流程', children: [
       { value: '新建固有流程', label: '新建固有流程' },
       { value: '修改固有流程', label: '修改固有流程' },
+      { value: '发布固有流程', label: '发布固有流程' },
+      { value: '撤回固有流程', label: '撤回固有流程' },
       { value: '删除固有流程', label: '删除固有流程' },
       { value: '发起我的流程', label: '发起我的流程' },
       { value: '撤回我的流程', label: '撤回我的流程' },
@@ -203,6 +246,8 @@ function onCascadeChange(val: string[]) {
       const flowMap: Record<string, string> = {
         '新建固有流程': 'ProcessDefinition',
         '修改固有流程': 'ProcessDefinition',
+        '发布固有流程': 'ProcessDefinition',
+        '撤回固有流程': 'ProcessDefinition',
         '删除固有流程': 'ProcessDefinition',
         '发起我的流程': 'ProcessInstance',
         '撤回我的流程': 'ProcessInstance',
@@ -229,9 +274,19 @@ function resetPage() { page.value = 1; fetchLogs() }
 function clearFilters() {
   filters.action = ''
   filters.resourceType = ''
+  filters.userId = ''
   opCascade.value = []
   dateRange.value = null
   resetPage()
+}
+
+async function fetchUsers() {
+  try {
+    const res = await http.get(`/workspaces/${wsId.value}/audit-logs/users`)
+    userOptions.value = ((res as any).data || res || []) as typeof userOptions.value
+  } catch {
+    userOptions.value = []
+  }
 }
 
 async function fetchLogs() {
@@ -240,6 +295,7 @@ async function fetchLogs() {
     const params: Record<string, string | number> = { page: page.value, pageSize }
     if (filters.action) params.action = filters.action
     if (filters.resourceType) params.resourceType = filters.resourceType
+    if (filters.userId) params.userId = filters.userId
     if (dateRange.value) {
       params.startDate = dateRange.value[0]
       params.endDate = dateRange.value[1]
@@ -251,14 +307,16 @@ async function fetchLogs() {
   } finally { loading.value = false }
 }
 
-async function doCleanup(days: string) {
+async function doCleanup() {
+  const amount = cleanupAmount.value
+  const unit = cleanupUnit.value
   try {
     await ElMessageBox.confirm(
-      `确定删除 ${days} 天前的所有审计日志？此操作不可撤销。`,
+      `确定只保留最近 ${amount} ${CLEANUP_UNIT_LABEL[unit]}内的记录，更早的审计日志将被删除？此操作不可撤销。`,
       '清理确认',
       { confirmButtonText: '确定清理', cancelButtonText: '取消', type: 'warning' },
     )
-    const res = await http.delete(`/workspaces/${wsId.value}/audit-logs/cleanup`, { params: { days: +days } }) as any
+    const res = await http.delete(`/workspaces/${wsId.value}/audit-logs/cleanup`, { params: { amount, unit } }) as any
     const data = res.data || res
     ElMessage.success(`已清理 ${data.deletedCount || 0} 条记录`)
     fetchLogs()
@@ -270,6 +328,7 @@ async function exportCsv() {
     const params: any = {}
     if (filters.action) params.action = filters.action
     if (filters.resourceType) params.resourceType = filters.resourceType
+    if (filters.userId) params.userId = filters.userId
     if (dateRange.value) {
       params.startDate = dateRange.value[0]
       params.endDate = dateRange.value[1]
@@ -289,9 +348,9 @@ async function exportCsv() {
   } catch (e: any) { if (e?.__handled) return; ElMessage.error('导出失败') }
 }
 
-onMounted(() => { fetchLogs() })
+onMounted(() => { fetchLogs(); fetchUsers() })
 watch(page, fetchLogs)
-watch(() => route.params.wsId, () => { page.value = 1; fetchLogs() })
+watch(() => route.params.wsId, () => { page.value = 1; fetchLogs(); fetchUsers() })
 
 function formatDate(d: string) { return d ? new Date(d).toLocaleString('zh-CN') : '-' }
 </script>
@@ -302,5 +361,7 @@ h2 { margin: 0 0 16px; }
 .pagination { margin-top: 16px; justify-content: center; }
 .filter-bar { margin-bottom: 16px; }
 .filter-bar .el-form { margin-bottom: 0; }
+/* 数字框与前后文案在同一基线上对齐（inline 表单里 span、输入框、按钮的基线并不一致） */
+.cleanup-row { display: inline-flex; align-items: center; gap: 8px; }
 pre { margin: 0; font-size: 12px; max-height: 200px; overflow: auto; background: #f5f5f5; padding: 8px; border-radius: 4px; }
 </style>

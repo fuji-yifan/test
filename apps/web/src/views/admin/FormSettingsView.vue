@@ -1,12 +1,14 @@
 <template>
   <div class="settings-page">
     <div class="page-header">
-      <el-button
-        text
-        @click="$router.back()"
-      >
-        <el-icon><ArrowLeft /></el-icon> 返回
-      </el-button>
+      <el-tooltip content="返回" placement="top">
+        <el-button
+          text
+          @click="$router.back()"
+        >
+          <el-icon><ArrowLeft /></el-icon>
+        </el-button>
+      </el-tooltip>
       <h2>{{ formName }}</h2>
     </div>
 
@@ -30,8 +32,13 @@
             v-model="form.description"
             type="textarea"
             :rows="3"
+            maxlength="100"
+            show-word-limit
             placeholder="可选描述"
           />
+          <div class="field-tip">
+            文字描述最多 100 字。表单管理卡片只展示两行，超出部分显示省略号。
+          </div>
         </el-form-item>
         <el-form-item label="分类">
           <el-select
@@ -63,7 +70,7 @@
             v-model="form.maxSubmissions"
             :min="0"
           />
-          <span class="hint">0 表示不限制</span>
+          <span class="hint">0 = 无上限</span>
         </el-form-item>
       </el-form>
     </el-card>
@@ -486,6 +493,7 @@ function formatTime(d: string) {
 .section-card { margin-bottom: 16px; }
 .section-title { font-weight: 600; font-size: 15px; }
 .hint { color: #909399; font-size: 12px; margin-left: 8px; }
+.field-tip { margin-top: 4px; font-size: 12px; line-height: 1.5; color: #909399; }
 .save-bar { margin-top: 8px; }
 .card-header-row { display: flex; align-items: center; justify-content: space-between; }
 .header-actions { display: flex; gap: 8px; }

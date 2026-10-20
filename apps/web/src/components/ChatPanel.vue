@@ -2,6 +2,7 @@
 import { ref, watch, nextTick, computed, markRaw } from 'vue'
 import { useAgentChat, type ConfirmOption } from '@/composables/useAgentChat'
 import { marked } from 'marked'
+import { ElMessageBox } from 'element-plus'
 import PreviewPanel from '@/components/PreviewPanel.vue'
 import FlowPreviewGraph from '@/components/flow/FlowPreviewGraph.vue'
 import {
@@ -56,6 +57,56 @@ const inputText = ref('')
 const messagesEl = ref<HTMLDivElement>()
 const showHistory = ref(false)
 
+// ===== 浮窗拖拽：拖动后改用 left/top 定位，重新打开时清空回默认位置 =====
+const windowEl = ref<HTMLElement>()
+const dragging = ref(false)
+/** null = 未拖动，沿用 CSS 的 right/bottom 默认位置 */
+const dragPos = ref<{ left: number; top: number } | null>(null)
+const DRAG_MARGIN = 8
+
+const dragStyle = computed(() =>
+  dragPos.value
+    ? { left: `${dragPos.value.left}px`, top: `${dragPos.value.top}px`, right: 'auto', bottom: 'auto' }
+    : undefined,
+)
+
+function resetWindowPosition() {
+  dragging.value = false
+  dragPos.value = null
+}
+
+function startDrag(e: PointerEvent) {
+  if (e.button !== 0 || !windowEl.value) return
+  // 头部里的按钮/链接仍然保持点击行为，不触发拖拽
+  if ((e.target as HTMLElement).closest('button, a, input')) return
+
+  const rect = windowEl.value.getBoundingClientRect()
+  const startX = e.clientX
+  const startY = e.clientY
+  const maxLeft = () => Math.max(DRAG_MARGIN, window.innerWidth - rect.width - DRAG_MARGIN)
+  const maxTop = () => Math.max(DRAG_MARGIN, window.innerHeight - rect.height - DRAG_MARGIN)
+  const clamp = (v: number, max: number) => Math.min(Math.max(DRAG_MARGIN, v), max)
+
+  dragging.value = true
+  dragPos.value = { left: rect.left, top: rect.top }
+
+  const onMove = (ev: PointerEvent) => {
+    dragPos.value = {
+      left: clamp(rect.left + ev.clientX - startX, maxLeft()),
+      top: clamp(rect.top + ev.clientY - startY, maxTop()),
+    }
+  }
+  const onUp = () => {
+    dragging.value = false
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    window.removeEventListener('pointercancel', onUp)
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+  window.addEventListener('pointercancel', onUp)
+}
+
 const expandedTools = ref<Record<string, boolean>>({})
 const expandedPreview = ref<Record<string, boolean>>({})
 
@@ -64,12 +115,19 @@ const previewVisible = ref(false)
 const previewSchema = ref<any>(null)
 /** 弹窗标题：调用方给了就用（如模板名，模板 schema 不一定有 formTitle），否则退回 schema 里的标题 */
 const previewTitle = ref('表单结构')
+/**
+ * PreviewPanel 的 key：每次打开自增，逼出全新实例。
+ * 该组件的画布几何在 setup 时按 schema 算一次、不随 prop 变，复用同一实例连续看不同表单会留下上一张的排版。
+ * 不能用 schema 对象当 key——对象转字符串都是 "[object Object]"，等于没有 key。
+ */
+const previewSeq = ref(0)
 // 入参可以是整条 message（result.schema）、多表清单里的一个 entry（schema），或一张模板（自带 name）
 function openFormPreview(payload: any, title?: string) {
   const schema = payload?.schema ?? payload?.result?.schema
   if (!schema) return
   previewSchema.value = schema
   previewTitle.value = title || schema.settings?.formTitle || '表单结构'
+  previewSeq.value++
   previewVisible.value = true
 }
 
@@ -117,8 +175,24 @@ function saveThread(title: string) {
   localStorage.setItem(THREADS_KEY, JSON.stringify(threads.value))
   if (messages.value.length > 0) localStorage.setItem(MSG_PREFIX + id, JSON.stringify(messages.value.slice(-50)))
 }
-function deleteThread(id: string) {
-  threads.value = threads.value.filter((t) => t.id !== id)
+async function deleteThread(id: string) {
+  const t = threads.value.find((x) => x.id === id)
+  try {
+    await ElMessageBox.confirm(
+      `确定删除对话「${(t?.title || '(空)').slice(0, 40)}」吗？删除后无法恢复。`,
+      '删除对话',
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        // 浮窗 z-index 是 3000，MessageBox 默认层级会被整个盖住
+        modalClass: 'chat-confirm-overlay',
+      },
+    )
+  } catch {
+    return // 用户取消
+  }
+  threads.value = threads.value.filter((x) => x.id !== id)
   localStorage.setItem(THREADS_KEY, JSON.stringify(threads.value))
   localStorage.removeItem(MSG_PREFIX + id)
 }
@@ -129,12 +203,14 @@ function restoreThread(t: ChatThread) {
       let raw = localStorage.getItem(MSG_PREFIX + t.id)
       if (!raw) raw = localStorage.getItem(`agent_chat_${t.scenario}`)
       if (raw) messages.value = JSON.parse(raw) || []
+      // 历史快照里的检查点卡片同样要用服务端待答状态校正，避免恢复出已答过的按钮
+      void reconcilePendingConfirms()
     } catch { /* */ }
   })
 }
 loadThreads()
 
-const { messages, isLoading, status, error, usage, sendMessage, cancel, clearMessages, activeMessageId } = useAgentChat({
+const { messages, isLoading, status, error, usage, sendMessage, cancel, clearMessages, activeMessageId, reconcilePendingConfirms } = useAgentChat({
   // 传取值函数而不是值：这两个 prop 随路由变化，而这个组合式只在 setup 时调一次，
   // 传值会把首次渲染（往往还没进工作空间路由）的空值定格住，之后一直发空 workspaceId。
   scenario: () => props.scenario,
@@ -240,7 +316,11 @@ function renderMarkdown(text: string): string {
   try { return marked.parse(text, { async: false }) as string }
   catch { return text.replace(/\n/g, '<br>') }
 }
-watch(() => props.visible, (v) => { if (v) loadThreads() })
+watch(() => props.visible, (v) => {
+  // 每次开/关都归位，避免下次打开停在上次的拖动位置
+  resetWindowPosition()
+  if (v) loadThreads()
+})
 watch(() => messages.value.length, () => nextTick(() => { if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight }))
 watch(() => isLoading.value, (l, was) => {
   if (was && !l && messages.value.length > 0) {
@@ -253,9 +333,15 @@ watch(() => isLoading.value, (l, was) => {
 <template>
   <Teleport to="body">
     <transition name="float-fade">
-      <div v-if="visible" class="float-window">
-        <!-- 头部 -->
-        <div class="float-header">
+      <div
+        v-if="visible"
+        ref="windowEl"
+        class="float-window"
+        :class="{ dragging }"
+        :style="dragStyle"
+      >
+        <!-- 头部：按住空白处可拖动整个浮窗 -->
+        <div class="float-header" @pointerdown="startDrag">
           <div class="float-header-left">
             <div class="header-avatar">
               <el-icon :size="20"><ChromeFilled /></el-icon>
@@ -291,17 +377,27 @@ watch(() => isLoading.value, (l, was) => {
           <div v-if="showHistory" class="history-panel">
             <div class="history-header">
               <el-icon class="history-back" :size="18" @click="showHistory = false"><ArrowLeft /></el-icon>
-              <span>历史对话 ({{ threads.length }})</span>
+              <span>历史对话</span>
+              <span class="history-count">{{ threads.length }}</span>
             </div>
-            <div v-if="threads.length === 0" class="no-data">暂无历史对话</div>
-            <div v-for="t in threads" :key="t.id" class="history-card" @click="restoreThread(t)">
-              <div class="history-card-top">
-                <span class="history-card-title">{{ t.title.slice(0, 40) || '(空)' }}</span>
-                <span class="history-card-scenario">{{ SCENARIO_MAP[t.scenario]?.label || t.scenario }}</span>
-              </div>
-              <div class="history-card-meta">
-                <span>{{ t.messageCount }} 条 · {{ fmtTime(t.updatedAt) }}</span>
-                <el-icon class="delete-icon" :size="16" @click.stop="deleteThread(t.id)"><Close /></el-icon>
+            <div v-if="threads.length === 0" class="history-empty">
+              <el-icon :size="30"><ChatLineSquare /></el-icon>
+              <p>暂无历史对话</p>
+              <span>开始对话后，记录会保存在这里</span>
+            </div>
+            <div v-else class="history-list">
+              <div v-for="t in threads" :key="t.id" class="history-card" @click="restoreThread(t)">
+                <div class="history-card-top">
+                  <span class="history-card-title">{{ t.title.slice(0, 40) || '(空)' }}</span>
+                </div>
+                <div class="history-card-meta">
+                  <span class="history-card-info">
+                    <span>{{ t.messageCount }} 条</span>
+                    <span class="meta-dot" />
+                    <span>{{ fmtTime(t.updatedAt) }}</span>
+                  </span>
+                  <el-icon class="delete-icon" :size="15" title="删除对话" @click.stop="deleteThread(t.id)"><Close /></el-icon>
+                </div>
               </div>
             </div>
           </div>
@@ -312,29 +408,34 @@ watch(() => isLoading.value, (l, was) => {
               <!-- 空状态 -->
               <div v-if="messages.length === 0" class="empty-state">
                 <p class="empty-greeting">你好，我是 <span class="brand-flowx">FlowX</span> 智能助手</p>
-                <p class="empty-hint">我可以根据当前页面帮你：</p>
+                <p class="empty-hint">
+                  {{ SCENARIO_MAP[scenario] ? `${SCENARIO_MAP[scenario].label}可为您提供以下能力：` : '可为您提供以下能力：' }}
+                </p>
                 <ul v-if="scenario === 'form-builder'">
-                  <li>用自然语言描述需求，自动生成表单结构</li>
-                  <li>支持多种控件：文本、数字、下拉、日期、单选等</li>
-                  <li>自动校验字段类型和规则，一键保存</li>
+                  <li>通过自然语言描述生成表单，支持多种控件类型</li>
+                  <li>支持在会话中创建、修改和管理多张表单和维护已保存的表单</li>
+                  <li>保存到空间之前提供人机协同确认与预览卡片</li>
+                  <li>支持版本回滚及删除，提供回收站功能</li>
                 </ul>
                 <ul v-else-if="scenario === 'template-creator'">
-                  <li>按分类或关键词搜索模板市场</li>
-                  <li>查看模板详情，基于模板快速创建表单</li>
+                  <li>按关键词或分类检索模板</li>
+                  <li>基于模板生成表单结构，交由表单设计助手保存</li>
+                  <li>可衔接流程编排助手配置审批流程</li>
                 </ul>
                 <ul v-else-if="scenario === 'workflow-node'">
-                  <li>描述审批流程，自动生成节点和连线</li>
-                  <li>支持审批、条件分支、并行等节点，校验 DAG 合法性</li>
+                  <li>根据流程描述生成节点与连线，并自动校验合法性</li>
+                  <li>支持审批、条件分支、并行等多种节点类型</li>
+                  <li>可关联已有表单并协同发布生效</li>
                 </ul>
                 <ul v-else-if="scenario === 'data-analysis'">
-                  <li>查看全部表单的名称、状态与提交量</li>
-                  <li>按时间范围、分组维度聚合查询</li>
-                  <li>数值统计、趋势判断与 Z-Score 异常检测</li>
-                  <li>输出洞察、趋势、异常点与图表建议</li>
+                  <li>汇总查看表单及提交数据</li>
+                  <li>按时间范围与分组维度统计分析趋势与异常</li>
+                  <li>输出分析洞察与图表建议</li>
                 </ul>
                 <ul v-else>
-                  <li>设计表单、编排流程、搜索模板、分析数据</li>
-                  <li>跨领域任务自动切换对应助手协作完成</li>
+                  <li>支持表单设计、流程编排、模板检索与数据分析</li>
+                  <li>跨领域任务自动切换至相应助手协同处理</li>
+                  <li>可连续完成模板—表单—流程全过程任务的流转</li>
                 </ul>
                 <p v-if="scenario === 'data-analysis'" class="empty-hint">
                   仅支持只读分析，无法修改或删除数据。
@@ -366,13 +467,22 @@ watch(() => isLoading.value, (l, was) => {
                     >
                       <div class="confirm-prompt">{{ tc.prompt || tc.summary || '需要你的确认' }}</div>
                       <div class="confirm-actions">
-                        <el-button
-                          v-for="opt in confirmOptions(tc)"
-                          :key="opt.value"
-                          size="small"
-                          :type="opt.style"
-                          @click="answerConfirm(tc, opt)"
-                        >{{ opt.label }}</el-button>
+                        <template v-for="opt in confirmOptions(tc)" :key="opt.value">
+                          <!-- 消歧候选：一行一张表，先能预览再决定选哪张 -->
+                          <div v-if="opt.form" class="confirm-option">
+                            <span class="confirm-option-label">{{ opt.label }}</span>
+                            <div class="confirm-option-btns">
+                              <el-button size="small" @click="openFormPreview(opt.form, opt.form.title)">预览</el-button>
+                              <el-button size="small" type="primary" @click="answerConfirm(tc, opt)">选这张</el-button>
+                            </div>
+                          </div>
+                          <el-button
+                            v-else
+                            size="small"
+                            :type="opt.style"
+                            @click="answerConfirm(tc, opt)"
+                          >{{ opt.label }}</el-button>
+                        </template>
                       </div>
                     </div>
 
@@ -580,7 +690,13 @@ watch(() => isLoading.value, (l, was) => {
       :z-index="3200"
     >
       <div class="form-preview-box">
-        <PreviewPanel v-if="previewSchema" :schema="previewSchema" hide-actions hide-title />
+        <PreviewPanel
+          v-if="previewSchema"
+          :key="previewSeq"
+          :schema="previewSchema"
+          hide-actions
+          hide-title
+        />
       </div>
     </el-dialog>
 
@@ -618,7 +734,11 @@ watch(() => isLoading.value, (l, was) => {
   background: linear-gradient(135deg, #f0f5ff 0%, #e8f2fc 100%);
   border-bottom: 1px solid #dce8f5;
   flex-shrink: 0;
+  cursor: grab;
+  touch-action: none;
 }
+.float-window.dragging { user-select: none; }
+.float-window.dragging .float-header { cursor: grabbing; }
 .header-avatar {
   width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0;
   background: #409eff;
@@ -672,20 +792,57 @@ watch(() => isLoading.value, (l, was) => {
 .float-fade-enter-from { opacity: 0; transform: translateY(16px) scale(0.96); }
 .float-fade-leave-to { opacity: 0; transform: translateY(8px) scale(0.98); }
 
+/* 删除确认框挂在 body 上，必须高于浮窗（3000），否则会被挡住 */
+:global(.chat-confirm-overlay) { z-index: 3100 !important; }
+
 /* ===== 历史面板 ===== */
 .float-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.history-panel { flex: 1; overflow-y: auto; padding: 12px 16px; }
-.history-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 14px; font-weight: 600; color: #303133; }
-.history-back { cursor: pointer; padding: 4px; border-radius: 4px; }
+.history-panel { flex: 1; overflow-y: auto; padding: 14px 16px 16px; }
+.history-panel::-webkit-scrollbar { width: 6px; }
+.history-panel::-webkit-scrollbar-thumb { background: #dcdfe6; border-radius: 3px; }
+.history-panel::-webkit-scrollbar-thumb:hover { background: #c0c4cc; }
+.history-header { display: flex; align-items: center; gap: 8px; margin: 0 2px 14px; font-size: 15px; font-weight: 600; color: #303133; }
+.history-count { padding: 1px 8px; border-radius: 999px; background: #ecf5ff; color: #409eff; font-size: 11px; font-weight: 600; line-height: 18px; }
+.history-back { cursor: pointer; padding: 4px; margin-left: -4px; border-radius: 6px; color: #6b8299; transition: background-color .15s, color .15s; }
 .history-back:hover { background: #f0f2f5; color: #409eff; }
-.history-card { padding: 10px 12px; border: 1px solid #ebeef5; border-radius: 10px; margin-bottom: 8px; cursor: pointer; transition: 0.15s; }
-.history-card:hover { background: #f5f7fa; border-color: #c6d9f1; }
-.history-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; gap: 8px; }
+
+.history-list { display: flex; flex-direction: column; gap: 10px; }
+.history-card {
+  padding: 12px 14px;
+  border: 1px solid #ebeef5;
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  transition: background-color .18s, border-color .18s, box-shadow .18s, transform .18s;
+}
+.history-card:hover {
+  background: #f9fbfe;
+  border-color: #c6d9f1;
+  box-shadow: 0 4px 14px rgba(64, 158, 255, 0.08);
+  transform: translateY(-1px);
+}
+.history-card:active { transform: translateY(0); }
+.history-card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
 .history-card-title { font-size: 13px; font-weight: 600; color: #303133; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.history-card-scenario { font-size: 11px; color: #409eff; background: #ecf5ff; padding: 1px 8px; border-radius: 10px; white-space: nowrap; flex-shrink: 0; }
-.history-card-meta { font-size: 11px; color: #909399; display: flex; align-items: center; justify-content: space-between; }
-.delete-icon { color: #c0c4cc; cursor: pointer; flex-shrink: 0; padding: 4px; border-radius: 4px; }
+.history-card-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: #a0a6b1; }
+.history-card-info { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.meta-dot { width: 2px; height: 2px; border-radius: 50%; background: currentColor; opacity: .7; }
+.delete-icon {
+  flex-shrink: 0;
+  padding: 4px;
+  border-radius: 6px;
+  color: #c0c4cc;
+  cursor: pointer;
+  opacity: .4;
+  transition: opacity .15s, color .15s, background-color .15s;
+}
+.history-card:hover .delete-icon { opacity: 1; }
 .delete-icon:hover { color: #f56c6c; background: #fef0f0; }
+
+.history-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 56px 16px; text-align: center; }
+.history-empty .el-icon { margin-bottom: 8px; color: #d0d4da; }
+.history-empty p { margin: 0 0 4px; font-size: 13px; color: #909399; }
+.history-empty span { font-size: 12px; color: #b1b3b8; }
 .no-data { color: #909399; font-size: 13px; text-align: center; padding: 24px 0; }
 
 /* ===== 聊天区 ===== */
@@ -760,7 +917,23 @@ watch(() => isLoading.value, (l, was) => {
 /* pre-line：后端 prompt 用 \n 断行（"现状一句 + 问句一句"），这里得把换行渲染出来 */
 .confirm-prompt { font-size: 13px; color: #303133; line-height: 1.5; white-space: pre-line; }
 .confirm-risk { color: #b88230; font-size: 11px; flex-shrink: 0; }
-.confirm-actions { display: flex; gap: 8px; margin-top: 8px; }
+/* 普通检查点（确认/取消）横排；消歧候选独占一行，长标题不会再顶出容器 */
+.confirm-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.confirm-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 10px;
+  flex: 1 1 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  background: #fff;
+}
+.confirm-option-label { font-size: 13px; color: #303133; overflow-wrap: anywhere; }
+.confirm-option-btns { display: flex; flex-shrink: 0; gap: 6px; }
 
 /* 被抢占后自动中断的检查点：灰化留痕，不可交互 */
 .confirm-card.interrupted { background: #f4f4f5; border-color: #e4e7ed; }

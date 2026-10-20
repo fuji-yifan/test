@@ -6,8 +6,9 @@ import type Redis from 'ioredis'
 import { ConfigModule } from './config/config.module'
 import { PrismaModule } from './common/prisma.module'
 import { RedisModule } from './common/redis.module'
-import { MinioModule } from './common/minio.module'
+import { QueueModule } from './common/queue.module'
 import { CacheModule } from './modules/cache/cache.module'
+import { QueueProcessorModule } from './modules/queue/queue.module'
 import { MailModule } from './modules/mail/mail.module'
 import { AuthModule } from './modules/auth/auth.module'
 import { WorkspaceModule } from './modules/workspace/workspace.module'
@@ -32,7 +33,9 @@ import { QuotaModule } from './common/quota/quota.module'
     ConfigModule,
     PrismaModule,
     RedisModule,
-    MinioModule,
+    // 消息队列（Redis 就绪后重新启用）：webhook / export / notification 三个 BullMQ 队列
+    QueueModule,
+    QueueProcessorModule,
     // 限流（阶段 6 / S6.1，默认关）：计数器 Redis 有则用、无则内存。守卫走全局，
     // 覆盖登录等未鉴权路由；RATE_LIMIT_ENABLED!=='true' 时恒放行（零行为变化）。
     ThrottlerModule.forRootAsync({

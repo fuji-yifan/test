@@ -108,7 +108,7 @@
                 @click="triggerUpload"
               >
                 <el-avatar
-                  :size="56"
+                  :size="64"
                   :src="editAvatar"
                   icon="UserFilled"
                 />
@@ -118,27 +118,15 @@
                   </el-icon>
                 </div>
               </div>
-              <input
-                ref="fileInput"
-                type="file"
-                accept="image/png,image/jpeg,image/gif,image/webp"
-                hidden
-                @change="onFileChange"
-              >
               <div class="avatar-actions">
                 <el-button
                   size="small"
-                  :loading="uploading"
+                  type="primary"
+                  plain
                   @click="triggerUpload"
                 >
-                  {{ uploading ? '上传中...' : '上传图片' }}
+                  上传图片
                 </el-button>
-                <el-input
-                  v-model="editAvatar"
-                  size="small"
-                  placeholder="或将目标 URL 输入至此"
-                  clearable
-                />
               </div>
             </div>
           </el-form-item>
@@ -257,23 +245,34 @@
             <el-tag
               size="small"
               effect="plain"
+              :type="kindTagType(m.kind)"
               class="memory-tag"
             >
               {{ KIND_LABEL[m.kind] || m.kind }}
             </el-tag>
             <div class="memory-body">
               <span class="memory-key">{{ m.key }}</span>
-              <span class="memory-value">{{ m.value }}</span>
+              <span
+                class="memory-value"
+                :title="m.value"
+              >{{ m.value }}</span>
             </div>
-            <span class="memory-time">{{ fmtTime(m.updatedAt) }}</span>
-            <el-button
-              text
-              size="small"
-              type="danger"
-              @click="removeMemory(m)"
-            >
-              删除
-            </el-button>
+            <div class="memory-meta">
+              <span class="memory-time">{{ fmtTime(m.updatedAt) }}</span>
+              <el-tooltip
+                content="删除这条记忆"
+                placement="top"
+              >
+                <el-icon
+                  class="memory-remove"
+                  :size="15"
+                  aria-label="删除这条记忆"
+                  @click="removeMemory(m)"
+                >
+                  <Close />
+                </el-icon>
+              </el-tooltip>
+            </div>
           </li>
         </ul>
       </div>
@@ -284,7 +283,7 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CircleCheckFilled, Clock, Calendar, Upload, Lock } from '@element-plus/icons-vue'
+import { CircleCheckFilled, Clock, Calendar, Upload, Lock, Close } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkspaceStore } from '@/stores/workspace'
 import http from '@/api/client'
@@ -308,6 +307,18 @@ const KIND_LABEL: Record<string, string> = {
   identity: '身份',
   entity: '常用对象',
   conclusion: '结论',
+}
+
+/** 不同类型用不同颜色的标签，便于一眼区分 */
+const KIND_TAG_TYPE: Record<string, 'primary' | 'success' | 'warning' | 'info'> = {
+  preference: 'primary',
+  identity: 'success',
+  entity: 'warning',
+  conclusion: 'info',
+}
+
+function kindTagType(kind: string) {
+  return KIND_TAG_TYPE[kind] || 'info'
 }
 
 const memories = ref<MemoryItem[]>([])
@@ -371,8 +382,6 @@ const editing = ref(false)
 const editNickname = ref('')
 const editAvatar = ref('')
 const saving = ref(false)
-const fileInput = ref<HTMLInputElement>()
-const uploading = ref(false)
 const showPwd = ref(false)
 const changingPwd = ref(false)
 
@@ -390,37 +399,9 @@ function toggleEdit() {
   editing.value = !editing.value
 }
 
+/** 头像换图依赖对象存储（MinIO），暂未开放 */
 function triggerUpload() {
-  fileInput.value?.click()
-}
-
-const MAX_AVATAR_SIZE = 2 * 1024 * 1024 // 2MB
-
-async function onFileChange(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
-  if (file.size > MAX_AVATAR_SIZE) {
-    ElMessage.warning(`图片过大（${(file.size / 1024 / 1024).toFixed(1)}MB），请选择小于 2MB 的图片`)
-    if (fileInput.value) fileInput.value.value = ''
-    return
-  }
-  uploading.value = true
-  try {
-    const formData = new FormData()
-    formData.append('file', file)
-    const res = await http.post('/upload/avatar', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }) as any
-    const data = res.data || res
-    editAvatar.value = data.url
-    ElMessage.success('头像上传成功')
-  } catch (err: any) {
-    ElMessage.error(err.response?.data?.message || '上传失败')
-  } finally {
-    uploading.value = false
-    // 重置 input 以便重复选择同一文件
-    if (fileInput.value) fileInput.value.value = ''
-  }
+  ElMessage.info('功能暂未开放')
 }
 
 const loginTime = computed(() => {
@@ -478,12 +459,12 @@ async function changePassword() {
 
 .profile-banner {
   height: 100px;
-  background: linear-gradient(135deg, #dbeafe 0%, #e0f2fe 50%, #bae6fd 100%);
+  background: #dbeafe;
   border-radius: 0 0 16px 16px;
 }
 
 .profile-body {
-  max-width: 640px;
+  max-width: 820px;
   margin: 0 auto;
   padding: 0 20px 40px;
 }
@@ -617,15 +598,21 @@ async function changePassword() {
 /* ====== 编辑表单 ====== */
 .avatar-edit-row {
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
+  align-items: center;
+  gap: 16px;
 }
 
 .avatar-upload {
   position: relative;
   cursor: pointer;
   flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  transition: box-shadow 0.2s;
 }
+.avatar-upload:hover { box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.18); }
+.avatar-upload .el-avatar { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); }
 
 .upload-overlay {
   position: absolute;
@@ -645,8 +632,7 @@ async function changePassword() {
 .avatar-actions {
   flex: 1;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
 }
 
 .edit-actions {
@@ -679,7 +665,8 @@ async function changePassword() {
 .section-head {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 4px 10px;
   margin-bottom: 16px;
 }
 
@@ -691,9 +678,10 @@ async function changePassword() {
 }
 
 .memory-empty {
+  padding: 20px 0;
+  text-align: center;
   font-size: 13px;
   color: #9ca3af;
-  padding: 12px 0;
 }
 
 .memory-list {
@@ -702,49 +690,95 @@ async function changePassword() {
   padding: 0;
   display: flex;
   flex-direction: column;
+  gap: 10px;
 }
 
+/* 每条记忆做成独立卡片，比纯分隔线更易扫读 */
 .memory-item {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid #f2f3f5;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #fafbfc;
+  border: 1px solid #eef0f3;
+  border-radius: 10px;
+  transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
 }
 
-.memory-item:last-child { border-bottom: none; }
+.memory-item:hover {
+  background: #fff;
+  border-color: #dfe3e8;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
 
-.memory-tag { flex-shrink: 0; }
+.memory-tag {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
 
 .memory-body {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .memory-key {
   font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
   color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .memory-value {
   font-size: 13px;
+  line-height: 1.5;
   color: #909399;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.memory-meta {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 1px;
+}
+
 .memory-time {
   font-size: 12px;
   color: #c0c4cc;
+  white-space: nowrap;
+}
+
+/* 删除叉叉：与历史对话面板一致（默认 40% 透明，卡片悬浮时显现） */
+.memory-remove {
   flex-shrink: 0;
+  padding: 4px;
+  border-radius: 6px;
+  color: #c0c4cc;
+  cursor: pointer;
+  opacity: 0.4;
+  transition: opacity 0.15s, color 0.15s, background-color 0.15s;
+}
+
+.memory-item:hover .memory-remove {
+  opacity: 1;
+}
+
+.memory-remove:hover {
+  color: #f56c6c;
+  background: #fef0f0;
 }
 
 /* ====== 暗色 ====== */
-html.dark .profile-banner { background: linear-gradient(135deg, #1e3a5f 0%, #1a3555 50%, #162d47 100%); }
+html.dark .profile-banner { background: #1e3a5f; }
 html.dark .display-name { color: #e2e8f0; }
 html.dark .stat-card, html.dark .section-card { background: #1e293b; }
 html.dark .stat-value { color: #e2e8f0; }
@@ -757,8 +791,21 @@ html.dark .info-item { border-bottom-color: #2d3748; }
 html.dark .info-value { color: #cbd5e1; }
 html.dark .info-label { color: #64748b; }
 html.dark .section-hint { color: #64748b; }
-html.dark .memory-item { border-bottom-color: #2d3748; }
+html.dark .memory-item {
+  background: #18212f;
+  border-color: #2d3748;
+}
+html.dark .memory-item:hover {
+  background: #1e293b;
+  border-color: #3f4d63;
+  box-shadow: none;
+}
 html.dark .memory-key { color: #e2e8f0; }
 html.dark .memory-value { color: #94a3b8; }
 html.dark .memory-time { color: #64748b; }
+html.dark .memory-remove { color: #64748b; }
+html.dark .memory-remove:hover {
+  color: var(--el-color-danger, #f56c6c);
+  background: rgba(245, 108, 108, 0.12);
+}
 </style>

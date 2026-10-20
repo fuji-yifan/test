@@ -11,21 +11,26 @@ const ROLE_MAP: Record<string, string> = {
 /** 全部权限点集合——用于判断是否等于全权限 */
 const ALL_PERMISSION_KEYS = [
   'form:create', 'form:edit', 'form:publish', 'form:archive', 'form:copy', 'form:delete',
-  'submission:view', 'submission:edit', 'submission:delete', 'submission:export',
+  'submission:view', 'submission:delete', 'submission:export',
   'analytics:view',
   'template:create', 'template:edit', 'template:delete',
-  'workflow:manage', 'workflow:edit', 'workflow:delete', 'workflow:start', 'workflow:withdraw', 'workflow:remove',
+  'workflow:manage', 'workflow:edit', 'workflow:publish', 'workflow:unpublish', 'workflow:delete',
   'task:approve', 'task:reject', 'task:transfer',
   'member:invite', 'member:role', 'member:remove',
   'role:create', 'role:edit', 'role:delete',
   'audit:view', 'audit:export', 'audit:cleanup',
-  'webhook:manage', 'upload:manage',
 ]
 
 const KNOWN_PERMISSIONS = new Set(ALL_PERMISSION_KEYS)
 
 /** 权限 key → 矩阵中的序号，用于排序 */
 const PERMISSION_ORDER = new Map(ALL_PERMISSION_KEYS.map((k, i) => [k, i]))
+
+/** 权限集合是否等价（顺序无关）——用来判断系统角色是否被改动过 */
+function samePermissions(a: unknown, b: unknown): boolean {
+  const norm = (v: unknown) => (Array.isArray(v) ? [...(v as string[])].sort().join('\u0000') : '')
+  return norm(a) === norm(b)
+}
 
 /** 过滤已从权限矩阵中移除的脏权限，并按矩阵顺序排序 */
 function cleanPermissions(permissions: unknown): string[] {
@@ -71,9 +76,11 @@ export class RbacService {
       legacyEditorRole.isSystem = false
     }
 
-    // 修正旧的"查看者"拥有非空权限，改为空权限
+    // "查看者"的权限恒为空（系统角色的定义）：这里只是兜底把历史脏数据抹平。
+    // 闸口在写入口 updateRole —— 那边直接 403，所以不会再出现「改得动、刷新就没了」；
+    // 前端也据此把矩阵里这一行锁掉。
     const legacyViewerRole = workspaceRoles.find(
-      (r) => r.isSystem && r.name === '查看者' && Array.isArray(r.permissions) && (r.permissions as string[]).length > 0,
+      (r) => r.isSystem && r.name === ROLE_MAP.viewer && Array.isArray(r.permissions) && (r.permissions as string[]).length > 0,
     )
     if (legacyViewerRole) {
       await this.prisma.role.update({ where: { id: legacyViewerRole.id }, data: { permissions: [] } })
@@ -103,7 +110,7 @@ export class RbacService {
     // 确保每个成员有且仅有一个正确的 RBAC 角色
     for (const m of members) {
       const current = await this.prisma.userRole.findMany({ where: { userId: m.userId, roleId: { in: roleIds } } })
-      const targetRole = workspaceRoles.find((r) => r.name === ROLE_MAP[m.role])
+      const targetRole = workspaceRoles.find((r) => r.name === (ROLE_MAP[m.role] ?? m.role))
       const ok = current.length === 1 && targetRole && current[0].roleId === targetRole.id
       if (!ok) {
         await this.prisma.userRole.deleteMany({ where: { userId: m.userId, roleId: { in: roleIds } } })
@@ -149,13 +156,25 @@ export class RbacService {
     })
   }
 
-  async updateRole(id: string, dto: { name?: string; permissions?: string[] }, userId?: string) {
+  async updateRole(id: string, dto: { name?: string; permissions?: string[] }) {
     const role = await this.prisma.role.findUnique({ where: { id } })
     if (!role) throw new NotFoundException('角色不存在')
+
+    // 系统角色（创建者 / 查看者）一概不可编辑，owner 也不行：
+    // 名字是查表键 —— ROLE_MAP 在 syncRbacRole / normalizeMemberRoles 里按名字找角色，
+    // 改名会让该角色下所有成员的 RBAC 分配静默落空；权限同理（创建者恒为 *、查看者恒为空）。
+    // 判定放在写入口，不再靠 normalizeMemberRoles 读时抹掉（那样前端会先乐观显示"已更新"、
+    // 刷新后被还原，看起来像随机失效）。
     if (role.isSystem) {
-      const isOwner = await this.isWorkspaceOwner(role.workspaceId, userId)
-      if (!isOwner) throw new ForbiddenException('系统角色不能编辑')
+      if (dto.name !== undefined && dto.name.trim() !== role.name) {
+        throw new ForbiddenException(`系统角色「${role.name}」的名称不可修改`)
+      }
+      if (dto.permissions !== undefined && !samePermissions(dto.permissions, role.permissions)) {
+        throw new ForbiddenException(`系统角色「${role.name}」的权限不可修改`)
+      }
+      return role // 传了同值，视为无变化，不必写库
     }
+
     // 禁止将其他角色升级为全权限（创建者角色已存在且唯一）
     const isAllPerm = dto.permissions?.includes('*') || (dto.permissions && dto.permissions.length >= ALL_PERMISSION_KEYS.length)
     if (isAllPerm) {
@@ -173,13 +192,12 @@ export class RbacService {
     return result
   }
 
-  async deleteRole(id: string, userId?: string) {
+  async deleteRole(id: string) {
     const role = await this.prisma.role.findUnique({ where: { id } })
     if (!role) throw new NotFoundException('角色不存在')
-    if (role.isSystem) {
-      const isOwner = await this.isWorkspaceOwner(role.workspaceId, userId)
-      if (!isOwner) throw new ForbiddenException('系统角色不能删除')
-    }
+    // 系统角色不可删除（对所有人，含 owner）：删掉创建者就没人拥有全权限，删掉查看者
+    // 会让 syncRbacRole 找不到目标角色而给成员留下空权限
+    if (role.isSystem) throw new ForbiddenException(`系统角色「${role.name}」不可删除`)
     const result = await this.prisma.role.delete({ where: { id } })
     if (role) {
       await this.cache.invalidateUserPermissions(role.workspaceId)
@@ -207,15 +225,6 @@ export class RbacService {
       await this.cache.invalidateUserPermissions(role.workspaceId, userId)
     }
     return result
-  }
-
-  private async isWorkspaceOwner(workspaceId: string, userId?: string): Promise<boolean> {
-    if (!userId) return false
-    const member = await this.prisma.workspaceMember.findUnique({
-      where: { workspaceId_userId: { workspaceId, userId } },
-      select: { role: true },
-    })
-    return member?.role === 'owner'
   }
 
   async getUserPermissions(workspaceId: string, userId: string): Promise<string[]> {
@@ -269,7 +278,6 @@ export class RbacService {
       { key: 'form:copy', label: '复制表单', group: '表单' },
       { key: 'form:delete', label: '删除表单', group: '表单' },
       { key: 'submission:view', label: '查看表单数据', group: '数据' },
-      { key: 'submission:edit', label: '编辑表单数据', group: '数据' },
       { key: 'submission:delete', label: '删除表单数据', group: '数据' },
       { key: 'submission:export', label: '导出表单数据', group: '数据' },
       { key: 'analytics:view', label: '查看数据分析', group: '数据' },
@@ -278,10 +286,9 @@ export class RbacService {
       { key: 'template:delete', label: '删除模板', group: '模板' },
       { key: 'workflow:manage', label: '新建流程', group: '流程' },
       { key: 'workflow:edit', label: '修改流程', group: '流程' },
+      { key: 'workflow:publish', label: '发布流程', group: '流程' },
+      { key: 'workflow:unpublish', label: '撤回流程', group: '流程' },
       { key: 'workflow:delete', label: '删除流程', group: '流程' },
-      { key: 'workflow:start', label: '启动流程', group: '流程' },
-      { key: 'workflow:withdraw', label: '撤回流程', group: '流程' },
-      { key: 'workflow:remove', label: '删除实例', group: '流程' },
       { key: 'task:approve', label: '通过审批', group: '任务' },
       { key: 'task:reject', label: '驳回审批', group: '任务' },
       { key: 'task:transfer', label: '转交审批', group: '任务' },
@@ -294,11 +301,14 @@ export class RbacService {
       { key: 'audit:view', label: '查看审计日志', group: '日志' },
       { key: 'audit:export', label: '导出审计日志', group: '日志' },
       { key: 'audit:cleanup', label: '清理审计日志', group: '日志' },
-      { key: 'webhook:manage', label: '管理 Webhook', group: '集成' },
-      { key: 'upload:manage', label: '管理文件', group: '集成' },
     ]
 
-    return { roles, allPermissions }
+    // permissionsLocked 是给前端的锁行信号：系统角色的权限恒由系统固定（创建者 *、查看者空），
+    // 矩阵里整行不给点，避免点了才被服务端 403
+    return {
+      roles: roles.map((r) => ({ ...r, permissionsLocked: r.isSystem })),
+      allPermissions,
+    }
   }
 
   /** 获取默认系统角色定义 */

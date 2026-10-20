@@ -34,7 +34,7 @@
         <div class="matrix-wrapper">
           <table class="matrix-table">
             <thead>
-              <tr class="tr-group">
+              <tr>
                 <th
                   class="col-role"
                   rowspan="2"
@@ -74,7 +74,14 @@
                 :key="role.id"
               >
                 <td class="col-role">
-                  {{ role.name }}
+                  <el-tooltip
+                    v-if="role.permissionsLocked"
+                    :content="`${role.name}为系统角色，权限不可修改`"
+                    placement="right"
+                  >
+                    <span class="role-name-locked">{{ role.name }}</span>
+                  </el-tooltip>
+                  <template v-else>{{ role.name }}</template>
                 </td>
                 <template
                   v-for="group in permGroups"
@@ -84,8 +91,8 @@
                     v-for="p in group.perms"
                     :key="p.key"
                     class="td-check"
-                    :class="{ 'td-check--active': hasPerm(role, p.key), 'td-check--locked': role.isSystem && !isOwner }"
-                    @click="(role.isSystem && !isOwner) ? undefined : toggleMatrixPerm(role, p.key)"
+                    :class="{ 'td-check--active': hasPerm(role, p.key), 'td-check--locked': isCellLocked(role) }"
+                    @click="isCellLocked(role) ? undefined : toggleMatrixPerm(role, p.key)"
                   >
                     <el-icon
                       v-if="hasPerm(role, p.key)"
@@ -270,7 +277,6 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check } from '@element-plus/icons-vue'
 import http from '@/api/client'
-import { useWorkspaceStore } from '@/stores/workspace'
 import type { Role } from '@/types/models'
 
 interface PermissionMatrix {
@@ -279,9 +285,7 @@ interface PermissionMatrix {
 }
 
 const route = useRoute()
-const wsStore = useWorkspaceStore()
 const wsId = computed(() => route.params.wsId as string)
-const isOwner = computed(() => wsStore.current?.role === 'owner')
 const loading = ref(true)
 const roles = ref<Role[]>([])
 const matrix = ref<PermissionMatrix>({ roles: [], allPermissions: [] })
@@ -306,6 +310,7 @@ const permGroups = [
   ]},
   { group: '流程', perms: [
     { key: 'workflow:manage', label: '新建流程' }, { key: 'workflow:edit', label: '修改流程' },
+    { key: 'workflow:publish', label: '发布流程' }, { key: 'workflow:unpublish', label: '撤回流程' },
     { key: 'workflow:delete', label: '删除流程' },
   ]},
   { group: '任务', perms: [
@@ -340,6 +345,14 @@ watch(() => matrix.value.allPermissions, (perms) => {
 function hasPerm(role: Role, key: string) {
   const perms = role.permissions || []
   return perms.includes('*') || perms.includes(key)
+}
+
+/**
+ * 矩阵单元格是否不可点：服务端标记 permissionsLocked 的系统角色（创建者恒为全权限、查看者恒为空）
+ * 权限一律锁死，对所有人锁，含 owner —— 点了也是服务端 403
+ */
+function isCellLocked(role: Role) {
+  return !!role.permissionsLocked
 }
 
 function isGroupAllChecked(g: typeof permGroups[0]) { return g.perms.every(p => form.permissions.includes(p.key)) }
@@ -442,40 +455,43 @@ async function deleteRole(row: Role) {
 .page-header h2 { margin: 0; }
 .section-card { margin-bottom: 16px; }
 
-/* 矩阵 */
+/* 矩阵：配色 / 圆角 / 字号都对齐项目里的 el-table（表头 #fafbfc 13px、边框 --app-border-color、radius-lg）。
+   wrapper 的 overflow:hidden 不能省：圆角容器套着方形表头单元格，不在角上裁一刀，#fafbfc 会盖过圆角，
+   上边框在左、右两端看起来就是断的（单元格只画右/下边框，上/左由 wrapper 的边框出）。 */
 .matrix-scroll { overflow-x: auto; }
-.matrix-wrapper { border-radius: 8px; border: 1px solid var(--app-border-color); display: inline-block; min-width: 100%; }
-.matrix-table { border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.matrix-wrapper {
+  border: 1px solid var(--app-border-color);
+  border-radius: var(--app-radius-lg);
+  overflow: hidden;
+  display: inline-block;
+  min-width: 100%;
+}
+.matrix-table { border-collapse: separate; border-spacing: 0; font-size: 13px; }
 .matrix-table th, .matrix-table td { border-right: 1px solid var(--app-border-color); border-bottom: 1px solid var(--app-border-color); padding: 6px 10px; white-space: nowrap; text-align: center; }
 .matrix-table th:last-child, .matrix-table td:last-child { border-right: none; }
 .matrix-table tr:last-child td { border-bottom: none; }
-.matrix-table thead th { background: #fafbfc; font-weight: 600; color: #303133; }
+.matrix-table thead th { background: #fafbfc; font-weight: 600; color: var(--app-text-regular); }
 .col-role { min-width: 100px; text-align: center; font-weight: 600; }
-.tr-group th { border-bottom-width: 2px; }
-.th-group { text-align: center; font-size: 13px; padding: 8px 16px; color: #1f2937; }
-.th-perm { text-align: center; font-size: 11px; font-weight: 500; color: #606266; padding: 4px 10px; }
+/* 锁定行（系统角色）整行不可点，角色名给个 not-allowed 光标提示原因（tooltip 里有文案） */
+.role-name-locked { cursor: not-allowed; }
+.th-group { text-align: center; font-size: 13px; padding: 8px 16px; color: var(--app-text-primary); }
+.th-perm { text-align: center; font-size: 12px; font-weight: 500; color: var(--app-text-regular); padding: 4px 10px; }
 .td-check { text-align: center; cursor: pointer; transition: background 0.15s; }
 .td-check:hover { background: #ecf5ff; }
 .td-check--active { background: #ecf5ff; }
 .td-check--locked { cursor: not-allowed; opacity: 0.5; }
 .td-check--locked:hover { background: transparent; }
-.edit-btn { margin-left: 4px; }
-.system-hint { color: #909399; font-size: 12px; }
-.no-perm-hint { color: #c0c4cc; font-size: 12px; }
+.system-hint { color: var(--app-text-secondary); font-size: 12px; }
+.no-perm-hint { color: var(--app-text-secondary); font-size: 12px; }
 
 /* 新建对话框 */
 .perm-container { display: flex; flex-direction: column; }
 .perm-group { border: 1px solid var(--app-border-color); border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
-.perm-group-header { padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid #f2f3f5; }
-.group-name { font-weight: 600; font-size: 14px; color: #303133; }
+.perm-group-header { padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--app-border-color); }
+.group-name { font-weight: 600; font-size: 14px; color: var(--app-text-primary); }
 .perm-children { display: flex; flex-wrap: wrap; gap: 4px 20px; }
 
-html.dark .matrix-table th, html.dark .matrix-table td { border-color: #334155; }
-html.dark .matrix-table thead th { background: #1e293b; color: #cbd5e1; }
-html.dark .perm-group { border-color: #334155; }
-html.dark .perm-group-header { border-bottom-color: #334155; }
-html.dark .group-name { color: #e2e8f0; }
-html.dark .th-group { color: #e2e8f0; }
+html.dark .matrix-table thead th { background: var(--app-bg-card); }
 html.dark .td-check:hover { background: #1a3a5c; }
 html.dark .td-check--active { background: #1a3a5c; }
 </style>

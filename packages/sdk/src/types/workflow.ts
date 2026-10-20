@@ -26,7 +26,7 @@ export interface ProcessDefinition {
   name: string
   description?: string
   version: number
-  status: 'draft' | 'published' | 'archived'
+  status: 'draft' | 'published'
   nodes: ProcessNode[]
   edges: ProcessEdge[]
   settings: ProcessSettings
