@@ -26,7 +26,6 @@
   | `feat/server-stage6-s6-openbao` | `9fcaff3` | **S6.2 OpenBao 密钥装载** |
 
 - **✅ 在手范围（阶段 0–8）全部完成**；上表各分支**均已合并入 `master`**（线性历史，无需再合并）；代码已 push 到 `origin/master`（`8d51fa7`），真机灰度完成（2026-10-20，`SESSION_STORE=mysql`）。
-- **不再做**：SOPS（2026-10-19 决定移出计划）；其余推迟项（8.5 RAG、MCP、阶段 7 D3/D4/D5）见 `docs/AGENT_BACKLOG.md`。
 - 验证：agent `vitest` **1058 全绿**（34 文件）；三端 `tsc`（server/agent + web `vue-tsc`）**全部干净**；server 真机启动 **DI 全解析**（本轮实测，仅因 3000 端口被占未 bind）。
   **2026-10-19 全量复跑**：agent `vitest` **1072 全绿**（33 文件）+ 三端 `tsc` 干净。
   **2026-10-20 收尾复跑**：agent `vitest` **1101 全绿**（34 文件）+ 三端 `tsc` 干净。
@@ -115,8 +114,6 @@ sidecar 需实现的约定：`POST {stage:"input"|"output", text}` → `200 {all
 | **不配时行为** | 与今天一致：启动不拉密钥、不额外外呼 |
 | **配上后行为** | 启动时 `GET ${ADDR}/v1/<path>`（`X-Vault-Token`），兼容 **KV-v2**(`data.data`)/**KV-v1**(`data`)；**仅当 `process.env[k] === undefined` 时写入**（真 env 优先，绝不覆盖）；开发拉取失败仅 `warn` 继续，**生产失败即终止启动**。加载**先于** JWT 密钥守卫执行，故生产「缺强密钥」仍会 fail-fast |
 
-SOPS 属文件/二进制方案（引入需新依赖与密钥管理体系），**2026-10-19 决定移出计划、不做**；本轮**只做 OpenBao**。
-
 ### 1.7 阶段 4 · 只读工具结果缓存（已存在，配 env 即生效）
 
 | | |
@@ -125,15 +122,6 @@ SOPS 属文件/二进制方案（引入需新依赖与密钥管理体系），**
 | **env**（`apps/agent/.env`） | `REDIS_HOST`、`REDIS_PORT`、`TOOL_CACHE_TTL_SECONDS=60`、`TOOL_CACHE_ENABLED=true` |
 | **默认 / 不配** | `REDIS_HOST` 空 → 缓存整体 **no-op**（等于现状） |
 | **配上后** | `data_query`/`template_search` 二次相同查询命中缓存、不打后端 |
-
-### 1.8 明确「不涉及 / 推迟」的项
-
-| 项 | 结论 |
-|---|---|
-| **S1.2 RLS 行级安全** | **N/A**：本仓是 MySQL（无 RLS），已用**应用层 fail-closed** 替代（S1.3 已落地）。**本轮不写代码** |
-| **SOPS 密钥加密** | **不做**（2026-10-19 用户决定移出计划）：需额外 `sops` 二进制 + age/KMS 密钥管理；OpenBao 已覆盖运行时密钥装载 |
-| **8.5 知识沉淀 RAG** | **推迟**：需嵌入模型 + 向量库选型（产品决策），不在本轮 |
-| **MCP** | **另立项**，不在本计划内 |
 
 ---
 

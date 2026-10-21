@@ -16,9 +16,9 @@
 | 3 | 持久化（会话/执行权/幂等） | ✅ 切片 A/B/C 全部完成（§3.2；分支 `feat/agent-session-mysql`）：**A** 会话落 MySQL（`7b8255f`）；**B** 执行权租约（行锁+TTL+心跳，`dfc3fc2`）；**C** 幂等下沉（server 唯一键，`94ccd1e`）。**已合 master（2026-10-14）**；已 push（`8d51fa7`）、已灰度（2026-10-20） |
 | 4 | 成本（token 预算 + usage + **缓存**） | ✅ 完成（§3.3；分支 `feat/agent-stage4-cost`，叠于阶段 3）；`vitest` 908 全绿 + `tsc` 干净。**已合 master（2026-10-14）**；已 push（`8d51fa7`）、已灰度（2026-10-20） |
 | 5 | 业务落地（寻址/diff/撤销） | ✅ 完成（§3.4；分支 `feat/agent-stage5-business`，叠于阶段 4）；`vitest` 931 全绿 + `tsc` 干净。**已合 master（2026-10-14）**；已 push（`8d51fa7`）、已灰度（2026-10-20） |
-| 6 | 安全（提示注入/审计/配额）+ **兜底与降级** | ✅ 完成（§3.5）：**S1（RLS 除外）+ S2（agent 工具审计落库 + server 登录/权限拒绝审计 S2.4）+ S3.3 + S4（软删除/回收站/删除工具 HITL/防覆盖推广）+ S5.1 + S7**＝「整套无外部依赖项」；分支 `feat/agent-stage6-security`（已合 master，2026-10-14）+ `feat/agent-stage6-s2-audit` + `feat/agent-stage6-auth-audit` + `feat/agent-stage6-antidelete`。**2026-10-14 追加：需外部基建的 S2.3/S3.1/S3.2/S5.2/S6.1/S6.2(OpenBao) 全部实现为 env-gated 适配钩子**（不配即 no-op）——分支 `feat/agent-stage6-s3-policy`(S3.1+S3.2) → `feat/agent-stage6-s2-tracing`(S2.3) → `feat/agent-stage6-s5-guardrails`(S5.2) → `feat/server-stage6-s6-ratelimit`(S6.1) → `feat/server-stage6-s6-openbao`(S6.2)，线性叠于上；`vitest` **1058 全绿** + 三端 `tsc` 干净 + server 真机启动 DI 全解析。**仅剩** RLS（N/A，MySQL 无 RLS）、8.5 RAG（推迟）、MCP（另立项）；**SOPS 已于 2026-10-19 决定不做、移出计划**（改为 OpenBao 单方案）。全链（含外部基建适配钩子）**已线性合入 master**；**已 push（`8d51fa7`）、已灰度（2026-10-20）**。2026-10-19 全量复跑：`vitest` **1072 全绿**（33 文件）+ 三端 `tsc` 干净 |
-| 7 | 技能管理 | ✅ 完成（本轮 D1 + D2；§3.6；分支 `feat/agent-stage7-skills`，叠于阶段 6）：frontmatter + 技能↔工具绑定校验；`vitest` 962 全绿 + `tsc` 干净；**已合 master（2026-10-14）**；已 push（`8d51fa7`）、已灰度（2026-10-20）。D3/D4/D5 已归纳进 **`docs/AGENT_BACKLOG.md`**（以后再做） |
-| 8 | **长期记忆（用户级）+ 知识沉淀 + MCP** | ◐ 长期记忆 8.1–8.4 完成（§3.7；分支 `feat/agent-stage8-memory`，叠于阶段 7）：表 + 提取 + 召回 + 查看/删除；`vitest` 992 全绿 + 三端 `tsc` 干净；**已合 master（2026-10-14）**；已 push（`8d51fa7`）、已灰度（2026-10-20）。**8.5 RAG 推迟**（无嵌入/向量基建），MCP 仍留后 |
+| 6 | 安全（提示注入/审计/配额）+ **兜底与降级** | ✅ 完成（§3.5）：**S1 + S2（agent 工具审计落库 + server 登录/权限拒绝审计 S2.4）+ S3.3 + S4（软删除/回收站/删除工具 HITL/防覆盖推广）+ S5.1 + S7**＝「整套无外部依赖项」；分支 `feat/agent-stage6-security`（已合 master，2026-10-14）+ `feat/agent-stage6-s2-audit` + `feat/agent-stage6-auth-audit` + `feat/agent-stage6-antidelete`。**2026-10-14 追加：需外部基建的 S2.3/S3.1/S3.2/S5.2/S6.1/S6.2(OpenBao) 全部实现为 env-gated 适配钩子**（不配即 no-op）——分支 `feat/agent-stage6-s3-policy`(S3.1+S3.2) → `feat/agent-stage6-s2-tracing`(S2.3) → `feat/agent-stage6-s5-guardrails`(S5.2) → `feat/server-stage6-s6-ratelimit`(S6.1) → `feat/server-stage6-s6-openbao`(S6.2)，线性叠于上；`vitest` **1058 全绿** + 三端 `tsc` 干净 + server 真机启动 DI 全解析。全链（含外部基建适配钩子）**已线性合入 master**；**已 push（`8d51fa7`）、已灰度（2026-10-20）**。2026-10-19 全量复跑：`vitest` **1072 全绿**（33 文件）+ 三端 `tsc` 干净 |
+| 7 | 技能管理 | ✅ 完成（本轮 D1 + D2；§3.6；分支 `feat/agent-stage7-skills`，叠于阶段 6）：frontmatter + 技能↔工具绑定校验；`vitest` 962 全绿 + `tsc` 干净；**已合 master（2026-10-14）**；已 push（`8d51fa7`）、已灰度（2026-10-20） |
+| 8 | **长期记忆（用户级）** | ✅ 长期记忆 8.1–8.4 完成（§3.7；分支 `feat/agent-stage8-memory`，叠于阶段 7）：表 + 提取 + 召回 + 查看/删除；`vitest` 992 全绿 + 三端 `tsc` 干净；**已合 master（2026-10-14）**；已 push（`8d51fa7`）、已灰度（2026-10-20） |
 
 ---
 
@@ -61,7 +61,7 @@ Agent 服务已具备完整骨架（LangGraph 父子图、自研 MySQL checkpoin
 |---|---|---|---|---|---|
 | 1 | 上下文与成本 | 有 | 部分 | `tool-bridge.ts` 结果头尾截断（`MAX_TOOL_RESULT_CHARS`）；`agent-state.ts` 图内只留本轮对话；`done.usage` 计量 | 截断按**字符**非 token；`usage` 只记不用；**对话级状态缺失** |
 | 2 | 幂等与并发 | 有 | 偏弱 | `ToolGateway.completedRequestIds`；`session.service.ts` 抢占式 `acquireRun/releaseRun` | 全部**单进程内存**；`SessionStore` 默认 `memory`；重启/多副本即失效 |
-| 3 | 失败迭代 | 有 | 手工为主 | `test/cases.md` 15+ 缺陷台账 | 无自动回归/评测 |
+| 3 | 失败迭代 | 有 | 手工为主 | `docs/AGENT_MANUAL_TEST_CASES.md` 15+ 缺陷台账 | 无自动回归/评测 |
 | 4 | 业务落地 | 有 | 扎实 | 会话级表单工作台 + `target` 寻址；`fields`/`removeFields` 增量改表；SDK `flow-layout.ts` 预览与落库统一；模板 Agent 无写权限边界 | 寻址按**标题字符串**匹配；无变更 diff / 撤销 |
 | 5 | 安全与隔离 | 有 | 部分 | 工具注入 token/workspaceId；`resume` 身份回填；风险分级 + 确认门；server 侧 RBAC/行级 | 工具输出当**可信输入**（提示注入）；审计仅内存；限流为全局 |
 
@@ -74,13 +74,11 @@ Agent 服务已具备完整骨架（LangGraph 父子图、自研 MySQL checkpoin
 | **安全合规** | 阶段 6（§3.5） | ✅ 覆盖（身份 / 审计 / 策略 / 软删 / 注入 / 限流） |
 | **降本增效** | 阶段 4（§3.3 成本 + 缓存）+ 阶段 3（§3.2 并发/幂等增效） | ✅ 基本覆盖 |
 | **记忆联动** | 阶段 1（§2 + §2.11）+ 1b（§2.12）+ 阶段 8（§3.7） | ✅ 会话内已做；**跨会话长期记忆升级为阶段 8 正式设计** |
-| **技能管理** | 阶段 7（§3.6） | ✅ **D1 + D2 已落地**（frontmatter + 绑定校验）；D3/D4/D5 随依赖阶段 |
-| **知识沉淀** | 阶段 8（§3.7） | ⬜ **已从占位升级为正式设计**（MCP 仍留后） |
+| **技能管理** | 阶段 7（§3.6） | ✅ **D1 + D2 已落地**（frontmatter + 绑定校验） |
 
-> **2026-10-10 用户决定**：MCP 留到下一个项目；**记忆联动**当时定为只做会话内，要求「会话任意长都能联动 +
+> **2026-10-10 用户决定**：**记忆联动**当年定为只做会话内，要求「会话任意长都能联动 +
 > 同一会话内换 Agent 仍完全理解上下文」（见 §2.11）。
-> **2026-10-13 更新**：**长期 / 跨会话记忆升级为正式设计**（阶段 8 §3.7，用户级 `UserMemory`），
-> 知识沉淀随之正式化；**仅 MCP 仍留到下个项目**。
+> **2026-10-13 更新**：**长期 / 跨会话记忆升级为正式设计**（阶段 8 §3.7，用户级 `UserMemory`）。
 
 ---
 
@@ -368,7 +366,7 @@ buildStateBar(meta)  ← 纯函数，代码维护，不调 LLM
 
 > 定位：§2.1–2.10 的 StateBar 是「结构化状态」层；本节把它升格为统一的 **SessionMemory**，
 > 满足两条硬要求：(a) **不论会话多长**，整体都能记忆联动；(b) 同一会话内 **Agent 身份如何切换**，
-> 都读到同一份上下文。（知识沉淀 / 长期跨会话记忆不在本阶段；**已提为阶段 8 正式设计，见 §3.7**。）
+> 都读到同一份上下文。（长期跨会话记忆不在本阶段；**已提为阶段 8 正式设计，见 §3.7**。）
 
 **三层记忆模型**
 
@@ -567,16 +565,16 @@ buildStateBar(meta)  ← 纯函数，代码维护，不调 LLM
 - 脚本化 LLM 替身 `ScriptedLlm`（`test/graph-flow.spec.ts:153`）：构造入参为脚本数组
   `{content?, calls?:[{id,name,args}]}`，`withTools().invoke(messages)` 按光标逐轮返回 `AIMessage`
   并记录 `seen`；配套 `FakeGateway`/`FakeRegistry` 与 `buildHarness()`（:185）。**目前仅此一处私有**。
-- `test/cases.md`（336 行）主用例表已有编号（F/T/W/R/C/E/D/H/S）+「期望 Agent / 期望行为」列，
+- `docs/AGENT_MANUAL_TEST_CASES.md`（381 行）主用例表已有编号（F/T/W/R/C/E/D/H/S）+「期望 Agent / 期望行为」列，
   **已是 eval 的数据源**。
 - vitest：`apps/agent/package.json` `test:checkpoint` = `vitest run --config vitest.config.mts`。
 
 **缺口**：无 CI 编排（`.github/workflows` 不存在；turbo 无 test 任务；根 `package.json` 无 test）；
-`ScriptedLlm` 私有不可复用；cases.md 是人工台账，**没有被 headless 断言锁住**。
+`ScriptedLlm` 私有不可复用；AGENT_MANUAL_TEST_CASES.md 是人工台账，**没有被 headless 断言锁住**。
 
 **设计决策**
 - **D1 抽公共 testkit**：把 `ScriptedLlm` + `buildHarness` 提到 `test/harness/`，供 eval 与既有 spec 共用。
-- **D2 eval 用例集**：从 cases.md 提炼**机器可读**用例 `test/eval/*.cases.ts`
+- **D2 eval 用例集**：从 AGENT_MANUAL_TEST_CASES.md 提炼**机器可读**用例 `test/eval/*.cases.ts`
   （`{name, input, page, prior?, expected:{agent, artifacts?}}`）。
 - **D3 断言口径**：eval 只锁**确定性行为**（`route.agent`、是否产 artifact），**不锁 LLM 兜底质量**。
 - **D4 CI**：GitHub Actions 跑 `vitest run`；turbo 补 `test` 任务。
@@ -587,14 +585,14 @@ buildStateBar(meta)  ← 纯函数，代码维护，不调 LLM
    「设计一个表单」切 form-designer，以及 F 系列路由用例。（原写「创建客户表」不命中 STRONG，见 §2.9 勘误。）
 3. `test/eval/eval.spec.ts`：遍历用例 → 跑 harness → 断言 `route.agent`/`artifacts`。
 4. `.github/workflows/agent.yml`：install → `vitest run`（PR/push 触发）；`turbo.json` 加 `test` 任务。
-5. `cases.md` 每条用例标注对应 eval 用例名，双向可追。
+5. `AGENT_MANUAL_TEST_CASES.md` 每条用例标注对应 eval 用例名，双向可追。
 
 **任务清单**
 - [x] 2.1 抽 `test/harness/`（`fakes.ts` + `harness.ts`；`buildHarness` 的 saver 改为可注入）并迁移 graph-flow.spec
 - [x] 2.2 建 `test/eval/routing.cases.ts`（11 条，含 §2.9 两条 M1/M2）
 - [x] 2.3 `test/eval/eval.spec.ts` runner + 确定性断言（`route.agent` / `isCrossDomain` / `plan.steps`）
 - [x] 2.4 `.github/workflows/agent.yml`（MySQL service）+ turbo/root `test` 任务
-- [x] 2.5 cases.md §2.1 双向对照表
+- [x] 2.5 AGENT_MANUAL_TEST_CASES.md §2.1 双向对照表
 
 > **2026-10-11 落地记录**：`@furmx/agent` 的 `test` 脚本由 jest（空跑）改为 vitest；
 > 根 `pnpm test` = `turbo run test`（跑 agent + sdk）；CI 入口是 vitest 不是 jest。
@@ -658,7 +656,7 @@ LLM 兜底质量靠阶段 6 的观测（Langfuse）抽样，不靠 eval。
 - **原子获取**：单条 `INSERT ... ON DUPLICATE KEY UPDATE` 做条件 steal（`expires_at<now OR owner=me`），写后 `SELECT owner` 回读判 owner==me（无需让 `SqlExecutor` 暴露 affectedRows）。注意 MySQL 表达式按左→右用**已更新值**求值，故 `owner` 必须写在 `expires_at` 之前。
 - **`SessionService`**：新增 `instanceId` / `SessionBusyError`；`acquireRun` = 顶部**同步 abort 上一轮** → `ensureLease`（抢不到回绝）→ 原有内存接管；`releaseRun` 命中持有者时额外释放租约；持锁期间 `setInterval(TTL/3)` 心跳续期，`renewLease` 返回 false（被判死/被夺）→ 本地 `abort()` 自退；`OnModuleDestroy` 清 timer。
 - **跨副本语义（用户拍板「安全优先」）**：另一副本持**活**租约时轮询等其释放/过期（≤ waitMs=15s），等不到抛 `SessionBusyError`（`hub.controller` 的 catch 转成 `ERROR`+`DONE`，**无需改 controller**）；**绝不跨副本强制抢**（跨进程无法 abort 对方正在跑的 run，硬抢会双写图）。崩溃留下的死锁由 TTL 过期自动回收。
-- **降级/回滚**：`SESSION_STORE=memory/sqlite` 或 MySQL 连不上 → 租约层静默降级为纯内存（等于现状）；`SESSION_LEASE_ENABLED=false` 关闭租约。TTL 默认 30s、心跳 10s，可配。
+- **降级/回滚**：`SESSION_STORE=memory` 或 MySQL 连不上 → 租约层静默降级为纯内存（等于现状）；`SESSION_LEASE_ENABLED=false` 关闭租约。TTL 默认 30s、心跳 10s，可配。
 - **配置**：`configuration.ts` + `.env.example` 加 `SESSION_LEASE_ENABLED` / `SESSION_LEASE_TTL_MS`(30000) / `SESSION_LEASE_HEARTBEAT_MS`(10000) / 可选 `SESSION_INSTANCE_ID`。
 - **测试**：`test/session-lease.spec.ts`（7，纯逻辑：抢到放行/抢不到回绝/心跳续期/renew 失败自退/只持有者释放/降级/同实例抢占后继任轮仍持锁）、`test/session-lease-mysql.spec.ts`（4，真库两实例：并发互斥/TTL 过期自愈/非 owner 无效）；既有 `session-preempt.spec.ts` 5 条不变式继续绿。全量 **886 条 / 13 文件绿**，`tsc --noEmit` 干净。
 - **取租约的时机**：必须在**进程内接管完成之后**。owner 是进程级共享，被抢占的上一轮让位时会走 `releaseRun` 释放「它以为的」租约；若继任轮提前取好，会被上一轮顺手删掉、心跳也被清，继任轮脱锁运行。已加回归单测锁死（`同实例抢占：被抢占轮让位后，继任轮仍持有租约与心跳`）。
@@ -843,22 +841,19 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 | 提示注入 | NeMo Guardrails（Python sidecar） | 工具输出「不可信封装」纯函数 `wrapUntrusted()` |
 | 敏感信息 | （可选）Presidio；或纯自研规则 | 结合表单字段类型的脱敏规则、`sanitizeArgs` 落地 |
 | 授权 | Cerbos / OPA 策略引擎 | 策略**内容**（删除需确认 / 批量阈值 / 跨租户拒绝） |
-| 数据隔离 | PostgreSQL 行级安全（RLS） | RLS policy + Prisma 会话变量注入 |
+| 数据隔离 | 应用层 fail-closed（成员关系显式断言） | 行级 where 构造 + 校验拦截 |
 | 审计追踪 | OpenTelemetry → Langfuse（自托管） | Agent 审计落库、身份贯通、append-only |
-| 密钥 | OpenBao（MPL-2.0；SOPS 已移出计划） | 生产禁 `dev-secret` 启动守卫 |
+| 密钥 | OpenBao（MPL-2.0） | 生产禁 `dev-secret` 启动守卫 |
 | 限流 | @nestjs/throttler（MIT） | 按 workspace / 用户的配额（Redis 令牌桶） |
 
 #### S1 身份贯通 + 数据隔离（先修越权，风险最高）
 
 - **问题**：JWT 无 wsId、workspaceId 由前端补 ⇒ 可伪造；`RowLevelInterceptor` 只挂 context、
   `submission.service.list` 不用它 ⇒ **同 workspace 跨成员读全表**；字段级 **fail-open**。
-- **现成**：PostgreSQL **RLS**，在 DB 层强制租户隔离，比拦截器更牢。
 - **自研要点**：
   1. 登录时把 `workspaceId` 写进 JWT；或强制每请求显式带并在服务端用 `workspaceMember` 校验成员关系。
      **工具参数里的身份一律不可信**。
-  2. Prisma 中间件每请求 `SET LOCAL app.workspace_id`（`$executeRaw`），RLS policy 读
-     `current_setting('app.workspace_id')`；policy 用 SQL 迁移落地。
-  3. `submission.service.list` 接 `buildRowLevelWhere`；行级/字段级统一 **fail-closed**（无角色/出错→拒绝）。
+  2. `submission.service.list` 接 `buildRowLevelWhere`；行级/字段级统一 **fail-closed**（无角色/出错→拒绝）。
 - **验收**：同 workspace 不同成员互不可见；伪造 wsId 被拒；无角色访问返回 403。
 
 #### S2 统一审计落库（可追溯、防篡改）
@@ -908,7 +903,7 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 > - **S3.1+S3.2 策略**（`feat/agent-stage6-s3-policy`）：新 `harness/policy-rules.ts`（叶子纯函数，**恒开、零基建**）——跨租户 `deny` / 删除类工具（误评 `low`）兜底 `requireConfirm` / 批量超阈值 `deny` / 敏感字段 `warn(pii_access)`，**仅显式信号触发**（对既有 fixture 零影响）。新 `infra/policy-engine.service.ts`——`POLICY_ENGINE_URL` 空 → 只跑内置（零外呼）；配了 → POST 给 Cerbos/OPA PDP，与内置**取最严者**；网络失败默认 fail-open，可 `POLICY_ENGINE_FAIL_CLOSED`。`tool-gateway` 在风险门后插策略步（`deny` 拦 + 审计 `POLICY_DENIED`；`warn` 落 `details.note`）。
 > - **S5.2 护栏**（`feat/agent-stage6-s5-guardrails`）：新 `infra/guardrails.service.ts`——`NEMO_GUARDRAILS_URL` 空 → 直通（零外呼）；配了对 LLM 输入（末条 human）/输出各 POST 一次，被拦抛 `GuardrailBlockedError`，传输失败 fail-open。与 S5.1 `wrapUntrusted` 互补。
 > - **S6.1 限流 + 配额**（`feat/server-stage6-s6-ratelimit`，server-only）：新 `common/throttler/{redis-throttler.storage.ts,throttler.guard.ts}`（Redis 有则用 INCR、无则内存；`RATE_LIMIT_ENABLED!=='true'` 直接放行；tracker 分级 ws→user→IP）+ `common/quota/`（`QUOTA_ENABLED!=='true'` 直接放行，超 `Workspace.maxForms/maxMembers` → 429）；`app.module` 加 `ThrottlerModule.forRootAsync` + `APP_GUARD`；建表/邀请路由挂 `WorkspaceQuotaGuard` + `@QuotaCheck`；新增 `apps/server/.env.example`。
-> - **S6.2 OpenBao**（`feat/server-stage6-s6-openbao`，server-only）：新 `bootstrap/secret-loader.ts`——`OPENBAO_ADDR`+`OPENBAO_TOKEN` 都设才启用（否则 no-op）；兼容 KV-v2/v1；仅 `process.env[k]===undefined` 时写入（真 env 优先）；开发失败 warn、生产抛错；置于 `assertJwtSecret` 之前。**SOPS 需新依赖，不做**。
+> - **S6.2 OpenBao**（`feat/server-stage6-s6-openbao`，server-only）：新 `bootstrap/secret-loader.ts`——`OPENBAO_ADDR`+`OPENBAO_TOKEN` 都设才启用（否则 no-op）；兼容 KV-v2/v1；仅 `process.env[k]===undefined` 时写入（真 env 优先）；开发失败 warn、生产抛错；置于 `assertJwtSecret` 之前。
 > - **验证**：agent `vitest` **1058 全绿**（34 文件，新 `policy-rules`/`policy-engine`/`tool-gateway-policy`/`tracing`/`guardrails` 5 个 spec）、三端 `tsc` 干净、server **真机启动 DI 全解析**（仅因 3000 被占未 bind）。**全链已线性合入 master；已 push（`8d51fa7`）、已灰度（2026-10-20）**。
 
 
@@ -968,7 +963,6 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 #### S6 限流与最小权限
 
 - **现成**：**@nestjs/throttler**（MIT，npm 即装）；**OpenBao**（MPL-2.0）管密钥。
-  **SOPS 已于 2026-10-19 决定不做**（需额外二进制与密钥管理体系，收益不足）。
 - **自研**：按 **workspace/用户**的配额（Redis 令牌桶，替代全局 IP 限流）；落地 config 里未实现的
   `maxConcurrent`；生产环境**禁止 `dev-secret` 兜底启动**的守卫。
 - **范式**：模板 Agent 已做到「无写权限边界」（toolNames 无 save 工具），作为**最小权限**范式推广。
@@ -997,7 +991,6 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 #### 任务清单（S1–S7）
 
 - [x] S1.1 JWT 带 workspaceId / 服务端成员校验
-- [ ] S1.2 RLS policy 迁移 + Prisma 会话变量注入 — **推迟**（本仓是 MySQL，无 RLS；改走应用层 fail-closed）
 - [x] S1.3 submission 行级权限生效 + 全链路 fail-closed（应用层显式成员断言，见「阶段 6 落地」）
 - [x] S2.1 Agent 审计落库 `audit_logs`（扩展字段 + append-only）— 2026-10-14 落地（agent 工具调用侧）
 - [x] S2.2 工具路径身份贯通 + `sanitizeArgs` 落地 — 2026-10-14 落地
@@ -1011,7 +1004,7 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 - [x] S5.1 `wrapUntrusted()` 纯函数 + tool-bridge 接入 + 单测
 - [x] S5.2 NeMo Guardrails sidecar 接入 — **2026-10-14 env-gated 落地**（`NEMO_GUARDRAILS_URL` 空则零外呼，传输失败 fail-open）
 - [x] S6.1 server 限流 + workspace/用户配额 + maxConcurrent — **2026-10-14 env-gated 落地**（`RATE_LIMIT_ENABLED`/`QUOTA_ENABLED` 默认关；Redis 有则用、无则内存）
-- [x] S6.2 OpenBao 密钥 + 生产禁 dev-secret 守卫 — **2026-10-14 env-gated 落地**（生产禁 dev-secret 守卫 + OpenBao 装载 `OPENBAO_ADDR`/`OPENBAO_TOKEN` 均设才启用）；**SOPS 不做**（2026-10-19 决定移出计划）
+- [x] S6.2 OpenBao 密钥 + 生产禁 dev-secret 守卫 — **2026-10-14 env-gated 落地**（生产禁 dev-secret 守卫 + OpenBao 装载 `OPENBAO_ADDR`/`OPENBAO_TOKEN` 均设才启用）
 - [x] S7.1 工具 / LLM 调用超时熔断（可配）
 - [x] S7.2 幻觉守卫（产物须源自工具结果）
 - [x] S7.3 工具入参 / 结果 schema 校验（fail-closed）
@@ -1019,9 +1012,9 @@ Prisma 用 `db push`（formpu 库历史 drift，`migrate dev` 会要求 reset）
 
 #### 阶段 6 落地（2026-10-13）
 
-范围＝用户选定的「整套『无外部依赖』项」= **S1（RLS 除外）+ S3.3 + S5.1 + S7**。分支
+范围＝用户选定的「整套『无外部依赖』项」= **S1 + S3.3 + S5.1 + S7**。分支
 `feat/agent-stage6-security`（基于 `feat/agent-stage5-business`），**已合 master** / 已灰度（2026-10-20）。
-**凡需外部基建/中间件的 S 项一律推迟**（RLS 需 PG、S2 需 Langfuse、S3.1 需 Cerbos/OPA、
+**凡需外部基建/中间件的 S 项一律推迟**（S2 需 Langfuse、S3.1 需 Cerbos/OPA、
 S5.2 需 NeMo、S6 需 Redis）——dev 环境都不起，故整段不做。
 
 > **2026-10-14 补记**：上段「需外部基建项推迟」的范围**已被后续 env-gated 落地补全**——S2.3/S3.1/
@@ -1049,7 +1042,7 @@ S5.2 需 NeMo、S6 需 Redis）——dev 环境都不起，故整段不做。
   风险 `low → medium`（各自已有 `coversRisk` 检查点顶着风险门，不会二次询问）；网关幂等改用显式
   `WRITE_TOOLS` 集合（修「写工具实际不幂等」）；`hub.controller` 的 `/agent/tools/:name` 直调拒非 low
   风险工具（设计器直调的都是 low，不受影响）。
-- **S1 身份与隔离（MySQL：应用层 fail-closed，不用 RLS）**：
+- **S1 身份与隔离（应用层 fail-closed）**：
   - server `auth.service.generateToken` 改 async，登录/注册查 `workspaceMember` 取首个 workspaceId
     写进 JWT；`jwt.strategy.validate` 回填 `workspaceId`（`request-context` 从此拿到可信值）。
   - `permission.guard`：资源作用域路由（`params.formId|id|instanceId`）**忽略客户端 wsId**，一律从资源
@@ -1074,7 +1067,6 @@ S5.2 需 NeMo、S6 需 Redis）——dev 环境都不起，故整段不做。
 
 #### 风险与取舍
 
-- **RLS 触碰所有查询** ⇒ 独立分支、灰度；先在 submission 单表验证。
 - **Guard 类工具增加延迟/成本** ⇒ sidecar 可开关，先只对 `data_query` 等高风险工具开启。
 - **策略引擎引入运维** ⇒ 若嫌重，S3 可先用**自研策略纯函数**起步（同 S5 风格），规模上来再迁 Cerbos/OPA。
 - **审计落库影响写性能** ⇒ 异步写 + 采样，但「谁删了什么」类操作必须同步。
@@ -1093,13 +1085,12 @@ S5.2 需 NeMo、S6 需 Redis）——dev 环境都不起，故整段不做。
 
 #### 方案选择（分层 + 三判据）
 
-五个可借鉴的成熟方案**不在同一层**，不能「五选几」：
+可借鉴的成熟方案**不在同一层**，不能简单「多选几」：
 
 | 层 | 方案 | 回答的问题 |
 |---|---|---|
 | **形态层（标准）** | ① Anthropic Agent Skills 规范（SKILL.md + YAML frontmatter + 渐进式披露） | 「技能」**长什么样** |
-| **运行机制层（治理）** | ③ 工具注册表 + JSON Schema 校验（已有 `tool.registry.ts`/zod）/ ④ 最小权限范式 / ⑤ 阶段 2 eval 用例集 | 对不对 / 能不能 / 坏没坏 |
-| **分发协议层（平台）** | ② MCP（Model Context Protocol） | 技能如何**跨消费方/跨来源**暴露与复用 |
+| **运行机制层（治理）** | ③ 工具注册表 + JSON Schema 校验（已有 `tool.registry.ts`/zod） | 对不对 / 能不能 |
 
 **选择判据（三问）**：是否与现结构同构？是否已有地基？它解决的问题现在出现了吗？
 
@@ -1107,13 +1098,8 @@ S5.2 需 NeMo、S6 需 Redis）——dev 环境都不起，故整段不做。
 |---|---|---|---|---|
 | ① Agent Skills 规范 | ✅（`SkillsLoader` 本就是「元数据常驻 + 正文按需」） | 部分 | ✅ | **现在做（底座）** |
 | ③ 绑定校验 (JSON Schema) | ✅ | ✅ `tool.registry.ts`/zod | ✅ 坏工具名静默失效 | **现在做（最高性价比）** |
-| ④ 最小权限 | ✅（template 无写工具为先例） | 部分 | ⚠️ 待治理 | **随阶段 6 做** |
-| ⑤ eval 用例集 | ✅ | ❌ 阶段 2 才建 | ⚠️ 待兜底 | **随阶段 2 做** |
-| ② MCP | ⚠️ 需改造 | ❌ | ⏭️ 下个项目再评估 | **下个项目再做** |
 
-> **一句话策略**：底座（①）现在铺；插件跟着它依赖的能力上线（③ 立刻、④ 随阶段 6、⑤ 随阶段 2）。
-> **② MCP 推迟到下个项目**（2026-10-10 用户决定）——届时若出现「多消费方 / 多来源 / 跨进程」
-> 任一，直接复用本阶段 D1 规范化后的技能包暴露即可（**先 ① 后 ②，顺序不浪费**）。
+> **一句话策略**：底座（①）现在铺，绑定校验（③）立刻跟上。
 
 **设计决策（已按判据确定采用范围）**
 
@@ -1126,16 +1112,7 @@ S5.2 需 NeMo、S6 需 Redis）——dev 环境都不起，故整段不做。
   `onModuleInit` **之后**——`loadAll()` 现在在构造函数里跑，而 `ToolRegistry` 要 `onModuleInit`
   才填充，否则会读到**空注册表**。**首个会报的是 `template-market.skill.md` 的 `template_publish`**
   （注册表与 `AgentSpec.toolNames` 均无该工具）→ 上线时按「修正 or 摘除」二选一处理。
-- **D3 渐进式加载【规模驱动，技能变多再做】**：保持「meta 常驻 + 正文按需」，进一步
-  **按路由/领域只注入相关技能的 meta**。
-- **D4 技能权限【随阶段 6】**：技能声明 `allowedTools` / 风险上限，落到阶段 6 策略引擎（技能级最小权限）。
-- **D5 版本化 + eval【随阶段 2】**：技能带 version，改 prompt/skill 走阶段 2 的 eval 回归。
-
-**本轮范围**：只做 **D1 + D2**（规范 + 校验）；D3/D4/D5 明确挂到各自依赖的阶段，不在此轮展开，
-避免过早优化。
-
-> **2026-10-19 归档**：D1 + D2 已完成并合入 `master`。D3/D4/D5 的现状、方案、验收与重提条件
-> 已统一归纳到 **`docs/AGENT_BACKLOG.md`**，以后再做；下方保留原始设计供追溯。
+**本轮范围**：只做 **D1 + D2**（规范 + 校验）。
 
 **分步方案（本轮：D1 + D2）**
 1. 4 个 `.skill.md` 头部改 YAML frontmatter；`parseMeta` 改为 frontmatter 解析，
@@ -1162,22 +1139,19 @@ S5.2 需 NeMo、S6 需 Redis）——dev 环境都不起，故整段不做。
   `subgraph.factory.ts` 的 `getAllMeta()` / `loadFull()` 调用签名**未动**。
 - **测试**：新增 `test/skills-loader.spec.ts`（7：parseSkill 合法/`enabled` 缺省与 false/旧格式回退/坏 YAML 回退 +
   loader 全工具齐备载入 4 技能且 `loadFull` 正文不含 frontmatter / 缺工具抛错）→ **23 文件 / 962 全绿**；agent `tsc` 干净。
-- **未做**：真机（启动即校验、坏工具名报错、旧格式文件回退）；合 master / 灰度。D3/D4/D5 按原计划挂到依赖阶段。
+- **未做**：真机（启动即校验、坏工具名报错、旧格式文件回退）；合 master / 灰度。
 
 **验收（本轮 D1 + D2）**：4 个技能改 frontmatter 后正常加载；坏工具名的技能启动即报错；
 旧格式文件仍能加载（回退）。
-后续验收（随各自阶段）：D3 技能增多时 system prompt token 不线性涨；D4 技能权限越界被拒；
-D5 技能改动有 eval 兜底。
 
-**风险与取舍**：技能市场 / DB 注册中心 **本轮不做**；**MCP 下个项目**；
+**风险与取舍**：技能市场 / DB 注册中心 **本轮不做**；
 frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启动；D1 只换解析来源，
 保持 `subgraph.factory.ts:190-191` 的 `skillMetas/skillFull` 注入签名不变（少改一处少一处回归）。
 
-### 3.7 阶段 8：长期记忆（用户级）+ 知识沉淀
+### 3.7 阶段 8：长期记忆（用户级）
 
 > **2026-10-13 升级**：本阶段原为「下个项目占位」，现**提为正式设计**。
 > 与 §2.11 / §2.12 的**会话内**记忆互补：那是「一次对话内」，这里是「**跨对话、按用户**」。
-> **MCP 仍留到下个项目**（不属于本阶段）。
 
 **现成地基**
 - 会话内记忆已成型：`SessionContext`（Facts / Ledger / Projection，§2.12）落 checkpoint + `session.metadata`。
@@ -1205,9 +1179,6 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
   并入 `projectMemory` 的**预算投影**（新增一段 `<user_memory>`，与 `facts`/`ledger` 同优先级带）。
 - **D3 生命周期**：提供**查看 / 删除**入口（用户可自助管理）；`confidence` 低的可过期回收；
   支持**主动失效**（对象被删除时同步清 `entity`）。
-- **D4 与知识沉淀（RAG）的关系**：**用户记忆 = 用户级事实**（小而结构化）；**知识沉淀 = 团队级知识库**
-  （文档 → 切分 → 向量 → 检索）。两者**共用**「检索 + 预算注入」底座，但存储与来源不同，**分开建**。
-  向量库（pgvector / 独立向量库）属本阶段**后半段**。
 - **D5 边界**：本轮**不引入**框架级记忆系统（MemGPT / Letta 仅作概念参照）；**不做**跨用户共享记忆。
 
 **分步方案**
@@ -1215,15 +1186,12 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 2. 提取器：`extractUserFacts(session)`（便宜模型 + 规则，保守），挂会话结束 / 关键节点。
 3. 召回器：`retrieveUserMemory(userId, wsId, query, topK)` → 注入 `projectMemory` 新增 `<user_memory>` 段（预算内）。
 4. 管理入口：查看 / 删除 API + 前端（用户可自助）。
-5. （后半）知识沉淀：文档接入 → 切分 → 向量库 → 检索注入。
 
 **任务清单**
 - [x] 8.1 Prisma `user_memory` 表 + `db push`
 - [x] 8.2 提取器 `extractUserFacts`（保守 + `source` 溯源）+ 单测
 - [x] 8.3 召回注入（top-K，并入 `projectMemory` 预算）
 - [x] 8.4 查看 / 删除入口（API + 前端）
-- [ ] 8.5 知识沉淀 RAG（文档 → 向量 → 检索）；MCP 另留 — **推迟**：全仓无嵌入/向量能力，
-  DeepSeek 官方 API 不提供 embeddings，需外部基建（性质同阶段 6 推迟项）；MCP 仍留下个项目。
 
 **落地（2026-10-14，分支 `feat/agent-stage8-memory`，叠于阶段 7；已合 master）**
 - **新模块** `apps/agent/src/modules/memory/`：`user-memory.types.ts` / `user-memory.pure.ts`
@@ -1273,11 +1241,10 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 | 4 | 成本 | token 预算 + usage 消费 + **缓存** | 中文大结果不再截断关键处；成本可见 | 1 |
 | 5 | 业务落地 | 稳定 id 寻址 + diff + 撤销 | 重名表可寻址；变更可回滚 | 1 |
 | 6 | 安全 **+ 兜底与降级** | 提示注入防护 + 审计落库 + 配额 + 超时/幻觉守卫/分级降级 | 注入样本不改变行为；超时与坏输出有兜底 | 3 |
-| 7 | 技能管理 | frontmatter + 绑定校验 + 权限 + 版本/eval | 坏技能启动即报错；token 不线性涨 | 1 |
-| 8 | **长期记忆（用户级）+ 知识沉淀**（MCP 留后） | 用户记忆表 + 提取 + 检索注入（§3.7）；知识库/RAG | 跨会话记住该用户；检索命中 | 1b / 3 |
+| 7 | 技能管理 | frontmatter + 绑定校验 | 坏技能启动即报错 | 1 |
+| 8 | **长期记忆（用户级）** | 用户记忆表 + 提取 + 检索注入（§3.7） | 跨会话记住该用户 | 1b / 3 |
 
-**顺序**：1 → 1b → 2 → 3 → 4/5/6 → 7 → 8。**阶段 8 已从「下个项目占位」升级为正式设计**：用户级长期记忆并入本轮路线图，
-**仅 MCP（跨消费方/跨来源暴露）仍留到下一个项目**。
+**顺序**：1 → 1b → 2 → 3 → 4/5/6 → 7 → 8。
 
 ---
 
@@ -1341,7 +1308,6 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 | 缓存读到旧数据 | 展示/分析不一致 | 只缓存只读工具 + 短 TTL + 写后主动失效（阶段 4 §3.3-D5） |
 | 长期记忆误存 / 隐私 | 合规风险 | 保守提取 + `source` 溯源 + 用户可删 + 不存敏感明文（阶段 8 §3.7） |
 | 超时 / 幻觉无兜底 | 轮次挂死 / 编造产物 | 阶段 6 S7：超时熔断 + 幻觉守卫 + 分级降级 |
-| 模型层方向无落点 | 范围膨胀 | 见附录 A：前提（自研/自托管）不成立则不做 |
 
 ---
 
@@ -1371,7 +1337,7 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 
 | 开关 | 默认 | 作用 | 回退值 |
 |---|---|---|---|
-| `SESSION_STORE` | `memory`（示例 `.env` 为 `sqlite`） | 会话存储后端：`memory`\|`sqlite`\|`mysql`；`mysql` 启用阶段 3 全链路 | 改回 `memory`/`sqlite` |
+| `SESSION_STORE` | `memory`（示例 `.env` 为 `mysql`） | 会话存储后端：`memory`\|`mysql`；`mysql` 启用阶段 3 全链路 | 改回 `memory` |
 | `SESSION_TTL_HOURS` | `6` | 会话过期时长 | — |
 | `SESSION_LEASE_ENABLED` | `true` | 执行权租约（**仅 `SESSION_STORE=mysql` 生效**；多副本互斥 + 崩溃自愈） | `false` |
 | `SESSION_LEASE_TTL_MS` / `SESSION_LEASE_HEARTBEAT_MS` | `30000` / `10000` | 租约 TTL / 心跳间隔 | — |
@@ -1489,28 +1455,6 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 
 ---
 
-## 附录 A：模型层能力（前提：自研 / 自托管模型）
-
-> **用途**：登记「模型层」方向的评估结论，防止它们混入应用层路线图造成范围膨胀。
-> 本手册对象是**应用层 agent 服务**（`apps/agent`：NestJS + LangGraph，调用外部 LLM API）；
-> 下列四项改的是**模型本身**，当前**不做**。
-
-**当前基座**：`configuration.ts:8-11` 走 **DeepSeek 官方 API**（`https://api.deepseek.com`，`deepseek-chat`），
-无自托管推理、无训练管线、无 GPU 资源 —— 故模型层手段无处施加。
-
-| # | 方向 | 前提 | 结论 |
-|---|---|---|---|
-| 1 | 底层模型优化（注意力机制 / 推理延迟 / 显存） | 自托管推理（vLLM / TensorRT-LLM / SGLang） | API 模式下由**供应商**负责；应用层唯一能做的是「选型 + 流式 + `maxTokens`/`temperature`」 |
-| 2 | 后训练（SFT / RLHF / DPO） | 训练数据 + GPU + 训练管线（TRL / DeepSpeed） | 对低代码平台**投入产出比差**；唯一轻量落点是用真实会话 SFT 一个**小模型做意图路由**，但现路由已「正则为主 + LLM 兜底」，收益有限 |
-| 3 | 强化学习 / 奖励函数 | 需可自动评分的 reward | 阶段 2 的 eval 用例集**理论上**可作 reward signal，但属**研究级**投入 |
-| 4 | 微调（LoRA / QLoRA / 全量） | 同 2 / 3 | 同 2；轻量落点同上（路由 / 输出格式对齐小模型） |
-
-**唯一与本项目的接口**：**LLM provider 抽象** —— 若将来要换模型或接自托管，应先把
-`langgraph-llm.service.ts` 的调用收敛到一个可替换的 provider 接口（低成本、可随阶段 4 顺带做）。
-**除此之外，1–4 若启动，属独立的「模型工程」项目，不在本手册范围。**
-
----
-
 *本文档随实现推进更新；每完成一阶段，回来更新文首「进度」表与对应章节状态。*
 *收口（2026-10-14）：阶段 3–8 已**合并到 `master`**（fast-forward `0f60ac9`→`5d34962`，15 提交）。
 随后阶段 6 外部基建链与零基建收尾（`6470a25`→`ecaa14a`）及后续修复也**全部落在 `master` 的线性历史上**。
@@ -1518,10 +1462,7 @@ frontmatter 解析失败**回退旧逻辑**、坏技能**隔离**而非拖垮启
 **2026-10-20 收尾**：agent `vitest` **1101 全绿**（34 文件）+ 三端 `tsc` 干净；代码已 push 到 `origin/master`（`8d51fa7`），
 真机灰度完成（`SESSION_STORE=mysql`），演示环境由 `pnpm demo` 一键拉起。*
 *现状：阶段 0–8 的**在手范围**均已完成；阶段 6 原「需外部基建推迟项」（S2.3/S3.1/S3.2/S5.2/S6.1/S6.2-OpenBao）
-已于 **2026-10-14 全部实现为 env-gated 适配钩子**（不配 env 即 no-op，配了才生效）。
-余下仅**显式推迟项**——MCP（下个项目）、8.5 RAG（无嵌入/向量基建）、S1.2 RLS（MySQL 无 RLS，走应用层 fail-closed 替代）、
-阶段 7 D3/D4/D5（已归档到 `docs/AGENT_BACKLOG.md`）。**SOPS 已移出计划（2026-10-19 决定不做）**。*
+已于 **2026-10-14 全部实现为 env-gated 适配钩子**（不配 env 即 no-op，配了才生效）。*
 ***动手前先看 §5 实现可行性核查**（架构衔接点与高风险项）。*
 *§2.12（2026-10-12）：Ledger 台账 + `sessionFacts` 领域事实 + `projectMemory` 预算投影 + 会话进展呈现 +
 goal 跳寒暄存全文；**D6 工具结果预算并入阶段 4 §3.3-D2**，落地时合并。*
-*模型层能力（底层优化 / 后训练 / RL / 微调）见**附录 A**（前提：自研或自托管模型，本项目暂不做）。*
