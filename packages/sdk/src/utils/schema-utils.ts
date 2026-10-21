@@ -32,20 +32,6 @@ export function findFieldById(fields: FieldSchema[], id: string): FieldSchema | 
 }
 
 /**
- * 根据 key 查找字段
- */
-export function findFieldByKey(fields: FieldSchema[], key: string): FieldSchema | null {
-  for (const field of fields) {
-    if (field.key === key) return field
-    if (field.children) {
-      const found = findFieldByKey(field.children, key)
-      if (found) return found
-    }
-  }
-  return null
-}
-
-/**
  * 在指定位置插入字段
  */
 export function insertFieldAtIndex(
@@ -84,126 +70,10 @@ export function removeFieldById(fields: FieldSchema[], id: string): FieldSchema 
 }
 
 /**
- * 将嵌套字段平铺为一维 Map
- */
-export function flattenFields(fields: FieldSchema[]): Map<string, FieldSchema> {
-  const map = new Map<string, FieldSchema>()
-  walkFields(fields, (field) => {
-    map.set(field.id, field)
-  })
-  return map
-}
-
-/**
- * 根据 key 平铺字段 Map（用于数据收集时快速查找）
- */
-export function flattenFieldsByKey(fields: FieldSchema[]): Map<string, FieldSchema> {
-  const map = new Map<string, FieldSchema>()
-  walkFields(fields, (field) => {
-    if (field.key && !isLayoutField(field.type)) {
-      map.set(field.key, field)
-    }
-  })
-  return map
-}
-
-/**
  * 判断是否为布局容器（用于跳过渲染控件本体，递归渲染 children）
  */
 export function isLayoutField(type: string): boolean {
   return ['card', 'collapse', 'divider'].includes(type)
-}
-
-/**
- * 判断是否为叶子容器（不可再嵌套子布局，只能放基础控件）
- */
-export function isLeafContainer(type: string): boolean {
-  return false // 当前无叶子容器限制
-}
-
-/**
- * 计算一行内已使用的列数
- */
-export function getRowUsedColumns(fields: FieldSchema[]): number {
-  return fields.reduce((sum, f) => sum + (f.col || 12), 0)
-}
-
-/**
- * 判断新控件能否放入当前行
- * @param currentRowCols 当前行已占用列数
- * @param newFieldCol 新控件的栅格宽度
- * @param maxCols 总列数（默认 24）
- */
-export function canFitInRow(currentRowCols: number, newFieldCol: number, maxCols = 24): boolean {
-  return (currentRowCols + newFieldCol) <= maxCols
-}
-
-/**
- * 将顶层字段按 24 列栅格自动分行
- * 返回二维数组，每个子数组代表一行
- */
-export function layoutGridRows(fields: FieldSchema[], maxCols = 24): FieldSchema[][] {
-  const rows: FieldSchema[][] = []
-  let currentRow: FieldSchema[] = []
-  let usedCols = 0
-
-  for (const field of fields) {
-    const col = field.col || 12
-
-    // 24 列控件独占一行
-    if (col >= maxCols) {
-      if (currentRow.length > 0) {
-        rows.push(currentRow)
-        currentRow = []
-        usedCols = 0
-      }
-      rows.push([field])
-      continue
-    }
-
-    // 当前行放不下，换行
-    if (!canFitInRow(usedCols, col, maxCols)) {
-      rows.push(currentRow)
-      currentRow = []
-      usedCols = 0
-    }
-
-    currentRow.push(field)
-    usedCols += col
-  }
-
-  // 最后一行
-  if (currentRow.length > 0) {
-    rows.push(currentRow)
-  }
-
-  return rows
-}
-
-/**
- * 提取表单 Schema 中所有字段 key 的列表
- */
-export function extractFieldKeys(fields: FieldSchema[]): string[] {
-  const keys: string[] = []
-  walkFields(fields, (field) => {
-    if (field.key && !isLayoutField(field.type)) {
-      keys.push(field.key)
-    }
-  })
-  return keys
-}
-
-/**
- * 根据字段 key 生成表单数据的默认值对象
- */
-export function generateDefaultValues(fields: FieldSchema[]): Record<string, any> {
-  const data: Record<string, any> = {}
-  walkFields(fields, (field) => {
-    if (field.key && !isLayoutField(field.type)) {
-      data[field.key] = field.defaultValue ?? null
-    }
-  })
-  return data
 }
 
 /**

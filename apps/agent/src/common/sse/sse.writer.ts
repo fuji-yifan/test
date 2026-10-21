@@ -14,41 +14,6 @@ export enum SseEventType {
   DONE = 'done',
 }
 
-// SSE 事件 payload 类型
-export interface SessionPayload {
-  sessionId: string
-}
-
-export interface StatusPayload {
-  agent: string
-  phase: string
-  todo: string[]
-}
-
-export interface MetaPayload {
-  model: string
-  requestId: string
-  activeAgent: string
-  tools: string[]
-}
-
-export interface DeltaPayload {
-  content: string
-}
-
-export interface ToolStartPayload {
-  callId: string
-  tool: string
-  args: Record<string, unknown>
-}
-
-export interface ToolResultPayload {
-  callId: string
-  tool: string
-  ok: boolean
-  summary: string
-}
-
 /** 人机协作检查点的一个可选答复项 */
 export interface ConfirmOption {
   value: string
@@ -64,45 +29,6 @@ export interface ConfirmOption {
     formId?: string
     fieldCount?: number
   }
-}
-
-export interface ConfirmRequiredPayload {
-  callId: string
-  tool: string
-  /**
-   * 只在图里真算得出风险时才带：`afterTool` 类的业务检查点不是风险门，
-   * 补一个假值等于假披露。运行时本来就可能不带，所以类型上也是可选。
-   */
-  risk?: 'low' | 'medium' | 'high' | 'critical'
-  summary: string
-  /** 检查点的提问文案（按钮文案在 options 里，不由前端硬编码） */
-  prompt?: string
-  kind?: 'checkpoint' | 'tool_confirm' | 'disambiguate'
-  options?: ConfirmOption[]
-  /** 本次检查点要审的产物（与 message.result 同构，前端复用预览卡片渲染） */
-  artifact?: Record<string, unknown>
-}
-
-export interface MessagePayload {
-  role: 'assistant'
-  content: string
-  result?: unknown
-}
-
-export interface ErrorPayload {
-  code: string
-  message: string
-}
-
-export interface DonePayload {
-  sessionId: string
-  stopReason: string
-  /** **会话累计**用量（跨轮累加，与 session metadata 的 usageTotals 同口径） */
-  usage: { inputTokens: number; outputTokens: number }
-  /** **本轮/本条回答**用量（= usage − 本轮起点）；错误分支不提供，前端据此不显示 */
-  turnUsage?: { inputTokens: number; outputTokens: number }
-  /** 会话累计用量超过软上限（阶段 4）：前端据此把用量徽标置为告警样式 */
-  usageAlert?: boolean
 }
 
 // SSE 写入工具

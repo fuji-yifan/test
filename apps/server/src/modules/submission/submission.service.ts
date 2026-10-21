@@ -227,13 +227,4 @@ export class SubmissionService {
     return this.prisma.formSubmission.delete({ where: { id } })
   }
 
-  async updateStatus(id: string, status: string, userId?: string) {
-    const sub = await this.prisma.formSubmission.findUnique({ where: { id }, select: { formId: true } })
-    if (!sub) throw new NotFoundException('提交数据不存在')
-    await this.assertWorkspaceMember(userId, sub.formId)
-    return this.prisma.formSubmission.update({
-      where: { id },
-      data: { status },
-    })
-  }
 }

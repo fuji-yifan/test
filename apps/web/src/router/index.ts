@@ -39,14 +39,6 @@ const routes: RouteRecordRaw[] = [
     meta: { layout: 'default', title: '个人信息', requiresAuth: true },
   },
 
-  // ======== 工作空间 ========
-  {
-    path: '/workspaces',
-    name: 'Workspaces',
-    component: () => import('@/views/admin/WorkspaceList.vue'),
-    meta: { layout: 'default', title: '工作空间', requiresAuth: true },
-  },
-
   // ======== 工作空间内页面 ========
   {
     path: '/workspace/:wsId',
@@ -182,14 +174,6 @@ const routes: RouteRecordRaw[] = [
     name: 'MyProcesses',
     component: () => import('@/views/workflow/MyProcessesView.vue'),
     meta: { layout: 'default', title: '我的流程', requiresAuth: true, requiresWorkspace: true },
-  },
-
-  // ======== 预览页（前端渲染，无需保存） ========
-  {
-    path: '/preview',
-    name: 'Preview',
-    component: () => import('@/views/renderer/PreviewOnly.vue'),
-    meta: { layout: 'render', title: '预览' },
   },
 
   // ======== 公开填写页 ========

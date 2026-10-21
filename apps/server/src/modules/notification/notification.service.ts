@@ -1,13 +1,9 @@
-import { Injectable, Optional } from '@nestjs/common'
+import { Injectable } from '@nestjs/common'
 import { PrismaClient } from '@prisma/client'
-import { QueueService } from '../queue/queue.service'
 
 @Injectable()
 export class NotificationService {
-  constructor(
-    private prisma: PrismaClient,
-    @Optional() private queue?: QueueService,
-  ) {}
+  constructor(private prisma: PrismaClient) {}
 
   async send(params: {
     userId: string
@@ -17,10 +13,7 @@ export class NotificationService {
     content: string
     relatedType?: string
     relatedId?: string
-    sendEmail?: boolean
-    email?: string
   }) {
-    // 1. 保存站内信
     const notification = await this.prisma.notification.create({
       data: {
         userId: params.userId,
@@ -32,19 +25,6 @@ export class NotificationService {
         relatedId: params.relatedId,
       },
     })
-
-    // 2. 如果需要发邮件，入队异步处理（队列不可用时跳过）
-    if (this.queue && params.sendEmail && params.email) {
-      await this.queue.enqueueNotification({
-        type: params.type,
-        userId: params.userId,
-        title: params.title,
-        content: params.content,
-        email: params.email,
-        relatedType: params.relatedType,
-        relatedId: params.relatedId,
-      })
-    }
 
     return notification
   }

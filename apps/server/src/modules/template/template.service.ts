@@ -70,21 +70,6 @@ export class TemplateService {
     return this.prisma.template.delete({ where: { id } })
   }
 
-  async review(id: string, status: 'approved' | 'rejected') {
-    return this.prisma.template.update({ where: { id }, data: { status } })
-  }
-
-  async getCategories() {
-    const result = await this.prisma.template.groupBy({
-      by: ['category'],
-      where: { status: 'approved', category: { not: null } },
-      _count: true,
-    })
-    return result
-      .filter((r: any) => r.category)
-      .map((r: any) => ({ name: r.category, count: r._count }))
-  }
-
   async use(id: string, workspaceId: string, userId: string) {
     const template = await this.prisma.template.findUnique({ where: { id } })
     if (!template) throw new NotFoundException('模板不存在')

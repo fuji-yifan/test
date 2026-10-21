@@ -93,11 +93,6 @@ export class AuditService {
     return map
   }
 
-  async getDetail(id: string) {
-    const log = await this.prisma.auditLog.findUnique({ where: { id } })
-    return log && HIDDEN_ACTIONS.includes(log.action) ? null : log
-  }
-
   /**
    * 「按用户筛选」下拉：当前空间成员 ∪ 审计日志中出现过的用户。
    * 只取日志用户的话，新空间/暂无日志时下拉是空的；成员并集保证总有可选用户，
@@ -119,83 +114,6 @@ export class AuditService {
       select: { id: true, email: true, nickname: true },
       orderBy: { nickname: 'asc' },
     })
-  }
-
-  async getActionTypes(workspaceId: string) {
-    // 先把 DB 中已有的操作类型统计出来
-    const existing = await this.prisma.auditLog.groupBy({
-      by: ['action'],
-      where: { workspaceId },
-      _count: true,
-    })
-    const countMap: Record<string, number> = {}
-    for (const r of existing) {
-      countMap[r.action as string] = (r as any)._count
-    }
-
-    // 生成所有可能的操作类型（与 audit-middleware.ts 保持一致）
-    // 与 audit-middleware.ts 保持一致
-    const labelToKey: Record<string, string> = {
-      Form: '表单', FormSubmission: '数据', ProcessDefinition: '流程', ProcessInstance: '流程', TaskInstance: '任务',
-      WorkspaceMember: '成员', Role: '角色',
-      Template: '模板',
-    }
-    const overrides: Record<string, Record<string, string>> = {
-      Form: {
-        create: '新建表单', update: '修改表单', delete: '删除表单',
-        // 发布/归档/复制由中间件根据 data 细分，这里列全以便前端展示
-      },
-      ProcessDefinition: { create: '新建固有流程', update: '修改固有流程', delete: '删除固有流程' },
-      ProcessInstance: { create: '发起我的流程', update: '撤回我的流程', delete: '删除我的流程' },
-      FormSubmission: { create: '提交表单数据', delete: '删除表单数据' },
-    }
-    const actions = ['创建', '修改', '删除', '创建/更新']
-    const skipActions: Record<string, string[]> = {
-      FormSubmission: ['修改', '创建/更新'],
-      ProcessInstance: ['创建/更新'],
-    }
-    const all: { action: string; count: number }[] = []
-    for (const [key, label] of Object.entries(labelToKey)) {
-      for (const a of actions) {
-        if (skipActions[key]?.includes(a)) continue
-        const override = overrides[key]?.[a]
-        const name = override || a + label
-        all.push({ action: name, count: countMap[name] || 0 })
-      }
-    }
-    // 中间件根据 data 字段细分出来的子类型
-    for (const act of ['发布表单', '归档表单', '复制表单', '发布固有流程', '撤回固有流程', '超时升级']) {
-      all.push({ action: act, count: countMap[act] || 0 })
-    }
-    return all
-  }
-
-  async getStats(workspaceId: string, days: number = 7) {
-    const since = new Date()
-    since.setDate(since.getDate() - days)
-    since.setHours(0, 0, 0, 0)
-
-    const logs = await this.prisma.auditLog.findMany({
-      where: { workspaceId, createdAt: { gte: since }, action: HIDDEN_ACTION_FILTER },
-      select: { action: true, createdAt: true },
-    })
-
-    // 按日期聚合
-    const dailyMap: Record<string, number> = {}
-    for (let i = 0; i < days; i++) {
-      const d = new Date()
-      d.setDate(d.getDate() - i)
-      dailyMap[d.toISOString().split('T')[0]] = 0
-    }
-
-    for (const log of logs) {
-      const day = log.createdAt.toISOString().split('T')[0]
-      if (dailyMap[day] !== undefined) dailyMap[day]++
-    }
-
-    return Object.entries(dailyMap)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, count]) => ({ date, count }))
   }
 
   async cleanup(workspaceId: string, amount: number, unit: CleanupUnit = 'day') {

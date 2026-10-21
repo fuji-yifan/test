@@ -9,14 +9,10 @@ import App from './App.vue'
 import router from './router'
 import ErrorBoundary from './components/ErrorBoundary.vue'
 import { setupAxios } from './api/client'
-import { initElementPlusBridge } from './bridge/element-plus-adapter'
 import { useAuthStore } from './stores/auth'
 import { useAppStore } from './stores/app'
 
 async function bootstrap() {
-  // 初始化 Component Bridge
-  initElementPlusBridge()
-
   // 初始化 HTTP 客户端（Token 注入 + 401 拦截）
   setupAxios()
 

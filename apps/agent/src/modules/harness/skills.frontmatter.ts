@@ -6,8 +6,7 @@
  * 关键约束：loadFull() 返回的正文会被拼进各 sub-agent 的 system prompt，
  * 因此 **body 必须剥离 frontmatter** —— 否则 name/version 这些元数据会漏进提示词。
  *
- * 兼容性：老格式（首行 `# Title` + `Tools: [...]` + `Description:` 纯文本）没有
- * frontmatter，此时回退旧正则逻辑，body = 全文，行为与改造前完全一致。
+ * 无 frontmatter / YAML 非法的技能文件直接抛错，由 SkillsLoader 捕获后跳过。
  */
 import { load as loadYaml } from 'js-yaml'
 
@@ -41,23 +40,6 @@ function toStringArray(v: unknown): string[] {
   return []
 }
 
-/** 旧格式回退：无 frontmatter 或 YAML 解析失败时，沿用改造前的正则解析 */
-function parseLegacy(content: string, filename: string): SkillMeta {
-  const firstLine = content.split('\n')[0] || ''
-  const nameMatch = firstLine.match(/^#\s+(.+)/)
-  const name = nameMatch ? nameMatch[1].trim() : filename.replace('.skill.md', '')
-
-  const toolMatch = content.match(/Tools:\s*\[([^\]]+)\]/)
-  const toolNames = toolMatch
-    ? toolMatch[1].split(',').map((t) => t.trim().replace(/"/g, '')).filter(Boolean)
-    : []
-
-  const descMatch = content.match(/Description:\s*(.+)/)
-  const description = descMatch ? descMatch[1].trim() : name
-
-  return { name, description, toolNames }
-}
-
 /** 拆出 frontmatter 区块与正文；首行不是 `---` 或无闭合 `---` 时返回 null */
 function splitFrontmatter(content: string): { yaml: string; body: string } | null {
   const normalized = content.replace(/^\uFEFF/, '')
@@ -78,35 +60,39 @@ function splitFrontmatter(content: string): { yaml: string; body: string } | nul
 /**
  * 解析技能文件为 { meta, body }。
  *
- * 有合法 frontmatter → 用 js-yaml 解析元数据，body = 闭合 `---` 之后的正文；
- * 无 frontmatter 或 YAML 抛错 → 回退旧正则逻辑（body = 原全文）。
+ * 必须有合法 frontmatter：用 js-yaml 解析元数据，body = 闭合 `---` 之后的正文。
+ * 缺失或非法时抛错，由调用方捕获并跳过该技能。
  */
 export function parseSkill(content: string, filename: string): ParsedSkill {
   const fm = splitFrontmatter(content)
-  if (fm) {
-    try {
-      const raw = loadYaml(fm.yaml)
-      if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-        const obj = raw as Record<string, unknown>
-        const fallbackName = filename.replace('.skill.md', '')
-        const name =
-          typeof obj.name === 'string' && obj.name.trim() ? obj.name.trim() : fallbackName
-        const description =
-          typeof obj.description === 'string' && obj.description.trim()
-            ? obj.description.trim()
-            : name
-
-        const meta: SkillMeta = { name, description, toolNames: toStringArray(obj.tools) }
-        if (typeof obj.version === 'string') meta.version = obj.version
-        const scenarios = toStringArray(obj.scenarios)
-        if (scenarios.length > 0) meta.scenarios = scenarios
-        meta.enabled = obj.enabled === undefined ? true : obj.enabled !== false
-
-        return { meta, body: fm.body }
-      }
-    } catch {
-      // 坏 YAML → 静默回退，不让一个手滑的技能文件拖垮启动
-    }
+  if (!fm) {
+    throw new Error('缺少合法 frontmatter（文件需以 --- 开头并用 --- 闭合）')
   }
-  return { meta: parseLegacy(content, filename), body: content }
+
+  let raw: unknown
+  try {
+    raw = loadYaml(fm.yaml)
+  } catch (err) {
+    throw new Error(`frontmatter YAML 解析失败: ${(err as Error).message}`)
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('frontmatter 必须是 YAML 对象')
+  }
+
+  const obj = raw as Record<string, unknown>
+  const fallbackName = filename.replace('.skill.md', '')
+  const name =
+    typeof obj.name === 'string' && obj.name.trim() ? obj.name.trim() : fallbackName
+  const description =
+    typeof obj.description === 'string' && obj.description.trim()
+      ? obj.description.trim()
+      : name
+
+  const meta: SkillMeta = { name, description, toolNames: toStringArray(obj.tools) }
+  if (typeof obj.version === 'string') meta.version = obj.version
+  const scenarios = toStringArray(obj.scenarios)
+  if (scenarios.length > 0) meta.scenarios = scenarios
+  meta.enabled = obj.enabled === undefined ? true : obj.enabled !== false
+
+  return { meta, body: fm.body }
 }

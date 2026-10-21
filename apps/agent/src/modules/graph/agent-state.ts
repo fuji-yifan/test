@@ -19,8 +19,6 @@ import type { UserMemoryRecord } from '../memory/user-memory.types'
 /** 平台里的四个领域 Agent */
 export type AgentKey = 'form-designer' | 'workflow' | 'template' | 'submission'
 
-export const AGENT_KEYS: AgentKey[] = ['form-designer', 'workflow', 'template', 'submission']
-
 /** 路由来源，便于排查「为什么走到了这个 Agent」 */
 export type RouteSource = 'plan' | 'prompt' | 'page' | 'llm' | 'default'
 
@@ -67,15 +65,6 @@ export interface CheckpointRecord {
   checkpointId: string
   toolCallId: string
   action: 'continue' | 'abort'
-}
-
-/** 检查点被答复后带回来的信息（resume 值） */
-export interface CheckpointAnswer {
-  checkpointId: string
-  toolCallId: string
-  action: 'continue' | 'abort'
-  /** 用户在选项之外补充的自由文本 */
-  note?: string
 }
 
 /** 工具级确认（风险门）被答复后带回来的信息 */

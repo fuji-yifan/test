@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, Res, UseGuards, UseInterceptors } from '@nestjs/common'
+import { Controller, Get, Post, Delete, Body, Param, Query, Req, Res, UseGuards, UseInterceptors } from '@nestjs/common'
 import { Response } from 'express'
 import { JwtService } from '@nestjs/jwt'
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger'
@@ -8,7 +8,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'
 import { PermissionGuard, RequiredPermission } from '../../common/guards/permission.guard'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Public } from '../../common/decorators/public.decorator'
-import { FieldACLInterceptor } from '../../common/interceptors/field-acl.interceptor'
 import { RowLevelInterceptor } from '../../common/interceptors/row-level.interceptor'
 import { getRequestContext } from '../../common/request-context'
 import { PrismaClient } from '@prisma/client'
@@ -45,18 +44,6 @@ export class SubmissionController {
       const ctx = getRequestContext()
       if (ctx) ctx.userId = userId
     }
-    return this.submissionService.submit(formId, dto, userId)
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FieldACLInterceptor)
-  @ApiBearerAuth()
-  @Post('forms/:formId/submit')
-  submitAuth(
-    @Param('formId') formId: string,
-    @CurrentUser('userId') userId: string,
-    @Body() dto: { data: Record<string, any>; meta?: any },
-  ) {
     return this.submissionService.submit(formId, dto, userId)
   }
 
@@ -113,17 +100,6 @@ export class SubmissionController {
     @CurrentUser('userId') userId: string,
   ) {
     return this.submissionService.getById(formId, id, userId)
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @Patch('forms/:formId/submissions/:id')
-  updateStatus(
-    @Param('id') id: string,
-    @Body() dto: { status: string },
-    @CurrentUser('userId') userId: string,
-  ) {
-    return this.submissionService.updateStatus(id, dto.status, userId)
   }
 
   @UseGuards(JwtAuthGuard, PermissionGuard)

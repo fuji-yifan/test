@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common'
 import { PrismaClient } from '@prisma/client'
-import { CacheService } from '../cache/cache.service'
 
 /** WorkspaceMember.role → RBAC 角色名映射 */
 const ROLE_MAP: Record<string, string> = {
@@ -11,10 +10,7 @@ const ROLE_MAP: Record<string, string> = {
 
 @Injectable()
 export class WorkspaceService {
-  constructor(
-    private prisma: PrismaClient,
-    private cache: CacheService,
-  ) {}
+  constructor(private prisma: PrismaClient) {}
 
   /** 同步成员工作空间角色到 RBAC UserRole 表 */
   private async syncRbacRole(workspaceId: string, userId: string, wsRole: string) {
@@ -38,8 +34,6 @@ export class WorkspaceService {
         data: { userId, roleId: targetRole.id },
       })
     }
-    // 清除权限缓存，下次请求时重新计算
-    await this.cache.invalidateUserPermissions(workspaceId, userId)
   }
 
   /**
@@ -122,16 +116,6 @@ export class WorkspaceService {
     return workspace
   }
 
-  async getById(id: string) {
-    const workspace = await this.prisma.workspace.findUnique({ where: { id } })
-    if (!workspace) throw new NotFoundException('工作空间不存在')
-    return workspace
-  }
-
-  async update(id: string, dto: { name?: string; remark?: string; logoUrl?: string; settings?: any }) {
-    return this.prisma.workspace.update({ where: { id }, data: dto })
-  }
-
   async remove(id: string, userId: string) {
     const member = await this.prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId: id, userId } },
@@ -170,17 +154,6 @@ export class WorkspaceService {
       where: { workspaceId },
       include: { user: { select: { id: true, email: true, nickname: true, avatarUrl: true } } },
     })
-  }
-
-  async addMember(workspaceId: string, dto: { email: string; role: string }) {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } })
-    if (!user) throw new NotFoundException('用户不存在')
-    await this.assertAssignableRole(workspaceId, dto.role)
-    const member = await this.prisma.workspaceMember.create({
-      data: { workspaceId, userId: user.id, role: dto.role },
-    })
-    await this.syncRbacRole(workspaceId, user.id, dto.role)
-    return member
   }
 
   async removeMember(workspaceId: string, userId: string) {

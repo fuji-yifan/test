@@ -39,14 +39,6 @@ export interface AnalysisArtifact {
   chartSuggestions: { type: string; fields: string[]; title: string }[]
 }
 
-/** 统一产物引用 */
-export interface ArtifactRef {
-  stepId: string
-  agentType: string
-  artifactType: string
-  path: string // JSONPath 如 "$.schema" "$.nodes"
-}
-
 /** 编排步骤 */
 export interface OrchestrationStep {
   id: string

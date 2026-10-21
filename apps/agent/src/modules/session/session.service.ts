@@ -152,7 +152,7 @@ export class SessionService implements OnModuleDestroy {
     // 跨副本租约。安全优先：另一副本持**活**租约时，轮询等它释放/过期，等到 waitMs 仍拿不到
     // 就回绝（SessionBusyError）—— 绝不跨副本强制抢，因为跨进程无法 abort 对方正在跑的 run，
     // 硬抢会让两个副本同时写同一张图。崩溃留下的死锁由 TTL 过期回收。
-    // 无 MySQL（memory/sqlite/连接失败）或未启用时降级放行，等于纯内存现状。
+    // 无 MySQL（memory/连接失败）或未启用时降级放行，等于纯内存现状。
     //
     // 必须**在进程内接管之后**取租约：owner 是进程级实例 id，被抢占的上一轮在让位时会走
     // releaseRun 释放「它以为的」租约；若本轮提前取好，会被上一轮顺手删掉、心跳也被清，

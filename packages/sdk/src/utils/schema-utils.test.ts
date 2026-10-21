@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
-  walkFields, findFieldById, findFieldByKey,
+  walkFields, findFieldById,
   insertFieldAtIndex, removeFieldById,
-  flattenFields, cloneSchema, generateFieldId,
+  cloneSchema, generateFieldId,
   isLayoutField,
 } from './schema-utils'
 import type { FieldSchema, FormSchema } from '../types'
@@ -97,27 +97,6 @@ describe('findFieldById', () => {
   })
 })
 
-// ==================== findFieldByKey ====================
-
-describe('findFieldByKey', () => {
-  it('finds by key', () => {
-    const fields = [makeField({ id: 'a', key: 'email' }), makeField({ id: 'b', key: 'name' })]
-    expect(findFieldByKey(fields, 'email')?.id).toBe('a')
-  })
-
-  it('finds nested by key', () => {
-    const fields = [makeField({
-      id: 'card', type: 'card', key: '',
-      children: [makeField({ id: 'child', key: 'nested_key' })]
-    })]
-    expect(findFieldByKey(fields, 'nested_key')?.id).toBe('child')
-  })
-
-  it('returns null for missing key', () => {
-    expect(findFieldByKey([], 'none')).toBeNull()
-  })
-})
-
 // ==================== insertFieldAtIndex ====================
 
 describe('insertFieldAtIndex', () => {
@@ -180,24 +159,6 @@ describe('removeFieldById', () => {
     ]
     removeFieldById(fields, 'b')
     expect(fields.map(f => f.id)).toEqual(['a', 'c'])
-  })
-})
-
-// ==================== flattenFields ====================
-
-describe('flattenFields', () => {
-  it('creates id -> field map', () => {
-    const fields = [makeField({ id: 'a' }), makeField({ id: 'b' })]
-    const map = flattenFields(fields)
-    expect(map.size).toBe(2)
-    expect(map.get('a')?.id).toBe('a')
-  })
-
-  it('includes nested fields', () => {
-    const fields = [makeField({ id: 'card', type: 'card', key: '', children: [makeField({ id: 'child' })] })]
-    const map = flattenFields(fields)
-    expect(map.has('card')).toBe(true)
-    expect(map.has('child')).toBe(true)
   })
 })
 

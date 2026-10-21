@@ -5,7 +5,7 @@ import type { Script } from '../harness/fakes'
  * eval 用例：只锁**确定性**行为（路由落在哪个 agent、是否跨领域、计划步骤序列），
  * 不锁 LLM 兜底质量（那个靠真机探针抽样，见手册 §3.1）。
  *
- * `cases` 关联 `test/cases.md` 的用例编号，便于双向追溯。
+ * `cases` 关联 `docs/AGENT_MANUAL_TEST_CASES.md` 的用例编号，便于双向追溯。
  */
 export interface EvalCase {
   name: string

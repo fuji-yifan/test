@@ -37,27 +37,8 @@ export class RbacController {
     return this.rbacService.deleteRole(id)
   }
 
-  @UseGuards(PermissionGuard)
-  @RequiredPermission('member:role')
-  @Post('assign')
-  assignRole(@Body() dto: { userId: string; roleId: string }) {
-    return this.rbacService.assignRole(dto.userId, dto.roleId)
-  }
-
-  @UseGuards(PermissionGuard)
-  @RequiredPermission('member:role')
-  @Post('revoke')
-  revokeRole(@Body() dto: { userId: string; roleId: string }) {
-    return this.rbacService.revokeRole(dto.userId, dto.roleId)
-  }
-
   @Get('matrix')
   getPermissionMatrix(@Param('wsId') wsId: string) {
     return this.rbacService.getPermissionMatrix(wsId)
-  }
-
-  @Get('defaults')
-  getDefaultRoles() {
-    return this.rbacService.getDefaultRoles()
   }
 }

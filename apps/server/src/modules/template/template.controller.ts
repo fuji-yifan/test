@@ -17,11 +17,6 @@ export class TemplateController {
     return this.templateService.list(query)
   }
 
-  @Get('categories')
-  getCategories() {
-    return this.templateService.getCategories()
-  }
-
   @Get(':id')
   getById(@Param('id') id: string) {
     return this.templateService.getById(id)
@@ -45,16 +40,6 @@ export class TemplateController {
     @Body() dto: { name?: string; description?: string; schema?: any; category?: string; tags?: string[] },
   ) {
     return this.templateService.update(id, dto)
-  }
-
-  @UseGuards(PermissionGuard)
-  @RequiredPermission('template:edit')
-  @Patch(':id/review')
-  review(
-    @Param('id') id: string,
-    @Body('status') status: 'approved' | 'rejected',
-  ) {
-    return this.templateService.review(id, status)
   }
 
   @UseGuards(PermissionGuard)

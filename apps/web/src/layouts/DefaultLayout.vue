@@ -272,7 +272,6 @@ const wsSelectRef = ref<{ blur: () => void } | null>(null)
 // 根据当前路由自动推断 Agent 场景
 const agentScenario = computed(() => {
   const path = route.path
-  console.log('[agentScenario] path:', path)
   if (path.includes('/templates')) return 'template-creator'
   if (path.includes('/workflows') || path.includes('/my-processes')) return 'workflow-node'
   // 任务页是流程流转出来的待办，默认身份给流程助手（原 approval-assist 已下线）

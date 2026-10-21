@@ -905,7 +905,7 @@ export class AgentSubgraphFactory {
 
     emit({ type: 'tool_result', callId: call.id, tool: call.name, ok, summary })
 
-    // === 错误恢复（与 legacy base.agent 的四级级联对齐，见 cases.md 的对照说明）===
+    // === 错误恢复（与 legacy base.agent 的四级级联对齐，见 docs/AGENT_MANUAL_TEST_CASES.md 的对照说明）===
     const maxRetries = this.config.get<number>('context.maxRetries') ?? 2
     const maxDegrades = this.config.get<number>('context.maxDegrades') ?? 1
     const prevErrors = state.toolErrors ?? {}

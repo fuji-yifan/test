@@ -12,10 +12,6 @@ export function getRequestContext(): RequestContext | undefined {
   return storage.getStore()
 }
 
-export function runWithContext<T>(ctx: RequestContext, fn: () => T): T {
-  return storage.run(ctx, fn)
-}
-
 /** NestJS 中间件：提取 userId / workspaceId 并绑定到请求上下文 */
 export function useContextMiddleware(req: any, _res: any, next: () => void) {
   const ctx: RequestContext = {

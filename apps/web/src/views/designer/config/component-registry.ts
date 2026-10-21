@@ -25,7 +25,3 @@ export const builtinComponents: ComponentMeta[] = [
   { type: 'date-range-picker', display: '日期范围', icon: 'Calendar', category: 'advanced', defaultProps: { format: 'YYYY-MM-DD', valueFormat: 'YYYY-MM-DD', rangeSeparator: '至', startPlaceholder: '开始', endPlaceholder: '结束' } },
 
 ]
-
-export function getComponentsByCategory(category: ComponentMeta['category']): ComponentMeta[] {
-  return builtinComponents.filter((c) => c.category === category)
-}

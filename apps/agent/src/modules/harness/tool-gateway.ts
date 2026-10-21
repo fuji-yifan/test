@@ -9,8 +9,6 @@ import { combineDecisions, evaluateBuiltinPolicy, type PolicyDecision } from './
 import { PolicyEngineService } from '../infra/policy-engine.service'
 import { TracingService, normalizeTraceId } from '../infra/tracing.service'
 
-export { WRITE_TOOLS }
-
 export interface GatewayResult {
   ok: boolean
   result?: unknown
@@ -182,7 +180,6 @@ export class ToolGateway {
     const workspaceId = opts?.workspaceId ?? ''
     const cached = await this.cache.get(toolName, workspaceId, args)
     if (cached) {
-      this.logger.log(`Cache hit: ${toolName}`)
       await this.writeAudit({
         tool: toolName,
         args,

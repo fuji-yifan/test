@@ -6,10 +6,6 @@ import type Redis from 'ioredis'
 import { ConfigModule } from './config/config.module'
 import { PrismaModule } from './common/prisma.module'
 import { RedisModule } from './common/redis.module'
-import { QueueModule } from './common/queue.module'
-import { CacheModule } from './modules/cache/cache.module'
-import { QueueProcessorModule } from './modules/queue/queue.module'
-import { MailModule } from './modules/mail/mail.module'
 import { AuthModule } from './modules/auth/auth.module'
 import { WorkspaceModule } from './modules/workspace/workspace.module'
 import { FormModule } from './modules/form/form.module'
@@ -17,7 +13,6 @@ import { SubmissionModule } from './modules/submission/submission.module'
 import { TemplateModule } from './modules/template/template.module'
 import { RbacModule } from './modules/rbac/rbac.module'
 import { AuditModule } from './modules/audit/audit.module'
-import { WebhookModule } from './modules/webhook/webhook.module'
 import { WorkflowModule } from './modules/workflow/workflow.module'
 import { InvitationModule } from './modules/invitation/invitation.module'
 import { NotificationModule } from './modules/notification/notification.module'
@@ -33,9 +28,6 @@ import { QuotaModule } from './common/quota/quota.module'
     ConfigModule,
     PrismaModule,
     RedisModule,
-    // 消息队列（Redis 就绪后重新启用）：webhook / export / notification 三个 BullMQ 队列
-    QueueModule,
-    QueueProcessorModule,
     // 限流（阶段 6 / S6.1，默认关）：计数器 Redis 有则用、无则内存。守卫走全局，
     // 覆盖登录等未鉴权路由；RATE_LIMIT_ENABLED!=='true' 时恒放行（零行为变化）。
     ThrottlerModule.forRootAsync({
@@ -50,8 +42,6 @@ import { QuotaModule } from './common/quota/quota.module'
         storage: new RedisThrottlerStorage(redis),
       }),
     }),
-    CacheModule,
-    MailModule,
     AuthModule,
     WorkspaceModule,
     FormModule,
@@ -59,7 +49,6 @@ import { QuotaModule } from './common/quota/quota.module'
     TemplateModule,
     RbacModule,
     AuditModule,
-    WebhookModule,
     WorkflowModule,
     InvitationModule,
     NotificationModule,

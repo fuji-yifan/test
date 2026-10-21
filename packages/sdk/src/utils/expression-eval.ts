@@ -588,6 +588,3 @@ const BUILTIN_FN_NAMES = new Set([
   'includes', 'isEmpty', 'len', 'toNumber', 'now', 'toString',
   'toLowerCase', 'toUpperCase', 'trim', 'startsWith', 'endsWith',
 ])
-
-/** 便捷单例 */
-export const expressionEngine = ExpressionEngine.getInstance()

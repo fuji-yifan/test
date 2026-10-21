@@ -26,22 +26,9 @@ export class AuditController {
     return this.auditService.list(wsId, query)
   }
 
-  @Get('actions')
-  getActionTypes(@Param('wsId') wsId: string) {
-    return this.auditService.getActionTypes(wsId)
-  }
-
   @Get('users')
   getUsers(@Param('wsId') wsId: string) {
     return this.auditService.getUsers(wsId)
-  }
-
-  @Get('stats')
-  getStats(
-    @Param('wsId') wsId: string,
-    @Query('days') days?: number,
-  ) {
-    return this.auditService.getStats(wsId, days || 7)
   }
 
   @Get('export')
@@ -72,10 +59,5 @@ export class AuditController {
     const u: CleanupUnit = unit === 'month' || unit === 'year' ? unit : 'day'
     try { await this.auditService.log({ workspaceId: wsId, userId, action: '清理审计日志', resourceType: 'AuditLog', details: { amount: n, unit: u } }) } catch { /* 记录失败不影响清理 */ }
     return this.auditService.cleanup(wsId, n, u)
-  }
-
-  @Get(':id')
-  getDetail(@Param('wsId') wsId: string, @Param('id') id: string) {
-    return this.auditService.getDetail(id)
   }
 }

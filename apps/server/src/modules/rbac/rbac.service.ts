@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common'
 import { PrismaClient } from '@prisma/client'
-import { CacheService } from '../cache/cache.service'
 
 const ROLE_MAP: Record<string, string> = {
   owner: '创建者',
@@ -44,10 +43,7 @@ function cleanPermissions(permissions: unknown): string[] {
 
 @Injectable()
 export class RbacService {
-  constructor(
-    private prisma: PrismaClient,
-    private cache: CacheService,
-  ) {}
+  constructor(private prisma: PrismaClient) {}
 
   /** 清理脏数据：确保每个成员只有一个 RBAC 角色，且与 WorkspaceMember.role 一致 */
   private async normalizeMemberRoles(workspaceId: string) {
@@ -119,10 +115,6 @@ export class RbacService {
         }
       }
     }
-    // 清除所有受影响成员的权限缓存
-    for (const m of members) {
-      await this.cache.invalidateUserPermissions(workspaceId, m.userId)
-    }
   }
 
   async listRoles(workspaceId: string) {
@@ -184,12 +176,7 @@ export class RbacService {
         throw new ForbiddenException('已存在拥有全部权限的创建者角色，不可将其他角色升级为全权限')
       }
     }
-    const result = await this.prisma.role.update({ where: { id }, data: dto })
-    // 失效该角色下所有用户的权限缓存
-    if (role) {
-      await this.cache.invalidateUserPermissions(role.workspaceId)
-    }
-    return result
+    return this.prisma.role.update({ where: { id }, data: dto })
   }
 
   async deleteRole(id: string) {
@@ -198,62 +185,7 @@ export class RbacService {
     // 系统角色不可删除（对所有人，含 owner）：删掉创建者就没人拥有全权限，删掉查看者
     // 会让 syncRbacRole 找不到目标角色而给成员留下空权限
     if (role.isSystem) throw new ForbiddenException(`系统角色「${role.name}」不可删除`)
-    const result = await this.prisma.role.delete({ where: { id } })
-    if (role) {
-      await this.cache.invalidateUserPermissions(role.workspaceId)
-    }
-    return result
-  }
-
-  async assignRole(userId: string, roleId: string) {
-    const role = await this.prisma.role.findUnique({ where: { id: roleId } })
-    const result = await this.prisma.userRole.create({
-      data: { userId, roleId },
-    })
-    if (role) {
-      await this.cache.invalidateUserPermissions(role.workspaceId, userId)
-    }
-    return result
-  }
-
-  async revokeRole(userId: string, roleId: string) {
-    const role = await this.prisma.role.findUnique({ where: { id: roleId } })
-    const result = await this.prisma.userRole.delete({
-      where: { userId_roleId: { userId, roleId } },
-    })
-    if (role) {
-      await this.cache.invalidateUserPermissions(role.workspaceId, userId)
-    }
-    return result
-  }
-
-  async getUserPermissions(workspaceId: string, userId: string): Promise<string[]> {
-    const membership = await this.prisma.workspaceMember.findUnique({
-      where: { workspaceId_userId: { workspaceId, userId } },
-    })
-    if (!membership) return []
-
-    if (membership.role === 'owner') {
-      return ['*']
-    }
-
-    const userRoles = await this.prisma.userRole.findMany({
-      where: { userId },
-      include: { role: true },
-    })
-
-    const permissions = new Set<string>()
-    for (const ur of userRoles) {
-      const perms = (ur.role.permissions as string[]) || []
-      if (perms.includes('*')) {
-        return ['*']
-      } else {
-        perms.forEach((p) => { if (KNOWN_PERMISSIONS.has(p)) permissions.add(p) })
-      }
-    }
-    return Array.from(permissions).sort(
-      (a, b) => (PERMISSION_ORDER.get(a) ?? 999) - (PERMISSION_ORDER.get(b) ?? 999),
-    )
+    return this.prisma.role.delete({ where: { id } })
   }
 
   /** 获取工作空间权限矩阵（所有角色 × 所有权限点） */
@@ -309,31 +241,5 @@ export class RbacService {
       roles: roles.map((r) => ({ ...r, permissionsLocked: r.isSystem })),
       allPermissions,
     }
-  }
-
-  /** 获取默认系统角色定义 */
-  getDefaultRoles() {
-    return [
-      {
-        name: 'form_editor',
-        label: '表单编辑者',
-        permissions: ['form:create', 'form:edit', 'form:publish', 'form:copy', 'submission:view'],
-      },
-      {
-        name: 'form_viewer',
-        label: '表单查看者',
-        permissions: ['submission:view'],
-      },
-      {
-        name: 'data_admin',
-        label: '数据管理员',
-        permissions: ['submission:view', 'submission:export', 'submission:delete'],
-      },
-      {
-        name: 'workflow_admin',
-        label: '流程管理员',
-        permissions: ['task:approve', 'task:reject', 'workflow:manage'],
-      },
-    ]
   }
 }

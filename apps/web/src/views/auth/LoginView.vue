@@ -27,7 +27,7 @@
           FurmX
         </h1>
         <p class="brand-desc">
-          轻量化低代码表单平台
+          低代码工作流平台
         </p>
         <div class="brand-features">
           <div class="feature-item">
@@ -41,6 +41,10 @@
           <div class="feature-item">
             <span class="feature-dot" />
             数据统计与分析
+          </div>
+          <div class="feature-item">
+            <span class="feature-dot" />
+            智能体助手辅助
           </div>
         </div>
       </div>

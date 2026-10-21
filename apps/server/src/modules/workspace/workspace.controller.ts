@@ -27,16 +27,6 @@ export class WorkspaceController {
     return this.workspaceService.create(userId, dto)
   }
 
-  @Get(':id')
-  getById(@Param('id') id: string) {
-    return this.workspaceService.getById(id)
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: { name?: string; remark?: string; logoUrl?: string; settings?: any }) {
-    return this.workspaceService.update(id, dto)
-  }
-
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser('userId') userId: string) {
     return this.workspaceService.remove(id, userId)
@@ -65,13 +55,6 @@ export class WorkspaceController {
   @Get(':id/members')
   listMembers(@Param('id') id: string) {
     return this.workspaceService.listMembers(id)
-  }
-
-  @UseGuards(PermissionGuard)
-  @RequiredPermission('member:invite')
-  @Post(':id/members')
-  addMember(@Param('id') id: string, @Body() dto: { email: string; role: string }) {
-    return this.workspaceService.addMember(id, dto)
   }
 
   @UseGuards(PermissionGuard)

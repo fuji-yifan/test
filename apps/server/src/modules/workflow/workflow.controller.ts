@@ -82,15 +82,6 @@ export class WorkflowController {
 
   // ==================== 流程实例操作 ====================
 
-  @Post('workflows/:id/start')
-  startProcess(
-    @Param('id') definitionId: string,
-    @CurrentUser('userId') userId: string,
-    @Body() dto: { formId?: string; submissionId?: string },
-  ) {
-    return this.workflowService.startProcess(definitionId, userId, dto.formId, dto.submissionId)
-  }
-
   @UseGuards(PermissionGuard)
   @RequiredPermission('task:approve')
   @Post('process-instances/:instanceId/approve')

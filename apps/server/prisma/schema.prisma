@@ -141,7 +141,6 @@ model Form {
   updater     User?            @relation("FormUpdater", fields: [updatedBy], references: [id])
   versions    FormVersion[]
   submissions FormSubmission[]
-  webhooks    Webhook[]
 
   @@index([workspaceId, status])
   @@map("forms")
@@ -243,38 +242,6 @@ model CustomComponent {
 
   @@unique([workspaceId, name])
   @@map("custom_components")
-}
-
-// ==================== Webhook 配置 ====================
-model Webhook {
-  id         String   @id @default(uuid()) @db.VarChar(36)
-  formId     String   @map("form_id") @db.VarChar(36)
-  url        String   @db.VarChar(1000)
-  events     Json     @default("[]")
-  secret     String?  @db.VarChar(200)
-  isActive   Boolean  @default(true) @map("is_active")
-  retryCount Int      @default(3) @map("retry_count")
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  form      Form               @relation(fields: [formId], references: [id], onDelete: Cascade)
-  deliveries WebhookDelivery[]
-
-  @@map("webhooks")
-}
-
-model WebhookDelivery {
-  id         String   @id @default(uuid()) @db.VarChar(36)
-  webhookId  String   @map("webhook_id") @db.VarChar(36)
-  event      String   @db.VarChar(50)
-  status     Int
-  duration   Int      @default(0)
-  error      String?  @db.Text
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
-
-  @@index([webhookId, createdAt(sort: Desc)])
-  @@map("webhook_deliveries")
 }
 
 // ==================== 消息通知 ====================

@@ -109,7 +109,6 @@ export class UserMemoryService {
         updatedAt: now,
       }))
       await this.store.upsertMany(records)
-      this.logger.log(`用户 ${session.userId} 落库 ${records.length} 条长期记忆`)
     } catch (err) {
       this.logger.warn(`用户记忆落库失败：${(err as Error).message}`)
     } finally {

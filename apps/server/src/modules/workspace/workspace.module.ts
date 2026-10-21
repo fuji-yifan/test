@@ -7,6 +7,5 @@ import { AuthModule } from '../auth/auth.module'
   imports: [AuthModule],
   controllers: [WorkspaceController],
   providers: [WorkspaceService],
-  exports: [WorkspaceService],
 })
 export class WorkspaceModule {}

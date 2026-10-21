@@ -12,40 +12,8 @@ import type {
   ApprovalConfig,
   CountersignStrategy,
 } from '../types/workflow.js'
-import { ProcessState, TaskStatus, ProcessTransition, STATE_TRANSITIONS, TRANSITION_TARGET, APPROVAL_NODE_TYPES } from '../types/workflow.js'
+import { ProcessState, TaskStatus, APPROVAL_NODE_TYPES } from '../types/workflow.js'
 import { ExpressionEngine } from '../utils/expression-eval.js'
-
-// ==================== 状态机 ====================
-
-export class WorkflowStateMachine {
-  constructor(private currentState: ProcessState) {}
-
-  get state(): ProcessState {
-    return this.currentState
-  }
-
-  getAvailableTransitions(): ProcessTransition[] {
-    return STATE_TRANSITIONS[this.currentState] || []
-  }
-
-  canTransition(transition: ProcessTransition): boolean {
-    return this.getAvailableTransitions().includes(transition)
-  }
-
-  transition(transition: ProcessTransition): ProcessState {
-    if (!this.canTransition(transition)) {
-      throw new Error(
-        `Cannot transition from "${this.currentState}" via "${transition}". ` +
-        `Allowed: ${this.getAvailableTransitions().join(', ')}`
-      )
-    }
-    const target = TRANSITION_TARGET[transition]
-    if (target) {
-      this.currentState = target
-    }
-    return this.currentState
-  }
-}
 
 // ==================== 会签/或签评估 ====================
 

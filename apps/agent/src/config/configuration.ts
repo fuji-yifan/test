@@ -11,32 +11,6 @@ export const deepseekConfig = registerAs('deepseek', () => ({
   model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
 }))
 
-export const authConfig = registerAs('auth', () => ({
-  jwtSecret: process.env.JWT_SECRET,
-}))
-
-export const serverConfig = registerAs('server', () => ({
-  apiBaseURL: process.env.SERVER_API_BASE_URL || 'http://localhost:3000',
-}))
-
-export const corsConfig = registerAs('cors', () => ({
-  origin: process.env.AGENT_CORS_ORIGIN || 'http://localhost:5173',
-}))
-
-export const throttleConfig = registerAs('throttle', () => ({
-  rateLimit: parseInt(process.env.AGENT_RATE_LIMIT || '20', 10),
-  maxConcurrent: parseInt(process.env.AGENT_MAX_CONCURRENT || '10', 10),
-}))
-
-export const sessionConfig = registerAs('session', () => ({
-  store: process.env.SESSION_STORE || 'memory',
-  ttlHours: parseInt(process.env.SESSION_TTL_HOURS || '6', 10),
-  // 执行权租约（阶段 3 切片 B）：仅 SESSION_STORE=mysql 时生效，memory 即降级/回滚。
-  leaseEnabled: process.env.SESSION_LEASE_ENABLED !== 'false',
-  leaseTtlMs: parseInt(process.env.SESSION_LEASE_TTL_MS || '30000', 10),
-  leaseHeartbeatMs: parseInt(process.env.SESSION_LEASE_HEARTBEAT_MS || '10000', 10),
-}))
-
 export const contextConfig = registerAs('context', () => ({
   maxToolResultChars: parseInt(process.env.MAX_TOOL_RESULT_CHARS || '8000', 10),
   // 工具结果进 LLM 视图的 token 预算（阶段 4 / 4.3）：超预算先「摘要化」丢大字段，

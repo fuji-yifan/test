@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common'
 import { JwtModule } from '@nestjs/jwt'
 import { SubmissionService } from './submission.service'
 import { SubmissionController } from './submission.controller'
-import { FieldACLInterceptor } from '../../common/interceptors/field-acl.interceptor'
 import { WorkflowModule } from '../workflow/workflow.module'
 import { AuditModule } from '../audit/audit.module'
 
@@ -15,7 +14,6 @@ import { AuditModule } from '../audit/audit.module'
     }),
   ],
   controllers: [SubmissionController],
-  providers: [SubmissionService, FieldACLInterceptor],
-  exports: [SubmissionService],
+  providers: [SubmissionService],
 })
 export class SubmissionModule {}

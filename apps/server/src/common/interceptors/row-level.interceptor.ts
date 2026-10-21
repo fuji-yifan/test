@@ -58,39 +58,3 @@ export class RowLevelInterceptor implements NestInterceptor {
   }
 }
 
-/**
- * 为查询参数注入行级过滤条件
- * 在 service 的 findMany 查询中调用此函数
- *
- * @example
- *   const where = buildRowLevelWhere(baseWhere, request.rowLevelContext)
- *   return this.prisma.formSubmission.findMany({ where })
- */
-export function buildRowLevelWhere(
-  baseWhere: Record<string, any>,
-  ctx: RowLevelContext | undefined,
-  fieldMapping?: { deptField?: string; ownerField?: string },
-): Record<string, any> {
-  if (!ctx) return baseWhere
-
-  const deptField = fieldMapping?.deptField || 'deptId'
-  const ownerField = fieldMapping?.ownerField || 'submitterId'
-
-  const where = { ...baseWhere }
-
-  // 行级策略 1：部门隔离 → WHERE deptId IN (用户部门+子部门)
-  if (ctx.deptIds && ctx.deptIds.length > 0) {
-    where[deptField] = { in: ctx.deptIds }
-  }
-
-  // 行级策略 2：个人数据 → OR submitterId = userId
-  // 这样用户既能看到本部门数据，也能看到自己的数据
-  if (ctx.userId) {
-    where.OR = [
-      { [deptField]: { in: ctx.deptIds || [] } },
-      { [ownerField]: ctx.userId },
-    ]
-  }
-
-  return where
-}

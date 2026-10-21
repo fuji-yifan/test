@@ -1,9 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable } from '@nestjs/common'
 import { coerceNodeConfig, layoutFlow, normalizeFlowType } from '@furmx/sdk'
 
 @Injectable()
 export class ContextService {
-  private readonly logger = new Logger(ContextService.name)
   private readonly serverBaseURL: string
 
   constructor() {
@@ -20,7 +19,6 @@ export class ContextService {
 
   /** 发起服务端 API 调用，30s 超时 */
   private async fetch<T>(path: string, token: string, opts?: RequestInit): Promise<T> {
-    this.logger.log(`[API] ${opts?.method || 'GET'} ${path}`)
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 30000)
 

@@ -1,13 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaClient } from '@prisma/client'
-import { CacheService } from '../cache/cache.service'
 
 @Injectable()
 export class FormService {
-  constructor(
-    private prisma: PrismaClient,
-    private cache: CacheService,
-  ) {}
+  constructor(private prisma: PrismaClient) {}
 
   async list(workspaceId: string, query: { page?: number; pageSize?: number; status?: string; category?: string; keyword?: string }) {
     const page = Number(query.page) || 1
@@ -128,9 +124,6 @@ export class FormService {
           },
         })
       }
-
-      // 失效 Schema 缓存
-      await this.cache.invalidateFormSchema(id)
     }
 
     // 剥离 targetVersion（只用于版本快照，不是 Form 表的字段）与 clientRequestId（幂等键，
@@ -150,7 +143,7 @@ export class FormService {
   }
 
   /**
-   * 彻底删除（回收站清空）：真删forms 行，版本快照 / 提交数据 / Webhook 由外键级联一并删除，不可恢复。
+   * 彻底删除（回收站清空）：真删 forms 行，版本快照 / 提交数据由外键级联一并删除，不可恢复。
    *
    * 不动 process_instances.formId —— 那是无外键的展示字段，且历史实例的 context 里已存了表单数据的快照，
    * 级联删实例等于静默掐掉在途审批，超出「删一张表单」的语义。
@@ -158,10 +151,7 @@ export class FormService {
   async purge(id: string) {
     const form = await this.prisma.form.findUnique({ where: { id }, select: { id: true } })
     if (!form) throw new NotFoundException('表单不存在')
-    const result = await this.prisma.form.delete({ where: { id } })
-    // 表单没了，已发布的 schema 缓存不能再留着对外渲染
-    await this.cache.invalidateFormCache(id)
-    return result
+    return this.prisma.form.delete({ where: { id } })
   }
 
   async publish(id: string, userId: string) {
@@ -174,7 +164,7 @@ export class FormService {
     const currentVersion = lastVersion?.version || 0
 
     const now = new Date()
-    const result = await this.prisma.form.update({
+    return this.prisma.form.update({
       where: { id },
       data: {
         status: 'published',
@@ -183,9 +173,6 @@ export class FormService {
         updatedBy: userId,
       },
     })
-    // 发布后失效缓存，新版本 Schema 需重新获取
-    await this.cache.invalidateFormCache(id)
-    return result
   }
 
   async archive(id: string) {

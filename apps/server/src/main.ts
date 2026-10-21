@@ -9,7 +9,6 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter'
 import { TransformInterceptor } from './common/interceptors/transform.interceptor'
 import { useContextMiddleware } from './common/request-context'
 import { AuditContextInterceptor } from './common/interceptors/audit-context.interceptor'
-import { CacheService } from './modules/cache/cache.service'
 import { loadOpenBaoSecrets } from './bootstrap/secret-loader'
 
 /**
@@ -84,12 +83,6 @@ async function bootstrap() {
     .build()
   const document = SwaggerModule.createDocument(app, config)
   SwaggerModule.setup('api/docs', app, document)
-
-  // 清除残留的权限缓存
-  try {
-    const cache = app.get(CacheService)
-    await cache.clearAllPermissionCache()
-  } catch { /* Redis 不可用时忽略 */ }
 
   const port = process.env.PORT || 3000
   await app.listen(port)

@@ -31,7 +31,7 @@ import Redis from 'ioredis'
         })
 
         redis.connect().catch(() => {
-          logger.warn('Redis 不可用，缓存功能禁用')
+          logger.warn('Redis 不可用，限流计数回退内存')
         })
 
         return redis

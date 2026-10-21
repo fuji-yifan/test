@@ -532,20 +532,15 @@ export function useAgentChat(options: UseAgentChatOptions) {
 
   async function listSessions(): Promise<Array<{ id: string; scenario: string; messageCount: number; updatedAt: number }>> {
     const token = getToken()
-    console.log('[listSessions] token length:', token.length)
     try {
       const res = await fetch('/agent-api/api/v1/agent/sessions', {
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (!res.ok) {
-        console.log('[listSessions] status:', res.status)
-        return []
-      }
+      if (!res.ok) return []
       const body = await res.json()
       const list = body.data || body || []
       return Array.isArray(list) ? list : []
-    } catch (err: any) {
-      console.log('[listSessions] error:', err.message)
+    } catch {
       return []
     }
   }

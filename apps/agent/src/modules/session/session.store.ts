@@ -42,10 +42,6 @@ export class SessionStore implements OnModuleDestroy {
   private readonly logger = new Logger(SessionStore.name)
   private memoryStore: Map<string, AgentSession>
 
-  // SQL.js database reference（惰性初始化）
-  private db: any = null
-  private useSqlite: boolean
-
   // MySQL（阶段 3 切片 A）：与 checkpoint 共库，表结构由 apps/server 的 Prisma 管理。
   // 内存 Map 仍是进程内快路径；DB 是权威，重启后按 id 找回会话（getOrCreate 不再另建新 id）。
   private useMysql: boolean
@@ -56,9 +52,11 @@ export class SessionStore implements OnModuleDestroy {
   constructor() {
     this.memoryStore = new Map()
     const store = (process.env.SESSION_STORE || 'memory').toLowerCase()
-    this.useSqlite = store === 'sqlite'
+    if (store !== 'memory' && store !== 'mysql') {
+      this.logger.warn(`未知 SESSION_STORE=${store}，回退内存存储`)
+    }
     this.useMysql = store === 'mysql'
-    const active = this.useMysql ? 'mysql' : this.useSqlite ? 'sqlite' : 'memory'
+    const active = this.useMysql ? 'mysql' : 'memory'
     this.logger.log(`Session store: ${active} (TTL: ${process.env.SESSION_TTL_HOURS || 6}h)`)
   }
 
@@ -70,7 +68,7 @@ export class SessionStore implements OnModuleDestroy {
    * 惰性建 MySQL 连接池并确保表存在。
    *
    * 失败（未配 `AGENT_DATABASE_URL` / 连不上）时**降级回内存**并只告警一次，
-   * 不让会话读写成为硬依赖 —— 与 sqlite 分支的失败处置一致。已失败则不再重试。
+   * 不让会话读写成为硬依赖。已失败则不再重试。
    */
   private async getMysql(): Promise<SqlExecutor | null> {
     if (!this.useMysql || this.mysqlFailed) return null
@@ -141,49 +139,6 @@ export class SessionStore implements OnModuleDestroy {
     }
   }
 
-  private async getDb(): Promise<any> {
-    if (this.db) return this.db
-    if (!this.useSqlite) return null
-
-    try {
-      const initSqlJs = require('sql.js')
-      const SQL = await initSqlJs()
-      const fs = require('fs')
-      const path = require('path')
-      const dataDir = path.join(process.cwd(), 'data')
-      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true })
-
-      const dbPath = path.join(dataDir, 'agent.db')
-      if (fs.existsSync(dbPath)) {
-        const buffer = fs.readFileSync(dbPath)
-        this.db = new SQL.Database(buffer)
-      } else {
-        this.db = new SQL.Database()
-      }
-
-      this.db.run(`
-        CREATE TABLE IF NOT EXISTS sessions (
-          id TEXT PRIMARY KEY,
-          user_id TEXT NOT NULL,
-          workspace_id TEXT DEFAULT '',
-          scenario TEXT DEFAULT '',
-          messages TEXT DEFAULT '[]',
-          metadata TEXT DEFAULT '{}',
-          locked INTEGER DEFAULT 0,
-          created_at INTEGER DEFAULT 0,
-          updated_at INTEGER DEFAULT 0
-        )
-      `)
-      this.db.run('CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)')
-      this.logger.log(`SQLite initialized at ${dbPath}`)
-      return this.db
-    } catch (err) {
-      this.logger.warn('SQLite init failed, falling back to memory-only', (err as Error).message)
-      this.useSqlite = false
-      return null
-    }
-  }
-
   async create(session: AgentSession): Promise<AgentSession> {
     const now = Date.now()
     session.createdAt = now
@@ -191,26 +146,6 @@ export class SessionStore implements OnModuleDestroy {
 
     // 写内存
     this.setMemoryWithTTL(session.id, session)
-
-    // 写 SQLite
-    const db = await this.getDb()
-    if (db) {
-      db.run(
-        'INSERT OR REPLACE INTO sessions (id, user_id, workspace_id, scenario, messages, metadata, locked, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [
-          session.id,
-          session.userId,
-          session.workspaceId,
-          session.scenario,
-          JSON.stringify(session.messages),
-          JSON.stringify(session.metadata),
-          session.locked ? 1 : 0,
-          session.createdAt,
-          session.updatedAt,
-        ],
-      )
-      this.persistDb()
-    }
 
     // 写 MySQL
     const mysql = await this.getMysql()
@@ -262,20 +197,7 @@ export class SessionStore implements OnModuleDestroy {
       return session
     }
 
-    // 查 SQLite
-    const db = await this.getDb()
-    if (!db) return null
-
-    const rows = db.exec('SELECT * FROM sessions WHERE id = ?', [id])
-    if (!rows.length || !rows[0].values.length) return null
-
-    const row = rows[0].values[0] as any[]
-    const session = this.rowToSession(row)
-    if (this.isExpired(session)) return null
-
-    // 回填内存
-    this.memoryStore.set(id, session)
-    return session
+    return null
   }
 
   async update(id: string, updates: Partial<AgentSession>): Promise<AgentSession | null> {
@@ -286,23 +208,6 @@ export class SessionStore implements OnModuleDestroy {
     session.updatedAt = Date.now()
 
     this.memoryStore.set(id, session)
-
-    const db = await this.getDb()
-    if (db) {
-      db.run(
-        'UPDATE sessions SET messages=?, metadata=?, locked=?, scenario=?, workspace_id=?, updated_at=? WHERE id=?',
-        [
-          JSON.stringify(session.messages),
-          JSON.stringify(session.metadata),
-          session.locked ? 1 : 0,
-          session.scenario,
-          session.workspaceId,
-          session.updatedAt,
-          id,
-        ],
-      )
-      this.persistDb()
-    }
 
     const mysql = await this.getMysql()
     if (mysql) {
@@ -325,11 +230,6 @@ export class SessionStore implements OnModuleDestroy {
 
   async delete(id: string): Promise<void> {
     this.memoryStore.delete(id)
-    const db = await this.getDb()
-    if (db) {
-      db.run('DELETE FROM sessions WHERE id = ?', [id])
-      this.persistDb()
-    }
     const mysql = await this.getMysql()
     if (mysql) {
       await mysql.execute('DELETE FROM agent_sessions WHERE id = ?', [id])
@@ -348,27 +248,14 @@ export class SessionStore implements OnModuleDestroy {
         .filter((s) => !this.isExpired(s))
     }
 
-    const db = await this.getDb()
-    if (!db) {
-      // 内存兜底
-      return Array.from(this.memoryStore.values())
-        .filter((s) => s.userId === userId && !this.isExpired(s))
-        .sort((a, b) => b.updatedAt - a.updatedAt)
-    }
-
-    const rows = db.exec(
-      'SELECT * FROM sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 50',
-      [userId],
-    )
-    if (!rows.length || !rows[0].values.length) return []
-
-    return rows[0].values
-      .map((row: any[]) => this.rowToSession(row))
-      .filter((s: AgentSession) => !this.isExpired(s))
+    // 内存兜底
+    return Array.from(this.memoryStore.values())
+      .filter((s) => s.userId === userId && !this.isExpired(s))
+      .sort((a, b) => b.updatedAt - a.updatedAt)
   }
 
   // ---- 执行权租约（阶段 3 切片 B）----
-  // 跨副本互斥 + 崩溃自愈：owner + 过期时间。无 MySQL（memory / sqlite / 连接失败）时
+  // 跨副本互斥 + 崩溃自愈：owner + 过期时间。无 MySQL（memory / 连接失败）时
   // 全部降级为「直接放行」，等于纯内存现状，不阻断请求。
 
   /**
@@ -452,7 +339,6 @@ export class SessionStore implements OnModuleDestroy {
       const cached = this.memoryStore.get(id)
       if (cached && this.isExpired(cached)) {
         this.memoryStore.delete(id)
-        this.logger.log(`Session ${id} TTL expired`)
       }
     }, ttlMs)
   }
@@ -462,31 +348,4 @@ export class SessionStore implements OnModuleDestroy {
     return Date.now() - session.updatedAt > ttlMs
   }
 
-  private rowToSession(row: any[]): AgentSession {
-    return {
-      id: row[0],
-      userId: row[1],
-      workspaceId: row[2] || '',
-      scenario: row[3] || '',
-      messages: JSON.parse(row[4] || '[]'),
-      metadata: JSON.parse(row[5] || '{}'),
-      locked: row[6] === 1,
-      createdAt: row[7] || 0,
-      updatedAt: row[8] || 0,
-    }
-  }
-
-  private persistDb(): void {
-    if (!this.db) return
-    try {
-      const data = this.db.export()
-      const buffer = Buffer.from(data)
-      const fs = require('fs')
-      const path = require('path')
-      const dbPath = path.join(process.cwd(), 'data', 'agent.db')
-      fs.writeFileSync(dbPath, buffer)
-    } catch (err) {
-      this.logger.error('Failed to persist SQLite DB', (err as Error).message)
-    }
-  }
 }

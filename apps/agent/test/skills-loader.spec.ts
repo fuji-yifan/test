@@ -49,7 +49,7 @@ describe('parseSkill — D1 frontmatter 解析', () => {
     expect(parseSkill(content, 'on.skill.md').meta.enabled).toBe(true)
   })
 
-  it('旧格式（无 frontmatter）→ 回退正则，body = 全文', () => {
+  it('旧格式（无 frontmatter）→ 抛错', () => {
     const content = [
       '# Legacy Skill',
       '',
@@ -60,20 +60,12 @@ describe('parseSkill — D1 frontmatter 解析', () => {
       '正文',
     ].join('\n')
 
-    const { meta, body } = parseSkill(content, 'legacy.skill.md')
-    expect(meta.name).toBe('Legacy Skill')
-    expect(meta.description).toBe('老格式技能')
-    expect(meta.toolNames).toEqual(['tool_a', 'tool_b'])
-    // 回退路径保留原全文（与改造前行为一致）
-    expect(body).toBe(content)
+    expect(() => parseSkill(content, 'legacy.skill.md')).toThrow(/frontmatter/)
   })
 
-  it('坏 YAML → 回退旧逻辑且不抛错', () => {
+  it('坏 YAML → 抛错', () => {
     const content = ['---', 'name: Bad', 'tools: [unclosed', '---', 'body'].join('\n')
-    const res = parseSkill(content, 'bad.skill.md')
-    // 解析失败 → name 落到文件名
-    expect(res.meta.name).toBe('bad')
-    expect(res.body).toBe(content)
+    expect(() => parseSkill(content, 'bad.skill.md')).toThrow(/YAML/)
   })
 })
 
